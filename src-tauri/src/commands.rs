@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -8,7 +7,7 @@ use maclarian::merged::{GameDataResolver, MergedDatabase};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
-use crate::export::{lock_pool, run_export};
+use crate::export::{lock_cache, read_file, run_export};
 use crate::models::{
     AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult, ModelPreview,
     Page, VisualAssetDetail, VisualSummary,
@@ -287,59 +286,21 @@ pub fn list_visuals(
 
 /// Query the detail of a single visual asset by its GUID (names are not unique).
 ///
-/// The archives holding the mesh and each texture are resolved here rather than at build time:
-/// which PAK contains a file can only be answered by consulting the archives, and that scan is
-/// heavy enough to belong off the main thread (see `Package::locate_many`).
+/// Which archive holds the mesh or a texture is not resolved here: answering it means consulting the
+/// archives, and that answer only matters where a file is actually read (preview / export). Archive
+/// names in the detail panel are decoration, so they stay empty rather than justify a scan on every
+/// row the user clicks.
 #[tauri::command]
-pub async fn get_visual(
-    app: AppHandle,
+pub fn get_visual(
+    state: State<'_, SharedState>,
     id: String,
 ) -> Result<Option<VisualAssetDetail>, String> {
-    let state = app.state::<SharedState>().inner().clone();
+    let st = lock(&state)?;
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, String> {
-        let (mut detail, pool) = {
-            let mut st = lock(&state)?;
-            let detail = match st
-                .merged_db
-                .as_ref()
-                .and_then(|db| db.visuals_by_id.get(&id))
-            {
-                Some(asset) => VisualAssetDetail::from(asset),
-                None => return Ok(None),
-            };
-            // `pool()` takes `&mut`, so it runs after the detail is owned; the lock is dropped with
-            // this block, leaving the archives to be scanned without holding the state
-            (detail, st.pool().ok())
-        };
-
-        // The mesh and every DDS are resolved in one batch: `locate_many` walks the cached file
-        // tables a single time and decompresses nothing, so the texture paths ride along on the scan
-        // the mesh already needed. Textures are not confined to `Textures.pak` (see
-        // `Gustav_Textures.pak` / `LowTex.pak` / `Icons.pak`), which is why each one is located
-        // instead of assumed.
-        let located = match pool {
-            Some(pool) => {
-                let mut targets = Vec::with_capacity(detail.textures.len() + 1);
-                targets.push(detail.path.clone());
-                targets.extend(detail.textures.iter().map(|tex| tex.path.clone()));
-                lock_pool(&pool)
-                    .map(|mut package| package.locate_many(&targets))
-                    .unwrap_or_default()
-            }
-            None => HashMap::new(),
-        };
-
-        // Archive names are decoration: an unresolved file just renders without one
-        detail.mesh_pak = located.get(&detail.path).cloned().unwrap_or_default();
-        for tex in &mut detail.textures {
-            tex.source = located.get(&tex.path).cloned().unwrap_or_default();
-        }
-
-        Ok(Some(detail))
-    })
-        .await
-        .map_err(|err| format!("Detail task terminated unexpectedly: {err}"))?
+    match st.merged_db.as_ref().and_then(|db| db.visuals_by_id.get(&id)) {
+        Some(asset) => Ok(Some(VisualAssetDetail::from(asset))),
+        None => Ok(None),
+    }
 }
 
 /// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview
@@ -355,21 +316,18 @@ pub async fn get_visual_preview(
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ModelPreview, String> {
-        // The pool is shared with every other command, so a preview no longer re-opens the archives.
-        // Only the handle is taken here: the state lock is released before anything is read.
-        let pool = {
+        // The archive list and its table cache are shared with every other command, so a preview
+        // never re-parses an index. Only the handles are taken here: the state lock is released
+        // before anything is read, and the cache lock is held for that one read.
+        let (cache, paks) = {
             let mut st = lock(&state)?;
-            st.pool()?
+            st.archives()?
         };
 
-        // maclarian's own reader compares PAK entries with an exact `==` on the raw path, which
-        // never matches on Windows (`\` vs `/`); PakPool normalizes separators and casing instead.
-        let gr2_bytes = lock_pool(&pool)?
-            .read(&path)
-            .map_err(|err| {
-                eprintln!("[maclarian] find gr2 {path} failed: {err}");
-                err
-            })?;
+        let gr2_bytes = read_file(&mut *lock_cache(&cache)?, &paks, &path).map_err(|err| {
+            eprintln!("[maclarian] find gr2 {path} failed: {err}");
+            err
+        })?;
 
         let glb = convert_gr2_bytes_to_glb(&gr2_bytes).map_err(|err| {
             eprintln!("[maclarian] gr2 -> glb failed for {path}: {err}");
@@ -408,7 +366,7 @@ pub async fn export_visual_asset(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, String> {
-        let (pool, asset, gtp_index) = {
+        let (cache, paks, asset, gtp_index, vt_pak) = {
             let mut st = lock(&state)?;
             let asset = st
                 .merged_db
@@ -422,13 +380,16 @@ pub async fn export_visual_asset(
             } else {
                 Vec::new()
             };
-            // Shared with the previews: the archives this export needs are usually open already
-            (st.pool()?, asset, gtp_index)
+            // Shared with the previews: the archives this export needs are usually cached already
+            let (cache, paks) = st.archives()?;
+            (cache, paks, asset, gtp_index, st.vt_pak())
         };
 
         run_export(
             &asset,
-            &pool,
+            &cache,
+            &paks,
+            vt_pak.as_deref(),
             &dest_root,
             &options,
             &gtp_index,

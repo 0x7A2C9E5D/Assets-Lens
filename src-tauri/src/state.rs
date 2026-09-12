@@ -1,8 +1,14 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use maclarian::merged::{GameDataResolver, MergedDatabase};
+use maclarian::pak::PakReaderCache;
 
-use crate::export::{build_gtp_index, lock_pool, Package};
+use crate::export::{build_gtp_index, main_paks};
+
+/// How many archives maclarian's table cache keeps parsed: enough for every main archive of a full
+/// install (~26), so a sweep leaves all the tables it walked resident instead of evicting them.
+const CACHED_PAKS: usize = 32;
 
 /// Global application state: BG3 data directory, resource resolver, the built database,
 /// and a stable name cache for consistent pagination order.
@@ -14,7 +20,7 @@ pub struct AppState {
     /// working on the resolver after the state lock has been released (see `build_database`).
     /// It is not cloned — `GameDataResolver` is not `Clone`.
     pub resolver: Option<Arc<GameDataResolver>>,
-    pub game_path: Option<std::path::PathBuf>,
+    pub game_path: Option<PathBuf>,
     pub merged_db: Option<MergedDatabase>,
     /// Sorted visual GUIDs kept after building, so pagination order stays stable
     /// (HashMap iteration order is not deterministic). Ids rather than names: a name can belong to
@@ -23,13 +29,15 @@ pub struct AppState {
     /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
     /// picks a sequence instead of re-sorting every id on each page request.
     pub visual_ids_by_id: Vec<String>,
-    /// Index of `.gtp` paths across all PAK archives, looked up by GTex hash;
+    /// Index of the `.gtp` paths inside `VirtualTextures.pak`, looked up by GTex hash;
     /// built lazily on the first export that needs virtual textures
     pub texture_index: Option<Vec<String>>,
-    /// PAK read pool shared by every command: opening an archive parses its whole file table, so the
-    /// pool is created once per game directory instead of once per preview / export. `Mutex` because
-    /// reading an archive needs `&mut` on its reader.
-    pub packages: Option<Arc<Mutex<Package>>>,
+    /// Main archives in file-name order (data partitions excluded), so a read can walk them
+    pub paks: Vec<PathBuf>,
+    /// maclarian's PAK table cache shared by every command: opening an archive parses its whole file
+    /// table, so the cache is created once per game directory instead of once per preview / export.
+    /// `Mutex` because reading an archive needs `&mut`.
+    pub cache: Option<Arc<Mutex<PakReaderCache>>>,
 }
 
 impl AppState {
@@ -41,7 +49,8 @@ impl AppState {
             visual_ids: Vec::new(),
             visual_ids_by_id: Vec::new(),
             texture_index: None,
-            packages: None,
+            paks: Vec::new(),
+            cache: None,
         }
     }
 
@@ -51,46 +60,52 @@ impl AppState {
         self.visual_ids.clear();
         self.visual_ids_by_id.clear();
         self.texture_index = None;
-        // The archives still open belong to the previous directory
-        self.packages = None;
+        // The cached tables and the archive list still describe the previous directory
+        self.paks.clear();
+        self.cache = None;
     }
 
-    /// The shared PAK pool, created on the first command that needs an archive. Callers clone the
-    /// `Arc` back out and lock it only around a single read, so the state lock and the pool never
-    /// have to be held at the same time.
-    pub fn pool(&mut self) -> Result<Arc<Mutex<Package>>, String> {
-        if let Some(pool) = &self.packages {
-            return Ok(pool.clone());
+    /// `VirtualTextures.pak` — the one archive that holds virtual textures
+    pub fn vt_pak(&self) -> Option<PathBuf> {
+        let path = self.game_path.as_ref()?.join("VirtualTextures.pak");
+        path.is_file().then_some(path)
+    }
+
+    /// The shared archive list plus maclarian's table cache, created on the first command that needs
+    /// an archive. Callers clone both back out and lock the cache only around a single read, so the
+    /// state lock and the cache are never held at the same time.
+    pub fn archives(&mut self) -> Result<(Arc<Mutex<PakReaderCache>>, Vec<PathBuf>), String> {
+        if let Some(cache) = &self.cache {
+            return Ok((cache.clone(), self.paks.clone()));
         }
 
         let game_path = self
             .game_path
-            .as_ref()
+            .clone()
             .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
-        let pool = Arc::new(Mutex::new(Package::new(game_path)?));
-        self.packages = Some(pool.clone());
-        Ok(pool)
+        let paks = main_paks(&game_path)?;
+        let cache = Arc::new(Mutex::new(PakReaderCache::new(CACHED_PAKS)));
+        self.paks = paks.clone();
+        self.cache = Some(cache.clone());
+        Ok((cache, paks))
     }
 
-    /// Return the virtual texture index. The first call scans the file tables of every PAK under
-    /// the data directory and caches the result; the archives are huge and listing them repeatedly
-    /// is expensive, so the index is built only once per session.
+    /// Return the virtual texture index. The first call reads the file table of
+    /// `VirtualTextures.pak` (the only archive that holds virtual textures) and caches the result;
+    /// the archive is huge, so the index is built once per session rather than per export.
     pub fn gtp_index(&mut self) -> Vec<String> {
         if let Some(index) = &self.texture_index {
             return index.clone();
         }
 
-        // A missing pool and a poisoned lock degrade the same way: the export simply runs without
+        // A missing archive and an unreadable one degrade the same way: the export runs without
         // virtual textures instead of failing, so both paths log and fall back to an empty index.
-        let skipped = |err: String| {
-            eprintln!("[maclarian] build GTP index failed: {err}");
-            Vec::new()
-        };
-        let built = match self.pool() {
-            Ok(pool) => lock_pool(&pool)
-                .map(|mut pool| build_gtp_index(&mut pool))
-                .unwrap_or_else(skipped),
-            Err(err) => skipped(err),
+        let built = match self.vt_pak() {
+            Some(vt_pak) => build_gtp_index(&vt_pak),
+            None => {
+                eprintln!("[maclarian] VirtualTextures.pak not found; virtual textures are skipped");
+                Vec::new()
+            }
         };
         self.texture_index = Some(built.clone());
         built
