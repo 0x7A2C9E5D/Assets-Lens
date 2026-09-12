@@ -9,6 +9,7 @@
 //!   out of the archives (no full temporary extraction), and its table cache keeps the parsed file
 //!   indexes resident, so a lookup costs a table scan instead of reparsing an index per file
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -87,6 +88,72 @@ pub fn main_paks(game_path: &Path) -> Result<Vec<PathBuf>, String> {
     // has to stay stable between runs.
     paks.sort();
     Ok(paks)
+}
+
+/// Which archive holds a mesh or a texture: the only two file kinds the detail panel names the
+/// archive of, and therefore the only two that are indexed.
+///
+/// Built with maclarian's own API: its `extract_dds_textures` answers the same question the same
+/// way, by listing every archive with `PakOperations::list` and testing containment. The crate has
+/// no cheaper reverse lookup — `PakReaderCache` keeps its tables private, and the parser never
+/// fills `source_pak` — and listing an archive costs a full table read, so this is built once per
+/// session and then only read.
+///
+/// Keys are the file tables' own spelling, which is exactly how the database spells its paths. The
+/// first archive to list a path wins, i.e. the order `read_file` sweeps in, so a label can never
+/// contradict where the bytes actually come from.
+///
+/// A full install holds 224560 meshes and textures out of 567681 entries; indexing the rest (sound
+/// banks, layouts, virtual texture pages) would triple this for paths nobody asks about, and
+/// storing the archive name per entry instead of an index into `names` would double it again.
+pub struct PakIndex {
+    names: Vec<String>,
+    by_path: HashMap<Box<str>, u16>,
+}
+
+impl PakIndex {
+    /// Archive file name holding `target`, spelled the way this index was built (`/` separators)
+    pub fn name_of(&self, target: &str) -> Option<&str> {
+        let slot = *self.by_path.get(target)?;
+        self.names.get(slot as usize).map(String::as_str)
+    }
+}
+
+/// Whether `path` names a mesh or a texture, i.e. something the detail panel labels (see `PakIndex`)
+fn is_mesh_or_texture(path: &str) -> bool {
+    path.get(path.len().saturating_sub(4)..).is_some_and(|ext| {
+        ext.eq_ignore_ascii_case(".gr2") || ext.eq_ignore_ascii_case(".dds")
+    })
+}
+
+/// List every main archive and record which one holds which mesh / texture path
+pub fn build_pak_index(paks: &[PathBuf]) -> PakIndex {
+    let names: Vec<String> = paks
+        .iter()
+        .map(|pak| {
+            pak.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+
+    let mut by_path: HashMap<Box<str>, u16> = HashMap::new();
+    // A full install has a couple of dozen archives, so the index fits in a `u16` with room to spare
+    for (slot, pak) in paks.iter().enumerate() {
+        match PakOperations::list(pak) {
+            Ok(entries) => {
+                for path in entries {
+                    if is_mesh_or_texture(&path) {
+                        by_path.entry(path.into_boxed_str()).or_insert(slot as u16);
+                    }
+                }
+            }
+            Err(err) => eprintln!("[maclarian] listing {} failed: {err}", pak.display()),
+        }
+    }
+
+    PakIndex { names, by_path }
 }
 
 /// Lock maclarian's shared PAK table cache for a single read
