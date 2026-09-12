@@ -67,7 +67,7 @@ pub struct VisualAssetDetail {
     /// Archive holding the GR2 mesh (e.g. `Models.pak`), i.e. the visual's own file. maclarian's
     /// parser leaves `VisualAsset`'s field of the same name empty, so `AppState::fill_source_paks`
     /// fills it in once per database build
-    pub mesh_pak: String,
+    pub source: String,
     pub material_ids: Vec<String>,
     pub textures: Vec<TextureSummary>,
     pub virtual_textures: Vec<VirtualTextureSummary>,
@@ -79,7 +79,7 @@ impl From<&VisualAsset> for VisualAssetDetail {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.gr2_path.clone(),
-            mesh_pak: value.source_pak.clone(),
+            source: value.source_pak.clone(),
             material_ids: value.material_ids.clone(),
             textures: value.textures.iter().map(TextureSummary::from).collect(),
             virtual_textures: value.virtual_textures.iter().map(VirtualTextureSummary::from).collect(),
