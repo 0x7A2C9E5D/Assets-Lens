@@ -313,18 +313,28 @@ pub async fn get_visual(
             (detail, st.pool().ok())
         };
 
-        // Only the mesh is resolved: textures and virtual textures always sit in their own fixed
-        // archive (`Textures.pak` / `VirtualTextures.pak`), while a GR2 is in `Models.pak` for some
-        // visuals and `Shared.pak` for others, which no rule can predict
+        // The mesh and every DDS are resolved in one batch: `locate_many` walks the cached file
+        // tables a single time and decompresses nothing, so the texture paths ride along on the scan
+        // the mesh already needed. Textures are not confined to `Textures.pak` (see
+        // `Gustav_Textures.pak` / `LowTex.pak` / `Icons.pak`), which is why each one is located
+        // instead of assumed.
         let located = match pool {
-            Some(pool) => lock_pool(&pool)
-                .map(|mut package| package.locate_many(std::slice::from_ref(&detail.path)))
-                .unwrap_or_default(),
+            Some(pool) => {
+                let mut targets = Vec::with_capacity(detail.textures.len() + 1);
+                targets.push(detail.path.clone());
+                targets.extend(detail.textures.iter().map(|tex| tex.path.clone()));
+                lock_pool(&pool)
+                    .map(|mut package| package.locate_many(&targets))
+                    .unwrap_or_default()
+            }
             None => HashMap::new(),
         };
 
         // Archive names are decoration: an unresolved file just renders without one
         detail.mesh_pak = located.get(&detail.path).cloned().unwrap_or_default();
+        for tex in &mut detail.textures {
+            tex.source = located.get(&tex.path).cloned().unwrap_or_default();
+        }
 
         Ok(Some(detail))
     })
