@@ -1,0 +1,358 @@
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use base64::Engine;
+use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
+use maclarian::merged::{GameDataResolver, MergedDatabase};
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, State};
+
+use crate::export::{lock_pool, run_export};
+use crate::models::{
+    AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult,
+    ModelPreview, Page, VisualAssetDetail, VisualSummary,
+};
+use crate::state::AppState;
+
+pub type SharedState = Arc<Mutex<AppState>>;
+
+/// Lock the shared state; the only failure mode is a poisoned mutex, reported as a plain string
+fn lock(state: &SharedState) -> Result<MutexGuard<'_, AppState>, String> {
+    state.lock().map_err(|e| format!("State lock unavailable: {e}"))
+}
+
+const NOT_CONFIGURED: &str = "BG3 Data directory is not set. Please use auto-detect or select a directory first.";
+const NOT_BUILT: &str = "Resource database has not been built. Please go to the Database page and build it first.";
+
+/// Auto-detect the BG3 Data directory (default Steam install location)
+#[tauri::command]
+pub fn detect_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
+    let mut st = lock(&state)?;
+
+    if !GameDataResolver::is_available() {
+        return Ok(None);
+    }
+
+    match GameDataResolver::auto_detect() {
+        Ok(resolver) => {
+            let path = resolver.game_data_path().to_path_buf();
+            st.game_path = Some(path.clone());
+            st.resolver = Some(Arc::new(resolver));
+            st.reset_index();
+            Ok(Some(path.display().to_string()))
+        }
+        Err(err) => {
+            eprintln!("[maclarian] auto-detect failed: {err}");
+            Ok(None)
+        }
+    }
+}
+
+/// Read the BG3 Data directory currently recorded by the backend
+/// (used to restore the UI state after switching pages)
+#[tauri::command]
+pub fn get_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
+    let st = lock(&state)?;
+    Ok(st.game_path.as_ref().map(|p| p.display().to_string()))
+}
+
+/// Manually set the BG3 Data directory (must contain Shared.pak)
+#[tauri::command]
+pub fn set_game_path(state: State<'_, SharedState>, path: String) -> Result<String, String> {
+    let dir = PathBuf::from(&path);
+
+    if !dir.exists() {
+        return Err(format!("Directory does not exist: {path}"));
+    }
+    if !dir.join("Shared.pak").exists() {
+        return Err(format!(
+            "Shared.pak not found in this directory. Please select the BG3 Data directory: {path}"
+        ));
+    }
+
+    let resolver = GameDataResolver::new(&dir)
+        .map_err(|err| format!("Failed to initialize resource parser: {err}"))?;
+
+    let mut st = lock(&state)?;
+    st.game_path = Some(dir);
+    st.resolver = Some(Arc::new(resolver));
+    st.reset_index();
+
+    Ok(path)
+}
+
+/// Build the _merged resource database; progress is pushed through a Channel
+#[tauri::command]
+pub async fn build_database(
+    app: AppHandle,
+    on_progress: Channel<BuildProgress>,
+) -> Result<DatabaseStats, String> {
+    let state = app.state::<SharedState>().inner().clone();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<DatabaseStats, String> {
+        // Take what the build needs, then release the lock immediately: parsing Shared.pak runs for
+        // minutes, and every other command needs that lock to answer.
+        let (resolver, game_path) = {
+            let st = lock(&state)?;
+            (
+                st.resolver
+                    .clone()
+                    .ok_or_else(|| NOT_CONFIGURED.to_string())?,
+                st.game_path
+                    .clone()
+                    .ok_or_else(|| NOT_CONFIGURED.to_string())?,
+            )
+        };
+
+        let channel = on_progress.clone();
+        channel
+            .send(BuildProgress {
+                current: 0,
+                total: 0,
+                current_file: Some("Shared.pak".to_string()),
+                percent: 0.0,
+            })
+            .ok();
+
+        let pak_path = game_path.join("Shared.pak");
+        let mut db = MergedDatabase::new(game_path.display().to_string());
+        let parsed = resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, file| {
+            let percent = if total == 0 {
+                0.0
+            } else {
+                current as f32 / total as f32
+            };
+            let _ = channel.send(BuildProgress {
+                current,
+                total,
+                current_file: Some(file.to_string()),
+                percent,
+            });
+        });
+
+        match parsed {
+            Ok(()) if db.stats().visual_count > 0 => db.resolve_references(),
+            Ok(()) => db = resolver.database().clone(),
+            Err(err) => {
+                eprintln!("[maclarian] per-file parse failed, falling back to lazy build: {err}");
+                db = resolver.database().clone();
+            }
+        }
+
+        let stats = db.stats();
+        let mut visual_names: Vec<String> = db.visual_names().map(|n| n.to_string()).collect();
+        visual_names.sort();
+        let visual_count = visual_names.len();
+
+        // The lock is taken again only to publish the result. A build that raced with a directory
+        // switch belongs to the directory that is no longer current, so it is dropped instead.
+        {
+            let mut st = lock(&state)?;
+            if st.game_path.as_deref() != Some(game_path.as_path()) {
+                return Err(
+                    "Game data directory changed while building; the result was discarded."
+                        .to_string(),
+                );
+            }
+            st.visual_names = visual_names;
+            st.merged_db = Some(db);
+        }
+
+        on_progress
+            .send(BuildProgress {
+                current: 1,
+                total: 1,
+                current_file: None,
+                percent: 1.0,
+            })
+            .ok();
+
+        Ok(DatabaseStats {
+            // The UI browses assets by visual name, and visuals_by_name collapses duplicates.
+            // Count unique names so the dashboard matches the browse list.
+            visual_count,
+            material_count: stats.material_count,
+            texture_count: stats.texture_count,
+            virtual_texture_count: stats.virtual_texture_count,
+        })
+    })
+        .await
+        .map_err(|err| format!("Build task terminated unexpectedly: {err}"))?
+}
+
+/// Current database statistics (None when not built yet)
+#[tauri::command]
+pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, String> {
+    let st = lock(&state)?;
+
+    match st.merged_db.as_ref() {
+        Some(db) => {
+            let stats = db.stats();
+            Ok(Some(DatabaseStats {
+                // Same as build_database: the dashboard should reflect what the UI can actually browse.
+                visual_count: db.visual_names().count(),
+                material_count: stats.material_count,
+                texture_count: stats.texture_count,
+                virtual_texture_count: stats.virtual_texture_count,
+            }))
+        }
+        None => Ok(None),
+    }
+}
+
+/// App metadata for the About page (compile-time values, no state required)
+#[tauri::command]
+pub fn app_info() -> AppInfo {
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
+/// Browse visual assets page by page (keyword is an optional filter, kept for later search reuse)
+#[tauri::command]
+pub fn list_visuals(
+    state: State<'_, SharedState>,
+    offset: usize,
+    limit: usize,
+    keyword: Option<String>,
+) -> Result<Page<VisualSummary>, String> {
+    let st = lock(&state)?;
+    let db = st.merged_db.as_ref().ok_or_else(|| NOT_BUILT.to_string())?;
+
+    let matched: Vec<&String> = match keyword {
+        Some(kw) if !kw.trim().is_empty() => {
+            let kw = kw.to_lowercase();
+            st.visual_names
+                .iter()
+                .filter(|name| name.to_lowercase().contains(&kw))
+                .collect()
+        }
+        _ => st.visual_names.iter().collect(),
+    };
+
+    let total = matched.len();
+    let start = offset.min(total);
+    let end = (start + limit).min(total);
+    let items = matched[start..end]
+        .iter()
+        .filter_map(|name| db.get_by_visual_name(name))
+        .map(VisualSummary::from)
+        .collect();
+
+    Ok(Page {
+        items,
+        total,
+        offset: start,
+    })
+}
+
+/// Query the detail of a single visual asset
+#[tauri::command]
+pub fn get_visual(
+    state: State<'_, SharedState>,
+    name: String,
+) -> Result<Option<VisualAssetDetail>, String> {
+    let st = lock(&state)?;
+    let db = st.merged_db.as_ref().ok_or_else(|| NOT_BUILT.to_string())?;
+
+    Ok(db.get_by_visual_name(&name).map(VisualAssetDetail::from))
+}
+
+/// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview
+/// (geometry only, no textures). Everything stays in memory: Shared.pak bytes → GLB → Base64, with
+/// no intermediate files.
+/// The conversion (BitKnit decompression + parsing) can take several seconds, so it runs inside
+/// spawn_blocking to avoid freezing the UI
+#[tauri::command]
+pub async fn get_visual_preview(
+    app: AppHandle,
+    path: String,
+) -> Result<ModelPreview, String> {
+    let state = app.state::<SharedState>().inner().clone();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<ModelPreview, String> {
+        // The pool is shared with every other command, so a preview no longer re-opens the archives.
+        // Only the handle is taken here: the state lock is released before anything is read.
+        let pool = {
+            let mut st = lock(&state)?;
+            st.pool()?
+        };
+
+        // maclarian's own reader compares PAK entries with an exact `==` on the raw path, which
+        // never matches on Windows (`\` vs `/`); PakPool normalizes separators and casing instead.
+        let gr2_bytes = lock_pool(&pool)?
+            .read(&path, Some("Models.pak"))
+            .map_err(|err| {
+                eprintln!("[maclarian] find gr2 {path} failed: {err}");
+                err
+            })?;
+
+        let glb = convert_gr2_bytes_to_glb(&gr2_bytes).map_err(|err| {
+            eprintln!("[maclarian] gr2 -> glb failed for {path}: {err}");
+            // Pass through unchanged: for a mesh-less GR2 maclarian returns
+            // "No meshes found in GR2 file (...)", which the frontend maps to dedicated copy;
+            // anything else falls through to the generic failure message
+            err.to_string()
+        })?;
+
+        Ok(ModelPreview {
+            base64: base64::engine::general_purpose::STANDARD.encode(&glb),
+        })
+    })
+        .await
+        .map_err(|err| format!("Preview task terminated unexpectedly: {err}"))?
+}
+
+/// Export a single visual asset: GR2 → GLB (optionally embedded textures) + textures +
+/// virtual textures + asset.json.
+///
+/// Reading PAKs, converting and writing to disk are all slow, so this runs inside spawn_blocking;
+/// the state lock is released as soon as the needed data has been fetched.
+#[tauri::command]
+pub async fn export_visual_asset(
+    app: AppHandle,
+    name: String,
+    dest_dir: String,
+    options: ExportOptions,
+    on_progress: Channel<ExportProgress>,
+) -> Result<ExportResult, String> {
+    let state = app.state::<SharedState>().inner().clone();
+    let dest_root = PathBuf::from(&dest_dir);
+
+    if !dest_root.exists() {
+        return Err(format!("Export directory does not exist: {dest_dir}"));
+    }
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, String> {
+        let (pool, asset, gtp_index) = {
+            let mut st = lock(&state)?;
+            let asset = st
+                .merged_db
+                .as_ref()
+                .and_then(|db| db.get_by_visual_name(&name))
+                .cloned()
+                .ok_or_else(|| NOT_BUILT.to_string())?;
+            // The GTP index is only needed when virtual textures are exported separately
+            let gtp_index = if options.texture_format.is_export() {
+                st.gtp_index()
+            } else {
+                Vec::new()
+            };
+            // Shared with the previews: the archives this export needs are usually open already
+            (st.pool()?, asset, gtp_index)
+        };
+
+        run_export(
+            &asset,
+            &pool,
+            &dest_root,
+            &options,
+            &gtp_index,
+            &|progress| {
+                let _ = on_progress.send(progress);
+            },
+        )
+    })
+        .await
+        .map_err(|err| format!("Export task terminated unexpectedly: {err}"))?
+}
