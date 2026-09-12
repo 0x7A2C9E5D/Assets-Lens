@@ -125,7 +125,7 @@ tauri-app/
 
 - Every conversion reuses maclarian (`convert_gr2_bytes_to_glb`, `dds_bytes_to_png_bytes`, `VirtualTextureExtractor`, `MergedResolver`, `PakReaderCache` / `PakOperations`) instead of reimplementing anything
 - The mesh is the core artifact — its failure aborts the export; a single texture / virtual texture failure only records an `ExportWarning` (`code` is localized on the frontend, `detail` keeps the raw message)
-- Virtual textures are staged to a temp directory as `GTP` / `GTS`, extracted, and the temp directory is cleaned up afterwards
+- Virtual textures are staged to a temp directory as `GTP` / `GTS`, extracted, and the temp directory is cleaned up afterwards. The sidecar is the one whose own page list declares the match's hash (`GtsFile::find_page_file_index`), so the pair is settled by the metadata rather than by a name derived from the page file
 
 ### Development
 
@@ -149,7 +149,7 @@ cargo tauri build    # Bundle (NSIS target on Windows)
 - **GLB is Base64, not `Vec<u8>`**: a byte vector serializes through serde as one JSON number per byte, inflating a multi-MB model to tens of MB; Base64 grows by only ~33% and keeps everything in memory with no temp files
 - **Previews and exports run inside `spawn_blocking`**: GR2 decompression/BitKnit decoding and PAK reads take seconds; this keeps the UI responsive and avoids holding the state lock for long
 - **Archive lookups are maclarian's, spelling included**: `PakReaderCache` compares the raw path with `==`, so only the archives' own spelling (`/`-separated, original casing) hits on the first try; `read_file` tries the record as-is, retries once with `/` separators, and only then falls back to a case-insensitive match against the file tables — no hand-rolled table walk
-- **The virtual texture archive is the one the match carries**: meshes and textures are scattered over the archives and are swept for, while every `.gtp` / `.gts` of a full install lives in `VirtualTextures.pak` — so the lookup is handed that single archive of the configured data directory (deliberately not maclarian's `virtual_textures_pak_path()`, which rebuilds the path from `bg3_data_path()`'s auto-detection and is empty for a hand-picked directory), and each `GtpMatch` records it in `pak_path`; the GTP read, the `.gts` lookup and the manifest all take the archive from that field instead of rebuilding it from a name
+- **The virtual texture archive is the one the match carries**: meshes and textures are scattered over the archives and are swept for, while every `.gtp` / `.gts` of a full install lives in `VirtualTextures.pak` — so the lookup is handed that single archive of the configured data directory (deliberately not maclarian's `virtual_textures_pak_path()`, which rebuilds the path from `bg3_data_path()`'s auto-detection and is empty for a hand-picked directory), and each `GtpMatch` records it in `pak_path`; the GTP read, the `.gts` lookup and the manifest all take the archive from that field instead of rebuilding it from a name, and the sidecar extraction pairs with is the one whose page list declares the match's hash — derived names and prefix fallbacks are gone with the trial extractions they existed for
 - **`<Name>_<n>.pak` data partitions are excluded**: they carry no LSPK header of their own, cannot be opened standalone, and are reachable through their main archive
 - **WebView2 compatibility**: `RouterView` is not wrapped in `<Transition>` (an `out-in` transition gets stuck between leave/enter in WebView2 and renders a blank screen); it renders directly with a bound `:key`
 - **three.js context release**: besides `dispose()`, unmounting calls `forceContextLoss()`; otherwise WebView2 discards the oldest context after ~16, which shows up as a black preview
@@ -288,7 +288,7 @@ tauri-app/
 
 - 格式转换全部复用 maclarian（`convert_gr2_bytes_to_glb`、`dds_bytes_to_png_bytes`、`VirtualTextureExtractor`、`MergedResolver`、`PakReaderCache` / `PakOperations`），不重复实现
 - GLB 网格是核心产物，其失败会中止本次导出；单个纹理 / 虚拟纹理失败只记录 `ExportWarning`（`code` 供前端 i18n 取文案，`detail` 为原始信息）
-- 虚拟纹理经临时目录暂存 `GTP` / `GTS` 后提取，结束即清理
+- 虚拟纹理经临时目录暂存 `GTP` / `GTS` 后提取，结束即清理。旁档取「自身页列表中声明该匹配哈希」的那一份（`GtsFile::find_page_file_index`），配对由元数据敲定，而非按页文件名推导
 
 ### 开发
 
@@ -312,7 +312,7 @@ cargo tauri build    # 打包（Windows 目标为 NSIS）
 - **GLB 用 Base64 而非 `Vec<u8>`**：字节数组经 serde 会序列化成「每字节一个数字」的 JSON，几 MB 模型会膨胀到几十 MB；Base64 只增约 33%，且全程内存操作、无临时文件
 - **预览与导出都在 `spawn_blocking` 内执行**：GR2 解压/BitKnit 解码与 PAK 读取耗时数秒，避免阻塞 UI；耗时期间不长时间持有状态锁
 - **归档查找连拼写一起交给 maclarian**：`PakReaderCache` 对原始路径做 `==` 比较，因此只有归档自身的拼写（`/` 分隔、原大小写）能一次命中；`read_file` 先按原样试一次，再把分隔符换成 `/` 重试一次，最后才回退为对文件表的大小写不敏感匹配——不再自写文件表遍历
-- **虚拟纹理的归档由匹配结果携带**：网格与纹理分散在各档、需要扫描，而完整安装的所有 `.gtp` / `.gts` 都在 `VirtualTextures.pak` 里——因此查找时只把「当前配置的数据目录里的这一档」交给 maclarian（刻意不用 `virtual_textures_pak_path()`：它按 `bg3_data_path()` 自动探测重建路径，手工选目录时必为空），返回的每个 `GtpMatch` 把它记在 `pak_path`；GTP 读取、`.gts` 查找与 `asset.json` 都从该字段取归档，不再按归档名重建
+- **虚拟纹理的归档由匹配结果携带**：网格与纹理分散在各档、需要扫描，而完整安装的所有 `.gtp` / `.gts` 都在 `VirtualTextures.pak` 里——因此查找时只把「当前配置的数据目录里的这一档」交给 maclarian（刻意不用 `virtual_textures_pak_path()`：它按 `bg3_data_path()` 自动探测重建路径，手工选目录时必为空），返回的每个 `GtpMatch` 把它记在 `pak_path`；GTP 读取、`.gts` 查找与 `asset.json` 都从该字段取归档，不再按归档名重建，且抽取所配的旁档取「自身页列表中声明该匹配哈希」的那一份——派生名与前缀兜底随它们服务过的逐个试抽一并删除
 - **`<Name>_<n>.pak` 数据分片被排除**：它们没有独立 LSPK 头、无法单独打开，且已能通过主归档访问
 - **WebView2 兼容**：`RouterView` 不包 `<Transition>`（`out-in` 过渡在 WebView2 上会卡在 leave/enter 之间导致白屏），改为直接渲染并绑定 `:key`
 - **three.js 上下文释放**：卸载时除 `dispose()` 外还需 `forceContextLoss()`，否则 WebView2 约 16 个上下文后丢弃最旧的，表现为预览变黑
