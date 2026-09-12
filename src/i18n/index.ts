@@ -173,7 +173,7 @@ export const i18n = createI18n({
     messages: BUNDLES,
 })
 
-/** Mirror the language into `<html lang>` and the window title */
+/** Mirror the language into `<HTML lang>` and the window title */
 function syncDocument(locale: LocaleCode) {
     const title = i18n.global.t('app.title')
     document.documentElement.lang = locale

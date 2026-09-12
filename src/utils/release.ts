@@ -2,7 +2,7 @@
  * App-wide state for the "is a newer version published?" question.
  *
  * The published version is resolved exactly once per launch: `startReleaseCheck()` runs while the
- * app boots and turns into a no-op afterwards, so moving between routes (the About page is rebuilt
+ * app boots and turns into a no-op afterward, so moving between routes (the About page is rebuilt
  * on every visit) can never spend a second request.
  */
 
