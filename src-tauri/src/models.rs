@@ -94,6 +94,17 @@ pub struct ModelPreview {
     pub base64: String,
 }
 
+/// Which archive family a visual asset belongs to. Mods override the base game on path collisions
+/// (the later merge wins), so a name only ever resolves to one source
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AssetSource {
+    /// Shipped by the base game (Shared.pak)
+    Base,
+    /// Shipped by at least one installed mod (mesh or any texture path is owned by a mod archive)
+    Mod,
+}
+
 /// Visual asset list item: highlights the composition of the visual itself
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,6 +112,8 @@ pub struct VisualSummary {
     pub name: String,
     pub path: String,
     pub source: String,
+    /// Which archive family this visual ultimately resolves to (mod override wins)
+    pub origin: AssetSource,
     pub material_count: usize,
     pub texture_count: usize,
     pub virtual_texture_count: usize,
@@ -112,6 +125,9 @@ impl From<&VisualAsset> for VisualSummary {
             name: value.name.clone(),
             path: value.gr2_path.clone(),
             source: value.source_pak.clone(),
+            // Source filter is applied at list time; the in-DB struct does not know which archive
+            // family won the merge for its name, so callers overwrite this field after the fact
+            origin: AssetSource::Base,
             material_count: value.material_ids.len(),
             texture_count: value.textures.len(),
             virtual_texture_count: value.virtual_textures.len(),
@@ -127,6 +143,12 @@ pub struct DatabaseStats {
     pub material_count: usize,
     pub texture_count: usize,
     pub virtual_texture_count: usize,
+    /// Installed mod archives that were merged in (0 when no mod is installed)
+    pub mod_count: usize,
+    /// Visual assets ultimately served by the base game (or any of its default sub-archives)
+    pub base_visual_count: usize,
+    /// Visual assets whose mesh or textures are owned by a mod archive
+    pub mod_visual_count: usize,
 }
 
 /// App metadata for the About page

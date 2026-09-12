@@ -59,8 +59,14 @@ const MAX_CACHED_PAKS: usize = 6;
 /// PAK read pool: each PAK is opened once and its file table and reader stay resident, so indexes
 /// are never reparsed per file.
 pub struct Package {
-    /// Sorted by read priority (earlier entries are tried first)
+    /// Game archives, sorted by read priority (earlier entries are tried first)
     paks: Vec<PathBuf>,
+    /// Installed mod archives, in merge order. Kept apart from `paks` so a mod never competes for
+    /// the archive cache: `MAX_CACHED_PAKS` is tuned for the game directory.
+    mod_paks: Vec<PathBuf>,
+    /// Normalized file path → the mod archive providing it. Built once up front, so a mod file that
+    /// shadows the base game path is found in O(1) instead of by scanning every mod archive.
+    mod_index: HashMap<String, PathBuf>,
     readers: HashMap<PathBuf, LspkReader<BufReader<File>>>,
     tables: HashMap<PathBuf, Vec<FileTableEntry>>,
 }
@@ -69,7 +75,7 @@ pub struct Package {
 /// `VirtualTextures_12.pak`). BG3 splits large resources over numbered archives that only hold
 /// raw data blocks — they carry no LSPK header of their own, cannot be opened standalone, and are
 /// already reachable through their main (`<Name>.pak`) archive, so they are excluded up front.
-fn is_data_partition(file_name: &str) -> bool {
+pub(crate) fn is_data_partition(file_name: &str) -> bool {
     let lower = file_name.to_lowercase();
     let stem = lower.strip_suffix(".pak").unwrap_or(&lower);
     match stem.rsplit_once('_') {
@@ -81,8 +87,9 @@ fn is_data_partition(file_name: &str) -> bool {
 impl Package {
     /// List every main `.pak` under the data directory, hoisting the names in `prefer` to the front
     /// (e.g. `Models.pak` / `Textures.pak`). Numbered data partitions (`<Name>_<n>.pak`) are
-    /// excluded — see `is_data_partition`.
-    pub fn new(game_path: &Path, prefer: &[&str]) -> Result<Self, String> {
+    /// excluded — see `is_data_partition`. `mod_paks` are the installed mod archives, which are
+    /// indexed here so their files shadow the game's own copies.
+    pub fn new(game_path: &Path, prefer: &[&str], mod_paks: Vec<PathBuf>) -> Result<Self, String> {
         let mut paks: Vec<PathBuf> = fs::read_dir(game_path)
             .map_err(|e| format!("Failed to list BG3 data directory: {e}"))?
             .filter_map(Result::ok)
@@ -105,11 +112,41 @@ impl Package {
                 .unwrap_or(prefer.len())
         });
 
-        Ok(Self {
+        let mut pool = Self {
             paks,
+            mod_paks,
+            mod_index: HashMap::new(),
             readers: HashMap::new(),
             tables: HashMap::new(),
-        })
+        };
+        pool.build_mod_index();
+        Ok(pool)
+    }
+
+    /// Map every file path shipped by a mod to the archive providing it. Listing runs once per mod
+    /// archive (14-ish small file tables), which is what keeps the per-read lookup a hash hit.
+    fn build_mod_index(&mut self) {
+        for pak in self.mod_paks.clone() {
+            match self.list(&pak) {
+                Ok(entries) => {
+                    for path in entries {
+                        // First archive wins on a duplicate: the mod list is sorted, so the winner
+                        // is stable across runs instead of depending on directory order.
+                        self.mod_index.entry(path).or_insert_with(|| pak.clone());
+                    }
+                }
+                Err(err) => eprintln!(
+                    "[maclarian] skipping unreadable mod archive: {} — {err}",
+                    pak.display()
+                ),
+            }
+        }
+    }
+
+    /// The mod archive providing `target`, if any: used to label an asset with its source mod
+    /// without walking the archives again.
+    pub fn mod_pak_for(&self, target: &str) -> Option<PathBuf> {
+        self.mod_index.get(&normalize_path(target)).cloned()
     }
 
     /// Open a PAK and cache its file table; no-op when already cached
@@ -185,6 +222,14 @@ impl Package {
     /// When `prefer` is given, that PAK is tried first (e.g. GR2 in `Models.pak`,
     /// DDS in `Textures.pak`); otherwise every PAK is scanned in order.
     pub fn read(&mut self, target: &str, prefer: Option<&str>) -> Result<Vec<u8>, String> {
+        // A mod shipping the same path as the base game must win, exactly as it does in game. The
+        // index already knows which archive holds it, so this is a lookup rather than a scan.
+        if let Some(pak) = self.mod_pak_for(target) {
+            if let Ok(bytes) = self.read_in(&pak, target) {
+                return Ok(bytes);
+            }
+        }
+
         if let Some(want) = prefer {
             let preferred = self.paks.iter().find(|p| {
                 p.file_name()
@@ -210,10 +255,18 @@ impl Package {
     /// List file paths across *all* main PAKs in the data directory, deduplicated.
     /// Numbered data partitions were already excluded in `new` (see `is_data_partition`); the
     /// `skipping unreadable` branch below only fires for genuinely broken or foreign archives.
+    /// Mod archives are listed first so a mod's files win the deduplicated set — this is what makes
+    /// the GTP index resolve a mod's virtual texture instead of the base game's.
     pub fn list_all(&mut self) -> Result<Vec<String>, String> {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
-        for pak in self.paks.clone() {
+        let all_paks: Vec<PathBuf> = self
+            .mod_paks
+            .clone()
+            .into_iter()
+            .chain(self.paks.clone())
+            .collect();
+        for pak in all_paks {
             if let Ok(entries) = self.list(&pak) {
                 for entry in entries {
                     if seen.insert(entry.clone()) {
@@ -293,7 +346,7 @@ fn derive_gts_path(gtp_path: &str) -> String {
 
 /// Normalize a path: unify on `/` separators and lowercase for comparison
 /// (separators inside PAK archives are inconsistent on Windows)
-fn normalize_path(path: &str) -> String {
+pub(crate) fn normalize_path(path: &str) -> String {
     path.replace('\\', "/").to_lowercase()
 }
 

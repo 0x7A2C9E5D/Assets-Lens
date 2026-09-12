@@ -8,6 +8,7 @@ import {
   Grid2x2,
   Image as ImageIcon,
   Loader2,
+  Package,
   Palette,
   Radar,
   RefreshCw,
@@ -270,7 +271,9 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="grid grid-cols-4 gap-4">
+    <!-- Five across only once the window can actually hold them: with the 300px sidebar a
+         1280-wide window leaves ~170px per card, which is not enough for a five-digit count -->
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-3 2xl:grid-cols-5">
       <StatCard
           :hint="$t('stats.visualHint')"
           :icon="Boxes"
@@ -298,6 +301,15 @@ onMounted(() => {
           :value="stats ? stats.virtualTextureCount : '—'"
           accent="green"
           label="Virtual Textures"
+      />
+      <!-- The accent reuses the app's own cyan rather than introducing a fifth color: it sits far
+           enough from the neighbouring "Virtual Textures" card to not read as a duplicate -->
+      <StatCard
+          :hint="$t('stats.modHint')"
+          :icon="Package"
+          :value="stats ? stats.modCount : '—'"
+          accent="cyan"
+          label="Mods"
       />
     </div>
   </section>

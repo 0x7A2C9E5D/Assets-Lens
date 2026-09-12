@@ -49,13 +49,13 @@ const GRID_COLS = 'minmax(220px, 1fr) repeat(3, 80px)'
             :title="$t('table.headerMaterial')"
             class="flex items-center justify-center px-3 py-3"
         >
-          <Palette class="h-3.5 w-3.5 text-glow-cyan"/>
+          <Palette class="h-3.5 w-3.5 text-white/70"/>
         </div>
         <div
             :title="$t('table.headerTexture')"
             class="flex items-center justify-center px-3 py-3"
         >
-          <Image class="h-3.5 w-3.5 text-glow-gold"/>
+          <Image class="h-3.5 w-3.5 text-white/70"/>
         </div>
         <div
             :title="$t('table.headerVirtual')"
@@ -86,7 +86,7 @@ const GRID_COLS = 'minmax(220px, 1fr) repeat(3, 80px)'
             :title="$t('detail.materialIds', {count: row.materialCount})"
             class="flex items-center justify-center px-3 py-2 font-mono text-[13px] font-medium tabular-nums"
         >
-          <span :class="row.materialCount > 0 ? 'text-glow-cyan' : 'text-white/15'">
+          <span :class="row.materialCount > 0 ? 'text-[#E6EDF7]/85' : 'text-white/15'">
             {{ row.materialCount }}
           </span>
         </div>
@@ -94,7 +94,7 @@ const GRID_COLS = 'minmax(220px, 1fr) repeat(3, 80px)'
             :title="$t('detail.textures', {count: row.textureCount})"
             class="flex items-center justify-center px-3 py-2 font-mono text-[13px] font-medium tabular-nums"
         >
-          <span :class="row.textureCount > 0 ? 'text-glow-gold' : 'text-white/15'">
+          <span :class="row.textureCount > 0 ? 'text-[#E6EDF7]/85' : 'text-white/15'">
             {{ row.textureCount }}
           </span>
         </div>

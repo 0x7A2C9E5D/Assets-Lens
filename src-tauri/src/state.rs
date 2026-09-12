@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use maclarian::merged::{GameDataResolver, MergedDatabase};
@@ -30,6 +32,13 @@ pub struct AppState {
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
     /// reading an archive needs `&mut` on its reader.
     pub packages: Option<Arc<Mutex<Package>>>,
+    /// Installed mod archives registered by the last build, in merge order. They live outside the
+    /// game directory, so the PAK pool cannot discover them on its own and is handed this list.
+    /// Empty when no mod is installed, which is the normal case.
+    pub mod_paks: Vec<PathBuf>,
+    /// Visual name → archive family it ultimately resolves to. Resolved once per build so that
+    /// `list_visuals` does not need to walk the PAK pool on every page request.
+    pub visual_sources: HashMap<String, crate::models::AssetSource>,
 }
 
 impl AppState {
@@ -41,6 +50,8 @@ impl AppState {
             visual_names: Vec::new(),
             texture_index: None,
             packages: None,
+            mod_paks: Vec::new(),
+            visual_sources: HashMap::new(),
         }
     }
 
@@ -51,6 +62,11 @@ impl AppState {
         self.texture_index = None;
         // The archives still open belong to the previous directory
         self.packages = None;
+        // The mod list is derived from the game profile, not from the data directory, but it is
+        // repopulated by every build; dropping it keeps "no database" and "no mods" consistent
+        self.mod_paks.clear();
+        // Same reasoning as mod_paks: the source map is rebuilt by every build
+        self.visual_sources.clear();
     }
 
     /// The shared PAK pool, created on the first command that needs an archive. Callers clone the
@@ -65,7 +81,8 @@ impl AppState {
             .game_path
             .as_ref()
             .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
-        let pool = Arc::new(Mutex::new(Package::new(game_path, PAK_PREFERENCE)?));
+        let mod_paks = self.mod_paks.clone();
+        let pool = Arc::new(Mutex::new(Package::new(game_path, PAK_PREFERENCE, mod_paks)?));
         self.packages = Some(pool.clone());
         Ok(pool)
     }

@@ -87,6 +87,7 @@ const zhTW = {
         materialHint: '材質清單',
         textureHint: '紋理參照',
         virtualHint: '虛擬紋理',
+        modHint: '已裝 Mod',
     },
 
     browse: {
@@ -99,6 +100,12 @@ const zhTW = {
         emptyTitle: '尚未掃描資源',
         emptyDescription: '請先前往「資料庫」，選擇遊戲資料夾並完成掃描。',
         emptyAction: '前往資料庫',
+        tabBase: '遊戲本體',
+        tabBaseAria: '遊戲本體（{count}）',
+        tabMod: '模組資源',
+        tabModAria: '模組資源（{count}）',
+        modEmptyTitle: '尚無模組資源',
+        modEmptyDescription: '請在遊戲目錄下安裝模組，然後重建資料庫即可在此查看。',
     },
 
     table: {

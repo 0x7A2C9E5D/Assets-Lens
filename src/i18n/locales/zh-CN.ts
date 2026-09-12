@@ -87,6 +87,7 @@ const zhCN = {
         materialHint: '材质清单',
         textureHint: '纹理引用',
         virtualHint: '虚拟纹理',
+        modHint: '已装 Mod',
     },
 
     browse: {
@@ -99,6 +100,12 @@ const zhCN = {
         emptyTitle: '资源尚未扫描',
         emptyDescription: '请先前往“数据库”，选择游戏数据目录并完成扫描。',
         emptyAction: '前往数据库',
+        tabBase: '游戏本体',
+        tabBaseAria: '游戏本体（{count}）',
+        tabMod: '模组资源',
+        tabModAria: '模组资源（{count}）',
+        modEmptyTitle: '尚无模组资源',
+        modEmptyDescription: '请在游戏目录下安装模组，然后重建数据库即可在此查看。',
     },
 
     table: {

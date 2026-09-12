@@ -2,12 +2,12 @@
 import {computed, onMounted, onUnmounted, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
-import {Database, Search, X} from 'lucide-vue-next'
+import {Database, Package, Search, X} from 'lucide-vue-next'
 import AssetDetail from '../components/AssetDetail.vue'
 import AssetTable from '../components/AssetTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationBar from '../components/PaginationBar.vue'
-import {dbStats, getVisual, listVisuals, type VisualAsset, type VisualSummary,} from '../api/tauri'
+import {dbStats, getVisual, listVisuals, type AssetSource, type DatabaseStats, type VisualAsset, type VisualSummary,} from '../api/tauri'
 
 const router = useRouter()
 const {t} = useI18n()
@@ -21,14 +21,22 @@ const ready = ref(false)
 const loading = ref(false)
 const detailLoading = ref(false)
 const errorMsg = ref('')
+const stats = ref<DatabaseStats | null>(null)
+/** Active tab: which archive family the list should be filtered by */
+const activeSource = ref<AssetSource>('base')
 
 const searchTerm = ref('')
 const searchActive = computed(() => searchTerm.value.trim().length > 0)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
+const baseCount = computed(() => stats.value?.baseVisualCount ?? 0)
+const modCount = computed(() => stats.value?.modVisualCount ?? 0)
+/** The mod tab is hidden only when no mod archive was loaded — even zero mod assets keep the tab visible so the user can land on the empty-state hint */
+const showModTab = computed(() => (stats.value?.modCount ?? 0) > 0)
+
 function load() {
   loading.value = true
-  listVisuals(offset.value, limit.value, searchTerm.value)
+  listVisuals(offset.value, limit.value, searchTerm.value, activeSource.value)
       .then((page) => {
         rows.value = page.items
         total.value = page.total
@@ -78,6 +86,17 @@ function clearSearch() {
   searchTerm.value = ''
 }
 
+/** Switching tabs resets pagination and clears the right-hand detail so the new list starts clean */
+function switchTab(next: AssetSource) {
+  if (activeSource.value === next) return
+  activeSource.value = next
+  offset.value = 0
+  selected.value = null
+  asset.value = null
+  errorMsg.value = ''
+  load()
+}
+
 watch(searchTerm, () => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
@@ -94,8 +113,9 @@ onUnmounted(() => {
 
 onMounted(() => {
   dbStats()
-      .then((stats) => {
-        ready.value = stats !== null
+      .then((result) => {
+        ready.value = result !== null
+        stats.value = result
         if (ready.value) load()
       })
       .catch((err) => console.error('[db_stats]', err))
@@ -144,15 +164,72 @@ onMounted(() => {
         @action="router.push('/database')"
     />
 
+    <template v-else>
+      <!-- Source tabs: separate base-game assets from mod-sourced assets so the list reflects the
+           archive family without mixing them. Each tab carries a count badge so the user knows how
+           much is behind it without paging in -->
+      <div
+          class="flex shrink-0 items-center gap-2"
+          role="tablist"
+      >
+        <button
+            :aria-label="$t('browse.tabBaseAria', {count: baseCount})"
+            :aria-selected="activeSource === 'base'"
+            :class="activeSource === 'base'
+                ? 'border-cyan-300/30 bg-cyan-400/10 text-cyan-200'
+                : 'border-white/5 bg-ink-900/30 text-muted hover:text-[#E6EDF7]'"
+            class="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors"
+            role="tab"
+            type="button"
+            @click="switchTab('base')"
+        >
+          <Database class="h-3.5 w-3.5" :class="activeSource === 'base' ? 'text-glow-cyan' : ''"/>
+          <span>{{ $t('browse.tabBase') }}</span>
+          <span
+              :class="activeSource === 'base' ? 'text-cyan-200/80' : 'text-muted/70'"
+              class="font-mono text-xs tabular-nums"
+          >{{ baseCount }}</span>
+        </button>
+        <button
+            v-if="showModTab"
+            :aria-label="$t('browse.tabModAria', {count: modCount})"
+            :aria-selected="activeSource === 'mod'"
+            :class="activeSource === 'mod'
+                ? 'border-cyan-300/30 bg-cyan-400/10 text-cyan-200'
+                : 'border-white/5 bg-ink-900/30 text-muted hover:text-[#E6EDF7]'"
+            class="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors"
+            role="tab"
+            type="button"
+            @click="switchTab('mod')"
+        >
+          <Package class="h-3.5 w-3.5" :class="activeSource === 'mod' ? 'text-glow-cyan' : ''"/>
+          <span>{{ $t('browse.tabMod') }}</span>
+          <span
+              :class="activeSource === 'mod' ? 'text-cyan-200/80' : 'text-muted/70'"
+              class="font-mono text-xs tabular-nums"
+          >{{ modCount }}</span>
+        </button>
+      </div>
+    </template>
+
     <EmptyState
-        v-else-if="searchActive && !loading && rows.length === 0"
+        v-if="ready && activeSource === 'mod' && !loading && !searchActive && rows.length === 0"
+        :action-label="$t('browse.emptyAction')"
+        :description="$t('browse.modEmptyDescription')"
+        :icon="Package"
+        :title="$t('browse.modEmptyTitle')"
+        @action="router.push('/database')"
+    />
+
+    <EmptyState
+        v-else-if="ready && searchActive && !loading && rows.length === 0"
         :action-label="$t('browse.searchClearAction')"
         :icon="Search"
         :title="$t('browse.searchEmpty', {term: searchTerm})"
         @action="clearSearch"
     />
 
-    <template v-else>
+    <template v-else-if="ready">
       <div
           v-if="errorMsg"
           class="flex items-start gap-3 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200"
@@ -165,7 +242,7 @@ onMounted(() => {
       <div class="flex min-h-0 flex-1 gap-4">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
           <AssetTable
-              :hide-empty="searchActive"
+              :hide-empty="searchActive || (activeSource === 'mod' && rows.length === 0)"
               :loading="loading"
               :rows="rows"
               :selected="selected"
