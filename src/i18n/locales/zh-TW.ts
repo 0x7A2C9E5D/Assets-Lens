@@ -103,7 +103,7 @@ const zhTW = {
 
     table: {
         headerName: '資源名稱',
-        headerUuid: 'UUID',
+        headerUuid: 'ID',
         headerMaterial: '材質',
         headerTexture: '紋理',
         headerVirtual: '虛擬紋理',

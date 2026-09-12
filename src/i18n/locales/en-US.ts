@@ -91,7 +91,7 @@ const enUS = {
     browse: {
         title: 'Browse Assets',
         subtitle: 'Sort by name or ID from the column headers',
-        searchPlaceholder: 'Search by name or UUID',
+        searchPlaceholder: 'Search by name or ID',
         searchClearAria: 'Clear search',
         searchEmpty: 'No assets match "{term}"',
         searchClearAction: 'Clear search',
@@ -102,12 +102,12 @@ const enUS = {
 
     table: {
         headerName: 'Asset Name',
-        headerUuid: 'UUID',
+        headerUuid: 'ID',
         headerMaterial: 'Materials',
         headerTexture: 'Textures',
         headerVirtual: 'Virtual Textures',
         sortByName: 'Sort by name',
-        sortById: 'Sort by UUID',
+        sortById: 'Sort by ID',
         empty: 'No entries to display',
     },
 

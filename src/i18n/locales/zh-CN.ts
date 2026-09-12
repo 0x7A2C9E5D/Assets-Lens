@@ -103,7 +103,7 @@ const zhCN = {
 
     table: {
         headerName: '资源名称',
-        headerUuid: 'UUID',
+        headerUuid: 'ID',
         headerMaterial: '材质',
         headerTexture: '纹理',
         headerVirtual: '虚拟纹理',
