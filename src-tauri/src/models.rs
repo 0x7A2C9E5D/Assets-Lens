@@ -16,7 +16,7 @@ pub struct TextureSummary {
     pub name: String,
     pub path: String,
     /// Archive holding this DDS (e.g. `Textures.pak`); resolved by `get_visual`, because maclarian
-    /// never fills `TextureRef::source_pak` — the export manifest leaves it empty as well
+    /// never fills `TextureRef::source_pak` — the export manifest leaves it empties as well
     pub source: String,
     pub width: u32,
     pub height: u32,
