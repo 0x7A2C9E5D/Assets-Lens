@@ -39,7 +39,7 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
 
 <template>
   <div
-      class="relative flex w-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-cyan-300/10 bg-ink-700/40 backdrop-blur-xl"
+      class="relative flex w-full min-h-0 flex-1 select-none flex-col overflow-hidden rounded-2xl border border-cyan-300/10 bg-ink-700/40 backdrop-blur-xl"
       tabindex="0"
       @keydown.up.prevent="emit('move', -1)"
       @keydown.down.prevent="emit('move', 1)"
@@ -107,17 +107,19 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
           :key="row.id"
           :class="isActive(row.id) ? 'bg-glow-cyan/10' : ''"
           :style="{gridTemplateColumns: GRID_COLS}"
-          class="grid w-full cursor-pointer items-center transition-colors shadow-[inset_0_-1px_0_0_rgb(255_255_255_/_0.05)] last:shadow-none hover:bg-white/5"
+          class="relative grid w-full cursor-pointer items-center transition-colors shadow-[inset_0_-1px_0_0_rgb(255_255_255_/_0.05)] last:shadow-none hover:bg-white/5"
           @click="emit('select', row.id)"
       >
+        <!-- Selection marker on the table's left edge, mirrored (rounded-r): the row box is the
+             containing block, so `left-0` hugs the table's far left edge; the rounding faces inward -->
+        <span
+            v-if="isActive(row.id)"
+            class="absolute inset-y-1 left-0 w-[3px] rounded-r bg-glow-cyan"
+        />
         <div :title="row.id" class="truncate px-4 py-2 text-center font-mono text-[12px] text-muted">
           {{ row.id }}
         </div>
-        <div class="relative truncate px-4 py-2 text-center font-mono text-[13px]">
-          <span
-              v-if="isActive(row.id)"
-              class="absolute inset-y-1 left-0 w-[3px] rounded-r bg-glow-cyan"
-          />
+        <div class="truncate px-4 py-2 text-center font-mono text-[13px]">
           <span :class="isActive(row.id) ? 'text-glow-cyan' : 'text-[#E6EDF7]'">
             {{ row.name }}
           </span>
