@@ -23,7 +23,6 @@ const enUS = {
     about: {
         title: 'About',
         subtitle: 'App version & tech stack',
-        version: 'Version',
         introTitle: 'About this app',
         intro:
             'Assets Lens is a local desktop tool: it scans your Baldur\u2019s Gate 3 game data, indexes the visual assets (meshes, materials, textures and virtual textures), and offers 3D previews and one-click export.',
@@ -36,6 +35,8 @@ const enUS = {
         },
         github: 'GitHub repository',
         nexusmods: 'Nexus Mods',
+        checking: 'Checking…',
+        updateAvailable: 'Version {version} is available on Nexus Mods',
         rightsTitle: 'Rights statement',
         disclaimer:
             'This tool is an independently developed, unofficial third-party application, neither affiliated with nor endorsed by Larian Studios. All trademarks and copyrights related to the game and its assets belong to their respective owners.',

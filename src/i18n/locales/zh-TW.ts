@@ -25,7 +25,6 @@ const zhTW = {
     about: {
         title: '關於',
         subtitle: '應用程式版本與技術堆疊',
-        version: '版本',
         introTitle: '專案簡介',
         intro:
             '「資源透鏡」是一款本機桌面工具：掃描《柏德之門 3》的遊戲資料，索引其中的視覺資源（網格、材質、紋理與虛擬紋理），並提供 3D 預覽與一鍵匯出。',
@@ -38,6 +37,8 @@ const zhTW = {
         },
         github: 'GitHub 儲存庫',
         nexusmods: 'Nexus Mods',
+        checking: '檢查中…',
+        updateAvailable: 'Nexus Mods 上已有新版本 {version}',
         rightsTitle: '權利說明',
         disclaimer:
             '本工具為第三方獨立開發的非官方軟體，與 Larian Studios 無關聯、未獲其背書；遊戲及其資源相關的商標與著作權均歸各自所有者所有。',

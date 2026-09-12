@@ -1,6 +1,5 @@
 import {defineConfig} from 'vite'
 import vue from '@vitejs/plugin-vue'
-
 // Windows paths use backslashes, but in micromatch/anymatch "\" is an escape character, so a glob
 // such as '**/src-tauri/**' never matches 'C:\...\src-tauri\...' and Vite keeps watching
 // src-tauri/target — where DLLs/EXEs locked by a running Tauri process throw EBUSY and take the dev

@@ -25,7 +25,6 @@ const zhCN = {
     about: {
         title: '关于',
         subtitle: '应用版本与技术栈',
-        version: '版本',
         introTitle: '项目简介',
         intro:
             '「资源透镜」是一款本地桌面工具：扫描《博德之门 3》的游戏数据，索引其中的视觉资源（网格、材质、纹理与虚拟纹理），并提供 3D 预览与一键导出。',
@@ -38,6 +37,8 @@ const zhCN = {
         },
         github: 'GitHub 仓库',
         nexusmods: 'Nexus Mods',
+        checking: '检查中…',
+        updateAvailable: 'Nexus Mods 上已有新版本 {version}',
         rightsTitle: '权利说明',
         disclaimer:
             '本工具为第三方独立开发的非官方软件，与 Larian Studios 无关联、未获其背书；游戏及其资源相关的商标与版权均归各自所有者所有。',

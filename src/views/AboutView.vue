@@ -1,22 +1,30 @@
 <script lang="ts" setup>
-import {computed, onMounted, ref} from 'vue'
+import {computed} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {
   Aperture,
+  ArrowUpRight,
   BadgeCheck,
   Box,
   Code,
+  LoaderCircle,
   Lock,
   Monitor,
   PackageSearch,
   Scale,
   ShieldCheck,
 } from 'lucide-vue-next'
-import {type AppInfo, getAppInfo, openExternal} from '../api/tauri'
+import {openExternal} from '../api/tauri'
+import {useReleaseCheck} from '../utils/release'
 
 const {t} = useI18n()
 
-const info = ref<AppInfo | null>(null)
+/**
+ * Version state is app-wide: both versions are resolved once per launch (see `utils/release`), so
+ * opening this page only reads the outcome instead of querying again. `remoteVersion` is only ever
+ * shown as the tooltip of the update arrow, never as text on the page.
+ */
+const {localVersion, remoteVersion, releaseState} = useReleaseCheck()
 
 /** Tech stack entries: the framework/library name is universal and stays untranslated */
 const stack = computed(() => [
@@ -34,17 +42,20 @@ const NEXUS_MODS_PATH =
 const GITHUB_PATH =
     'M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'
 
+const GITHUB_URL = 'https://github.com/0x7A2C9E5D/Assets-Lens'
+const NEXUS_MODS_URL = 'https://www.nexusmods.com/baldursgate3/mods/24924'
+
 /** External project links: the brand marks are inline SVG paths so the logos stay recognizable */
 const links = computed(() => [
   {
-    name: t('about.github'),
-    href: 'https://github.com/0x7A2C9E5D/Assets-Lens',
-    path: GITHUB_PATH,
+    name: t('about.nexusmods'),
+    href: NEXUS_MODS_URL,
+    path: NEXUS_MODS_PATH,
   },
   {
-    name: t('about.nexusmods'),
-    href: 'https://www.nexusmods.com/baldursgate3/mods/24924',
-    path: NEXUS_MODS_PATH,
+    name: t('about.github'),
+    href: GITHUB_URL,
+    path: GITHUB_PATH,
   },
 ])
 
@@ -52,17 +63,10 @@ function openLink(url: string) {
   openExternal(url).catch((err) => console.error('[open_external]', err))
 }
 
-onMounted(() => {
-  getAppInfo()
-      .then((result) => {
-        info.value = result
-      })
-      .catch((err) => console.error('[app_info]', err))
-})
 </script>
 
 <template>
-  <!-- About is a plain, scrollable page: logo + version hero, intro, tech stack and credits -->
+  <!-- About is a plain, scrollable page: identity hero, intro, tech stack and credits -->
   <section class="flex min-h-0 w-full flex-col gap-4 overflow-y-auto px-8 pt-3 pb-8">
     <header>
       <h1 class="text-2xl font-semibold tracking-wide text-[#E6EDF7]">{{ $t('about.title') }}</h1>
@@ -80,10 +84,32 @@ onMounted(() => {
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-lg font-semibold text-[#E6EDF7]">{{ $t('app.title') }}</p>
+            <!-- Version pill: the running version plus, at most, one mark that the check produced.
+                 The arrow lives inside the pill so the row reads as a single unit, and its tooltip is
+                 the only place the published version number ever appears. "Up to date" and a failed
+                 check add nothing, so the arrow is never shown for less than a newer release -->
             <span
-                class="rounded-md border border-emerald-400/25 bg-emerald-400/10 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none text-emerald-300"
+                :class="[
+                  'inline-flex items-center gap-1 rounded-md border border-emerald-400/25 bg-emerald-400/10 py-0.5 pl-1.5 font-mono text-[10px] font-medium leading-none text-emerald-300',
+                  releaseState === 'outdated' ? 'pr-0.5' : 'pr-1.5',
+                ]"
             >
-              v{{ info?.version ?? '—' }}
+              v{{ localVersion || '—' }}
+              <button
+                  v-if="releaseState === 'outdated'"
+                  type="button"
+                  :title="$t('about.updateAvailable', {version: remoteVersion})"
+                  :aria-label="$t('about.updateAvailable', {version: remoteVersion})"
+                  class="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] text-amber-300 transition-colors duration-200 hover:bg-amber-400/20 hover:text-amber-200"
+                  @click="openLink(NEXUS_MODS_URL)"
+              >
+                <ArrowUpRight class="h-3 w-3"/>
+              </button>
+              <LoaderCircle
+                  v-else-if="releaseState === 'checking'"
+                  :title="$t('about.checking')"
+                  class="h-3 w-3 animate-spin text-muted"
+              />
             </span>
           </div>
           <p class="mt-0.5 text-sm text-muted">{{ $t('app.subtitle') }}</p>
