@@ -26,12 +26,34 @@ const {t} = useI18n()
  */
 const {localVersion, remoteVersion, releaseState} = useReleaseCheck()
 
-/** Tech stack entries: the framework/library name is universal and stays untranslated */
+/**
+ * Credits rows: every entry links to the project it thanks (the Vue row credits two separate
+ * projects, so its two names are independent links), while the role text stays untranslated-free
+ */
 const stack = computed(() => [
-  {icon: Monitor, name: 'Tauri', role: t('about.stack.desktop')},
-  {icon: Code, name: 'Vue 3 · Tailwind CSS', role: t('about.stack.ui')},
-  {icon: PackageSearch, name: 'maclarian', role: t('about.stack.parsing')},
-  {icon: Box, name: 'three.js', role: t('about.stack.preview')},
+    {
+        icon: Monitor,
+        parts: [{label: 'Tauri', href: 'https://tauri.app/'}],
+        role: t('about.stack.desktop'),
+    },
+    {
+        icon: Code,
+        parts: [
+            {label: 'Vue.js', href: 'https://vuejs.org/'},
+            {label: 'Tailwind CSS', href: 'https://tailwindcss.com/'},
+        ],
+        role: t('about.stack.ui'),
+    },
+    {
+        icon: PackageSearch,
+        parts: [{label: 'maclarian', href: 'https://crates.io/crates/maclarian'}],
+        role: t('about.stack.parsing'),
+    },
+    {
+        icon: Box,
+        parts: [{label: 'three.js', href: 'https://threejs.org/'}],
+        role: t('about.stack.preview'),
+    },
 ])
 
 /** Nexus Mods mark (Simple Icons, 24x24 viewBox) — no Lucide equivalent exists for this brand */
@@ -145,12 +167,30 @@ function openLink(url: string) {
       <div class="glass-card p-6">
         <p class="text-xs uppercase tracking-[0.18em] text-muted">{{ $t('about.stackTitle') }}</p>
         <ul class="mt-4 flex flex-col gap-3">
-          <li v-for="item in stack" :key="item.name" class="flex items-center gap-2">
+          <li v-for="item in stack" :key="item.role" class="flex items-center gap-2">
             <!-- Bare glyphs, matching the hero mark. Every icon is the same size, so the row supplies the
                  spacing directly — no slot sits between a glyph and its label -->
             <component :is="item.icon" class="h-6 w-6 shrink-0 text-glow-cyan"/>
             <div class="min-w-0">
-              <p class="truncate text-sm font-medium text-[#E6EDF7]">{{ item.name }}</p>
+              <p class="flex flex-wrap items-center gap-x-1.5 text-sm font-medium text-[#E6EDF7]">
+                <template v-for="(part, index) in item.parts" :key="part.href">
+                  <span v-if="index" class="text-muted/40">·</span>
+                  <!-- Two projects share one row, so each name is its own link. The arrow is always
+                       rendered (dimmed) instead of appearing on hover: reserving its width keeps the
+                       text from shifting when the pointer arrives -->
+                  <button
+                      type="button"
+                      :title="part.href"
+                      :aria-label="part.href"
+                      class="group/link inline-flex items-center gap-1 text-left transition-colors duration-200 hover:text-glow-cyan"
+                      @click="openLink(part.href)"
+                  >
+                    {{ part.label }}
+                    <ArrowUpRight
+                        class="h-3 w-3 text-muted/40 transition-colors duration-200 group-hover/link:text-glow-cyan"/>
+                  </button>
+                </template>
+              </p>
               <p class="text-xs text-muted/80">{{ item.role }}</p>
             </div>
           </li>
