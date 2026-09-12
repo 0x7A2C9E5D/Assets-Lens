@@ -17,12 +17,12 @@ const enUS = {
         browse: 'Browse',
         browseHint: 'Browse the scanned game assets',
         about: 'About',
-        aboutHint: 'Version info & technical details',
+        aboutHint: 'Version info',
     },
 
     about: {
         title: 'About',
-        subtitle: 'App version & tech stack',
+        subtitle: 'Version info',
         introTitle: 'About this app',
         intro:
             'Assets Lens is a local desktop tool: it scans your Baldur\u2019s Gate 3 game data, indexes the visual assets (meshes, materials, textures and virtual textures), and offers 3D previews and one-click export.',

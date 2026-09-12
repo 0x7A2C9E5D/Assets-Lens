@@ -19,12 +19,12 @@ const zhTW = {
         browse: '瀏覽',
         browseHint: '瀏覽已掃描的遊戲資源',
         about: '關於',
-        aboutHint: '版本資訊與技術細節',
+        aboutHint: '版本資訊',
     },
 
     about: {
         title: '關於',
-        subtitle: '應用程式版本與技術堆疊',
+        subtitle: '版本資訊',
         introTitle: '專案簡介',
         intro:
             '「資源透鏡」是一款本機桌面工具：掃描《柏德之門 3》的遊戲資料，索引其中的視覺資源（網格、材質、紋理與虛擬紋理），並提供 3D 預覽與一鍵匯出。',

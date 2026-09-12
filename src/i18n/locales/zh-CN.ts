@@ -19,12 +19,12 @@ const zhCN = {
         browse: '浏览',
         browseHint: '浏览已扫描的游戏资源',
         about: '关于',
-        aboutHint: '版本信息与技术细节',
+        aboutHint: '版本信息',
     },
 
     about: {
         title: '关于',
-        subtitle: '应用版本与技术栈',
+        subtitle: '版本信息',
         introTitle: '项目简介',
         intro:
             '「资源透镜」是一款本地桌面工具：扫描《博德之门 3》的游戏数据，索引其中的视觉资源（网格、材质、纹理与虚拟纹理），并提供 3D 预览与一键导出。',
