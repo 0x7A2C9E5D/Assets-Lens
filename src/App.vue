@@ -17,9 +17,10 @@ function handleSidebarDoubleClick() {
   void toggleMaximizeWindow()
 }
 
-/** Sidebar link styling: every entry shares the same base and active appearance */
+/** Sidebar link styling: every entry shares the same base and active appearance. The row centers its
+ *  children, so the icon lines up with the middle of the two-line label / hint block */
 const NAV_LINK_CLASS =
-    'group flex items-start gap-3 rounded-xl px-3 py-3 text-muted transition-all duration-200 hover:translate-x-1 hover:bg-white/5 hover:text-[#E6EDF7]'
+    'group flex items-center gap-3 rounded-xl px-3 py-3 text-muted transition-all duration-200 hover:translate-x-1 hover:bg-white/5 hover:text-[#E6EDF7]'
 const ACTIVE_CLASS =
     '!bg-gradient-to-r !from-glow-cyan/20 !to-glow-blue/10 !text-glow-cyan shadow-[inset_0_0_0_1px_rgba(34,211,238,0.35)]'
 
@@ -63,7 +64,7 @@ const aboutItems = computed(() => [
             :class="NAV_LINK_CLASS"
             :to="item.to"
         >
-          <component :is="item.icon" class="mt-0.5 h-4 w-4 shrink-0"/>
+          <component :is="item.icon" class="h-6 w-6 shrink-0"/>
           <span class="flex flex-col">
             <span class="text-sm font-medium">{{ item.label }}</span>
             <span class="text-[11px] text-muted/70">{{ item.hint }}</span>
@@ -80,7 +81,7 @@ const aboutItems = computed(() => [
             :class="NAV_LINK_CLASS"
             :to="item.to"
         >
-          <component :is="item.icon" class="mt-0.5 h-4 w-4 shrink-0"/>
+          <component :is="item.icon" class="h-6 w-6 shrink-0"/>
           <span class="flex flex-col">
             <span class="text-sm font-medium">{{ item.label }}</span>
             <span class="text-[11px] text-muted/70">{{ item.hint }}</span>

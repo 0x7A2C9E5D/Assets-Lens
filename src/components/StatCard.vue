@@ -31,7 +31,9 @@ const accentClass: Record<Accent, string> = {
         :class="accentClass[accent ?? 'cyan']"
         class="pointer-events-none absolute inset-x-0 -top-16 h-32 bg-gradient-to-b opacity-70"
     />
-    <div class="relative flex items-start justify-between">
+    <!-- The icon centers against the text block: it is the only thing on its side, so the row's
+         cross axis puts it halfway down the label / value / hint stack -->
+    <div class="relative flex items-center justify-between">
       <div>
         <p class="text-xs uppercase tracking-[0.18em] text-muted">{{ label }}</p>
         <p class="mt-2 font-mono text-3xl font-semibold text-[#E6EDF7]">
@@ -39,11 +41,10 @@ const accentClass: Record<Accent, string> = {
         </p>
         <p class="mt-1 text-xs text-muted/80">{{ hint }}</p>
       </div>
-      <span
-          class="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5"
-      >
-        <component :is="icon" class="h-5 w-5"/>
-      </span>
+      <!-- Bare glyph at the plate's own 40px. Lucide scales its 24-unit artwork up to this size, which
+           thickens the 2-unit default stroke on screen — so the stroke is dialled down to keep the
+           drawn weight the same as an icon at its native size -->
+      <component :is="icon" class="h-10 w-10 shrink-0 [stroke-width:1.5]"/>
     </div>
   </div>
 </template>

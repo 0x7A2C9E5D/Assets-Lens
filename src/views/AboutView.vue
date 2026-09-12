@@ -145,12 +145,10 @@ function openLink(url: string) {
       <div class="glass-card p-6">
         <p class="text-xs uppercase tracking-[0.18em] text-muted">{{ $t('about.stackTitle') }}</p>
         <ul class="mt-4 flex flex-col gap-3">
-          <li v-for="item in stack" :key="item.name" class="flex items-center gap-3">
-            <div
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/5 text-glow-cyan ring-1 ring-cyan-300/15"
-            >
-              <component :is="item.icon" class="h-4 w-4"/>
-            </div>
+          <li v-for="item in stack" :key="item.name" class="flex items-center gap-2">
+            <!-- Bare glyphs, matching the hero mark. Every icon is the same size, so the row supplies the
+                 spacing directly — no slot sits between a glyph and its label -->
+            <component :is="item.icon" class="h-6 w-6 shrink-0 text-glow-cyan"/>
             <div class="min-w-0">
               <p class="truncate text-sm font-medium text-[#E6EDF7]">{{ item.name }}</p>
               <p class="text-xs text-muted/80">{{ item.role }}</p>
