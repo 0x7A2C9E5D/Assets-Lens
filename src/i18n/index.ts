@@ -69,14 +69,29 @@ function isLoneBundleForLanguage(code: LocaleCode): boolean {
 }
 
 /**
+ * Names pinned by hand for the codes whose conventional wording we want rather than whatever the
+ * engine phrases. `Intl` cannot be trusted here: its wording comes from the runtime's CLDR data, and
+ * Node and WebView2 disagree — `of('zh-Hans')` is `简体中文` on Node 24 but `中文（简体）` in the
+ * WebView (which is also why the region form reads `中文（中国）`).
+ */
+const LANGUAGE_LABELS: Partial<Record<LocaleCode, string>> = {
+    'zh-CN': '简体中文',
+    'zh-TW': '繁體中文',
+}
+
+/**
  * A language's own name, from `Intl` (`zh-CN` → 中文) rather than a hand-kept label table. The bare
  * language is preferred because the regional form is wordy (`en-US` → American English); when two
- * bundles share a language, the full tag is what keeps them apart (`中文（中国）` vs `中文（台灣）`).
+ * bundles share a language, the script is what keeps them apart, because Chinese differs by writing
+ * system, not by region.
  */
 function nativeLanguageName(code: LocaleCode): string {
+    const pinned = LANGUAGE_LABELS[code]
+    if (pinned) return pinned
     try {
         const names = new Intl.DisplayNames([code], {type: 'language'})
-        const name = names.of(isLoneBundleForLanguage(code) ? parseCulture(code).language : code)
+        const parsed = parseCulture(code)
+        const name = names.of(isLoneBundleForLanguage(code) ? parsed.language : parsed.neutral)
         return name && name !== code ? name : code
     } catch {
         // No DisplayNames support: fall back to the raw code
