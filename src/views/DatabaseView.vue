@@ -271,21 +271,21 @@ onMounted(() => {
           :icon="Boxes"
           :value="stats ? stats.visualCount : '—'"
           accent="cyan"
-          label="Visual"
+          label="Visuals"
       />
       <StatCard
           :hint="$t('stats.materialHint')"
           :icon="Palette"
           :value="stats ? stats.materialCount : '—'"
           accent="blue"
-          label="Material"
+          label="Materials"
       />
       <StatCard
           :hint="$t('stats.textureHint')"
           :icon="ImageIcon"
           :value="stats ? stats.textureCount : '—'"
           accent="gold"
-          label="Texture"
+          label="Textures"
       />
       <StatCard
           :hint="$t('stats.virtualHint')"
