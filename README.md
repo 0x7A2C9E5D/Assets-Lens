@@ -101,8 +101,8 @@ tauri-app/
 - `paks` (main archives, data partitions excluded) plus `cache` (maclarian's `PakReaderCache`) are created once per game directory by `archives()`: opening an archive parses its whole file table, so the cache is sized for a full install (`CACHED_PAKS = 32`) and keeps every table it walked resident. Callers clone the pair back out and lock the cache only around a single read, so the state lock and the cache are never held at the same time
 - `read_file` reads one path through maclarian's `read_files_bulk`, asking the archives in turn and taking the first answer — meshes, textures and virtual textures all go through that one path. Records arrive in the archives' own spelling (`Generated/Public/...`, `/`-separated, original casing), so the first try normally hits; a `\`-spelled record gets one retry, and a case-only difference falls back to a case-insensitive match against the file tables
 - `texture_index` is every `.gtp` path inside `VirtualTextures.pak`, built lazily. Virtual textures are not spread across the archives the way meshes and textures are: that single archive holds all 12974 pages plus their `.gts` sidecars, and no other archive holds any — so listing it replaces the previous full-install scan
-- `pak_index` (a `PakIndex`) answers which archive holds a mesh or a texture, the one thing maclarian does not tell us: `TextureRef::source_pak` exists, but the parser only ever writes an empty string into it, so the index is built with maclarian's own listing API — the way its `extract_dds_textures` resolves a texture — in one pass over every archive, with the first archive to list a path winning, i.e. the order `read_file` sweeps in, so a label can never contradict where the bytes come from
-- Only meshes and textures are indexed (224560 of the 567681 entries of a full install, ~40 MB and ~0.7s): those are the only two things the detail panel names an archive for. The index is built when a database build finishes, so clicking a row never waits for it
+- `fill_source_paks()` runs once, right after a database build: `VisualAsset::source_pak` and `TextureRef::source_pak` are declared by maclarian but never written by its parser, so the archive names are collected by listing the file tables with maclarian's own API — the way its `extract_dds_textures` resolves a texture. Filling the fields once is what makes a name free everywhere it is shown (detail panel, `asset.json`), and the `PakIndex` behind it is dropped immediately afterwards: ~40 MB held for a session to answer lookups the fields already answer would be waste
+- Only meshes and textures are indexed (224560 of the 567681 entries of a full install, ~0.7s): those are the only two file kinds whose archive is ever named. The first archive to list a path wins, i.e. the order `read_file` sweeps in, so a name can never contradict where the bytes came from
 
 **Release check** (`src/utils/release.ts` + `src/api/nexus.ts`)
 
@@ -264,8 +264,8 @@ tauri-app/
 - `paks`（主归档，已排除数据分片）与 `cache`（maclarian 的 `PakReaderCache`）由 `archives()` 在每个游戏目录下只建一次：打开一个归档要解析整张文件表，因此缓存按完整安装的档案数配置（`CACHED_PAKS = 32`），使走过的表常驻；调用方克隆这对值后只在单次读取期间锁缓存，状态锁与缓存锁从不同时持有
 - `read_file` 用 maclarian 的 `read_files_bulk` 逐档询问并取首个命中——网格、纹理、虚拟纹理都走这同一条路径。数据库给出的路径就是归档自身的拼写（`Generated/Public/...`、`/` 分隔、原大小写），因此通常一次命中；遇到 `\` 拼写的记录重试一次，仅大小写不同时再回退为对文件表的大小写不敏感匹配
 - `texture_index` 是 `VirtualTextures.pak` 内全部 `.gtp` 路径（按需延迟构建）。虚拟纹理不像网格 / 纹理那样分散在各档：完整安装的 12974 个页及其 `.gts` 旁档只存在于这一档、其他档一个都没有，因此列一次它即可替代原先的全库扫描
-- `pak_index`（`PakIndex`）回答「某网格 / 纹理在哪个归档」——这是 maclarian 唯一没告诉我们的信息：`TextureRef::source_pak` 字段存在，但解析器只会往里面写空串；因此该索引用 maclarian 自己的列目录 API 构建（与其 `extract_dds_textures` 解析纹理的方式相同），一趟遍历所有归档，先列出该路径的归档胜出，即 `read_file` 的扫描顺序，故展示的归档绝不会与实际读取来源相矛盾
-- 只索引网格与纹理（完整安装 567681 条中占 224560 条，约 40 MB / 0.7 s）：详情面板只对这两类标注归档。索引在数据库构建结束时一并建好，点击行永远不会等它
+- `fill_source_paks()` 在数据库构建结束后只跑一次：`VisualAsset::source_pak` / `TextureRef::source_pak` 虽由 maclarian 声明、其解析器却从不写入，因此归档名来自用官方 API 列文件表——这正是其 `extract_dds_textures` 解析纹理的方式。一次填好字段，名字在展示它的每一处（详情面板、`asset.json`）都不再花代价，而背后的 `PakIndex` 随即释放：为回答已被字段回答过的查询而常驻约 40 MB 纯属浪费
+- 只索引网格与纹理（完整安装 567681 条中占 224560 条，约 0.7 s）：只有这两类文件会被标注归档。先列出该路径的归档胜出，即 `read_file` 的扫描顺序，故归档名绝不会与实际读取来源相矛盾
 
 **版本检查**（`src/utils/release.ts` + `src/api/nexus.ts`）
 

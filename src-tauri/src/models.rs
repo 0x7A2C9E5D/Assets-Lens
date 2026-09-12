@@ -15,9 +15,8 @@ pub struct TextureSummary {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Archive holding this DDS (e.g. `Textures.pak`), filled by `get_visual` from the archive
-    /// index. maclarian's parser never fills `TextureRef::source_pak`, so the export manifest still
-    /// carries this empty
+    /// Archive holding this DDS (e.g. `Textures.pak`). maclarian's parser leaves `TextureRef`'s field
+    /// of the same name empty, so `AppState::fill_source_paks` fills it in once per database build
     pub source: String,
     pub width: u32,
     pub height: u32,
@@ -30,7 +29,7 @@ impl From<&TextureRef> for TextureSummary {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.dds_path.clone(),
-            source: String::new(),
+            source: value.source_pak.clone(),
             width: value.width,
             height: value.height,
             parameter_name: value.parameter_name.clone(),
@@ -65,8 +64,9 @@ pub struct VisualAssetDetail {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Archive holding the GR2 mesh (e.g. `Models.pak`), filled by `get_visual` from the archive
-    /// index
+    /// Archive holding the GR2 mesh (e.g. `Models.pak`), i.e. the visual's own file. maclarian's
+    /// parser leaves `VisualAsset`'s field of the same name empty, so `AppState::fill_source_paks`
+    /// fills it in once per database build
     pub mesh_pak: String,
     pub material_ids: Vec<String>,
     pub textures: Vec<TextureSummary>,
@@ -79,7 +79,7 @@ impl From<&VisualAsset> for VisualAssetDetail {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.gr2_path.clone(),
-            mesh_pak: String::new(),
+            mesh_pak: value.source_pak.clone(),
             material_ids: value.material_ids.clone(),
             textures: value.textures.iter().map(TextureSummary::from).collect(),
             virtual_textures: value.virtual_textures.iter().map(VirtualTextureSummary::from).collect(),
