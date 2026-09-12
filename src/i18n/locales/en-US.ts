@@ -192,7 +192,6 @@ const enUS = {
             textureWriteFailed: 'Failed to write texture: {detail}',
             pngConvertFailed: 'PNG conversion failed; kept DDS: {detail}',
             pngWriteFailed: 'Failed to write PNG: {detail}',
-            vtStagingFailed: 'Virtual texture staging unavailable: {detail}',
             vtGtpNotFound: 'No GTP file found for GTex hash "{detail}"',
             vtFailed: 'Virtual texture extraction failed: {detail}',
             manifestWriteFailed: 'Failed to write asset.json: {detail}',

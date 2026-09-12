@@ -193,7 +193,6 @@ const zhCN = {
             textureWriteFailed: '纹理写入失败：{detail}',
             pngConvertFailed: 'PNG 转换失败，已保留 DDS：{detail}',
             pngWriteFailed: 'PNG 写入失败：{detail}',
-            vtStagingFailed: '虚拟纹理暂存目录不可用：{detail}',
             vtGtpNotFound: '未找到 GTex hash「{detail}」对应的 GTP 文件',
             vtFailed: '虚拟纹理提取失败：{detail}',
             manifestWriteFailed: 'asset.json 写入失败：{detail}',
