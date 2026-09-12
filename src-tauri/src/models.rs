@@ -87,16 +87,6 @@ pub struct ModelPreview {
     pub base64: String,
 }
 
-/// Which archive family a visual asset belongs to. Mods override the base game on path collisions
-/// (the later merge wins), so a name only ever resolves to one source
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AssetSource {
-    /// Shipped by the base game (Shared.pak)
-    Base,
-    /// Shipped by at least one installed mod (mesh or any texture path is owned by a mod archive)
-    Mod,
-}
-
 /// Visual asset list item: highlights the composition of the visual itself
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,12 +116,6 @@ pub struct DatabaseStats {
     pub material_count: usize,
     pub texture_count: usize,
     pub virtual_texture_count: usize,
-    /// Installed mod archives that were merged in (0 when no mod is installed)
-    pub mod_count: usize,
-    /// Visual assets ultimately served by the base game (or any of its default sub-archives)
-    pub base_visual_count: usize,
-    /// Visual assets whose mesh or textures are owned by a mod archive
-    pub mod_visual_count: usize,
 }
 
 /// App metadata for the About page

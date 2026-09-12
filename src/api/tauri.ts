@@ -12,12 +12,6 @@ export interface DatabaseStats {
     materialCount: number
     textureCount: number
     virtualTextureCount: number
-    /** Installed mod archives that were merged into the database (0 when no mod is installed) */
-    modCount: number
-    /** Visual assets whose mesh and textures are owned by the base game */
-    baseVisualCount: number
-    /** Visual assets whose mesh or any texture is owned by an installed mod */
-    modVisualCount: number
 }
 
 export interface TextureRef {
@@ -91,20 +85,15 @@ export function dbStats(): Promise<DatabaseStats | null> {
     return invoke<DatabaseStats | null>('db_stats')
 }
 
-/** Filter the browse list by the archive family the asset ultimately resolves to (mod override wins) */
-export type AssetSource = 'base' | 'mod'
-
 export function listVisuals(
     offset: number,
     limit: number,
     keyword?: string,
-    source?: AssetSource,
 ): Promise<Page<VisualSummary>> {
     return invoke<Page<VisualSummary>>('list_visuals', {
         offset,
         limit,
         keyword: keyword && keyword.trim() ? keyword : null,
-        source: source ?? null,
     })
 }
 

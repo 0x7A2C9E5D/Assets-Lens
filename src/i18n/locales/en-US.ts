@@ -86,7 +86,6 @@ const enUS = {
         materialHint: 'Material lists',
         textureHint: 'Texture references',
         virtualHint: 'Virtual textures',
-        modHint: 'Installed mods',
     },
 
     browse: {
@@ -99,12 +98,6 @@ const enUS = {
         emptyTitle: 'No assets scanned yet',
         emptyDescription: 'Go to Database, choose the game data folder and scan it.',
         emptyAction: 'Go to Database',
-        tabBase: 'Base Game',
-        tabBaseAria: 'Base Game ({count})',
-        tabMod: 'Mods',
-        tabModAria: 'Mods ({count})',
-        modEmptyTitle: 'No mod assets yet',
-        modEmptyDescription: 'Install a mod into the game directory and rebuild the database to see its assets here.',
     },
 
     table: {

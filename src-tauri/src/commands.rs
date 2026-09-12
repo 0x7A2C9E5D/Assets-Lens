@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -10,10 +9,9 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::export::{lock_pool, run_export};
 use crate::models::{
-    AppInfo, AssetSource, BuildProgress, DatabaseStats, ExportOptions, ExportProgress,
-    ExportResult, ModelPreview, Page, VisualAssetDetail, VisualSummary,
+    AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult, ModelPreview,
+    Page, VisualAssetDetail, VisualSummary,
 };
-use crate::mods;
 use crate::state::AppState;
 
 pub type SharedState = Arc<Mutex<AppState>>;
@@ -26,31 +24,13 @@ fn lock(state: &SharedState) -> Result<MutexGuard<'_, AppState>, String> {
 const NOT_CONFIGURED: &str = "BG3 Data directory is not set. Please use auto-detect or select a directory first.";
 const NOT_BUILT: &str = "Resource database has not been built. Please go to the Database page and build it first.";
 
-/// Share of the build progress bar spent on the base game archives. Installed mods share the rest,
-/// so the reported percentage keeps rising across both phases instead of jumping backwards.
-const BASE_PROGRESS_SHARE: f32 = 0.9;
-const MOD_PROGRESS_SHARE: f32 = 1.0 - BASE_PROGRESS_SHARE;
-
-/// How far one archive has been parsed, as a fraction (0 while the archive reports no file count)
+/// How far the archive has been parsed, as a fraction (0 while it reports no file count)
 fn parse_fraction(current: usize, total: usize) -> f32 {
     if total == 0 {
         0.0
     } else {
         current as f32 / total as f32
     }
-}
-
-/// Split the per-visual source map into (base game, installed mod) counts, as shown on the dashboard
-fn count_visual_sources(sources: &HashMap<String, AssetSource>) -> (usize, usize) {
-    let base = sources
-        .values()
-        .filter(|origin| **origin == AssetSource::Base)
-        .count();
-    let owned = sources
-        .values()
-        .filter(|origin| **origin == AssetSource::Mod)
-        .count();
-    (base, owned)
 }
 
 /// Auto-detect the BG3 Data directory (default Steam install location)
@@ -133,40 +113,17 @@ pub async fn build_database(
             )
         };
 
-        // Mod archives live outside the game directory, so the PAK pool cannot find them on its own:
-        // the list is resolved once here and registered before the pool is (re)created.
-        let mod_paks = mods::list_mod_paks();
-        let mod_count = mod_paks.len();
-
-        {
-            let mut st = lock(&state)?;
-            // The pool caches the per-path mod index, so a changed mod list invalidates it
-            if st.mod_paks != mod_paks {
-                st.mod_paks = mod_paks.clone();
-                st.packages = None;
-            }
-        }
-
         let channel = on_progress.clone();
         channel.send(BuildProgress { percent: 0.0 }).ok();
-
-        // Without mods the base game archive owns the whole bar; with mods it stops at 90%
-        let base_share = if mod_count > 0 {
-            BASE_PROGRESS_SHARE
-        } else {
-            1.0
-        };
 
         let pak_path = game_path.join("Shared.pak");
         let mut db = MergedDatabase::new(game_path.display().to_string());
         let parsed = resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, _| {
             let _ = channel.send(BuildProgress {
-                percent: base_share * parse_fraction(current, total),
+                percent: parse_fraction(current, total),
             });
         });
 
-        // The fallback is decided on the base game parse alone: otherwise a mod that does ship
-        // assets would mask a base game archive that failed to parse.
         match parsed {
             Ok(()) if db.stats().visual_count > 0 => {}
             Ok(()) => db = resolver.database().clone(),
@@ -176,69 +133,14 @@ pub async fn build_database(
             }
         }
 
-        // Mods are parsed on top of the base game database. maclarian merges into the target
-        // database with the later parse winning, which is the same precedence the game applies, and
-        // it is the only merge entry point: `merge_databases` and the material table are crate-private.
-        for (index, pak) in mod_paks.iter().enumerate() {
-            let channel = on_progress.clone();
-            let slot_start = BASE_PROGRESS_SHARE + MOD_PROGRESS_SHARE * index as f32 / mod_count as f32;
-            let slot_span = MOD_PROGRESS_SHARE / mod_count as f32;
-            let parsed = resolver.parse_pak_with_progress(pak, &mut db, move |current, total, _| {
-                let _ = channel.send(BuildProgress {
-                    percent: slot_start + slot_span * parse_fraction(current, total),
-                });
-            });
-
-            // One broken archive must not abort the build: the other mods are still worth indexing
-            if let Err(err) = parsed {
-                eprintln!(
-                    "[maclarian] mod archive {} failed to parse: {err}",
-                    pak.display()
-                );
-            }
-        }
-
-        // Resolved once for the whole database: mod materials/textures only become reachable from
-        // their visuals after every archive has been merged in.
+        // Materials and textures only become reachable from their visuals once the whole database
+        // has been parsed.
         db.resolve_references();
 
         let stats = db.stats();
         let mut visual_names: Vec<String> = db.visual_names().map(|n| n.to_string()).collect();
         visual_names.sort();
         let visual_count = visual_names.len();
-
-        // The PAK pool is the only place that knows which archive family a path resolves to, so
-        // every visual name is checked against the mod index here and the result cached on the
-        // state. The browse page uses this map to filter the list without touching the pool again.
-        let visual_sources = {
-            let pool = lock(&state).ok().and_then(|mut st| st.pool().ok());
-            let pool_guard = pool.as_ref().and_then(|arc| lock_pool(arc).ok());
-            let mut sources: HashMap<String, AssetSource> =
-                HashMap::with_capacity(visual_names.len());
-            for name in &visual_names {
-                let origin = match (&pool_guard, db.get_by_visual_name(name)) {
-                    (Some(pool), Some(asset)) => {
-                        if pool.mod_pak_for(&asset.gr2_path).is_some()
-                            || asset
-                                .textures
-                                .iter()
-                                .any(|tex| pool.mod_pak_for(&tex.dds_path).is_some())
-                        {
-                            AssetSource::Mod
-                        } else {
-                            AssetSource::Base
-                        }
-                    }
-                    _ => AssetSource::Base,
-                };
-                sources.insert(name.clone(), origin);
-            }
-            sources
-        };
-
-        // The dashboard reads these counts on every render; computing them once here keeps the
-        // hot path off the PAK pool.
-        let (base_visual_count, mod_visual_count) = count_visual_sources(&visual_sources);
 
         // The lock is taken again only to publish the result. A build that raced with a directory
         // switch belongs to the directory that is no longer current, so it is dropped instead.
@@ -251,7 +153,6 @@ pub async fn build_database(
                 );
             }
             st.visual_names = visual_names;
-            st.visual_sources = visual_sources;
             st.merged_db = Some(db);
         }
 
@@ -264,9 +165,6 @@ pub async fn build_database(
             material_count: stats.material_count,
             texture_count: stats.texture_count,
             virtual_texture_count: stats.virtual_texture_count,
-            mod_count,
-            base_visual_count,
-            mod_visual_count,
         })
     })
         .await
@@ -281,16 +179,12 @@ pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, 
     match st.merged_db.as_ref() {
         Some(db) => {
             let stats = db.stats();
-            let (base_visual_count, mod_visual_count) = count_visual_sources(&st.visual_sources);
             Ok(Some(DatabaseStats {
                 // Same as build_database: the dashboard should reflect what the UI can actually browse.
                 visual_count: db.visual_names().count(),
                 material_count: stats.material_count,
                 texture_count: stats.texture_count,
                 virtual_texture_count: stats.virtual_texture_count,
-                mod_count: st.mod_paks.len(),
-                base_visual_count,
-                mod_visual_count,
             }))
         }
         None => Ok(None),
@@ -312,52 +206,19 @@ pub fn list_visuals(
     offset: usize,
     limit: usize,
     keyword: Option<String>,
-    source: Option<String>,
 ) -> Result<Page<VisualSummary>, String> {
     let st = lock(&state)?;
     let db = st.merged_db.as_ref().ok_or_else(|| NOT_BUILT.to_string())?;
-
-    // The source filter is keyed off the per-name map built during `build_database`, so a request
-    // that asks for "mod" never has to touch the PAK pool.
-    let wanted: Option<AssetSource> = match source.as_deref() {
-        Some("base") => Some(AssetSource::Base),
-        Some("mod") => Some(AssetSource::Mod),
-        _ => None,
-    };
 
     let matched: Vec<&String> = match keyword {
         Some(kw) if !kw.trim().is_empty() => {
             let kw = kw.to_lowercase();
             st.visual_names
                 .iter()
-                .filter(|name| {
-                    name.to_lowercase().contains(&kw)
-                        && wanted
-                            .map(|origin| {
-                                st.visual_sources
-                                    .get(*name)
-                                    .copied()
-                                    .unwrap_or(AssetSource::Base)
-                                    == origin
-                            })
-                            .unwrap_or(true)
-                })
+                .filter(|name| name.to_lowercase().contains(&kw))
                 .collect()
         }
-        _ => match wanted {
-            Some(origin) => st
-                .visual_names
-                .iter()
-                .filter(|name| {
-                    st.visual_sources
-                        .get(*name)
-                        .copied()
-                        .unwrap_or(AssetSource::Base)
-                        == origin
-                })
-                .collect(),
-            None => st.visual_names.iter().collect(),
-        },
+        _ => st.visual_names.iter().collect(),
     };
 
     let total = matched.len();

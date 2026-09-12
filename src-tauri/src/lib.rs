@@ -1,7 +1,6 @@
 mod commands;
 pub mod export;
 mod models;
-mod mods;
 mod state;
 
 use std::sync::{Arc, Mutex};
