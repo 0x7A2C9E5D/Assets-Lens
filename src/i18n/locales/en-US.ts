@@ -34,6 +34,8 @@ const enUS = {
             parsing: 'Game resource parsing',
             preview: '3D model rendering',
         },
+        github: 'GitHub repository',
+        nexusmods: 'Nexus Mods',
         rightsTitle: 'Rights statement',
         disclaimer:
             'This tool is an independently developed, unofficial third-party application, neither affiliated with nor endorsed by Larian Studios. All trademarks and copyrights related to the game and its assets belong to their respective owners.',

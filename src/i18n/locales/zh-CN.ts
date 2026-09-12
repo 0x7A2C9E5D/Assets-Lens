@@ -36,6 +36,8 @@ const zhCN = {
             parsing: '游戏资源解析',
             preview: '3D 模型渲染',
         },
+        github: 'GitHub 仓库',
+        nexusmods: 'Nexus Mods',
         rightsTitle: '权利说明',
         disclaimer:
             '本工具为第三方独立开发的非官方软件，与 Larian Studios 无关联、未获其背书；游戏及其资源相关的商标与版权均归各自所有者所有。',

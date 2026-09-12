@@ -1,6 +1,7 @@
 import {Channel, invoke} from '@tauri-apps/api/core'
 import {getCurrentWindow} from '@tauri-apps/api/window'
 import {open} from '@tauri-apps/plugin-dialog'
+import {openUrl} from '@tauri-apps/plugin-opener'
 
 export interface BuildProgress {
     current: number
@@ -178,6 +179,13 @@ export async function pickDirectory(defaultPath?: string): Promise<string | null
         defaultPath,
     })
     return typeof selected === 'string' ? selected : null
+}
+
+/* ---------- External links ---------- */
+
+/** Open an external URL in the system's default browser (used by the project links on the About page) */
+export function openExternal(url: string): Promise<void> {
+    return openUrl(url)
 }
 
 /* ---------- Custom window controls (frameless mode) ---------- */

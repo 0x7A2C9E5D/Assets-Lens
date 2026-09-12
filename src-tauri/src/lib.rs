@@ -16,6 +16,8 @@ use commands::{
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Opens the project's external links (GitHub / Nexus Mods) in the system browser
+        .plugin(tauri_plugin_opener::init())
         // Session state only: the game directory lives in the frontend's Web storage and is handed
         // back through `set_game_path` on startup, so nothing is restored from disk here
         .manage(Arc::new(Mutex::new(AppState::new())))

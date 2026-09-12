@@ -36,6 +36,8 @@ const zhTW = {
             parsing: '遊戲資源解析',
             preview: '3D 模型渲染',
         },
+        github: 'GitHub 儲存庫',
+        nexusmods: 'Nexus Mods',
         rightsTitle: '權利說明',
         disclaimer:
             '本工具為第三方獨立開發的非官方軟體，與 Larian Studios 無關聯、未獲其背書；遊戲及其資源相關的商標與著作權均歸各自所有者所有。',
