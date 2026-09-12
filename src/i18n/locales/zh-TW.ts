@@ -72,7 +72,7 @@ const zhTW = {
         },
         build: {
             title: '掃描遊戲資源',
-            desc: '讀取遊戲檔案並登記其中的視覺資源，首次操作可能需要數秒',
+            desc: '首次掃描會讀取遊戲檔案並記錄視覺資源，可能需要數秒',
             rebuildTitle: '重新掃描遊戲資源',
             rebuildDesc: '資料庫已就緒，再次掃描即可同步最新的遊戲資源',
             elapsed: '已耗時 {s} 秒',
@@ -84,8 +84,8 @@ const zhTW = {
 
     stats: {
         visualHint: '視覺資源',
-        materialHint: '材質清單',
-        textureHint: '紋理參照',
+        materialHint: '材質',
+        textureHint: '紋理',
         virtualHint: '虛擬紋理',
     },
 
@@ -136,7 +136,7 @@ const zhTW = {
         none: '無',
         textures: '紋理 · {count}',
         textureLabel: '紋理',
-        noTextures: '此資源沒有紋理參照',
+        noTextures: '此資源沒有紋理',
         virtualTextures: '虛擬紋理 · {count}',
         virtualTextureLabel: '虛擬紋理',
         noVirtualTextures: '此資源沒有虛擬紋理',

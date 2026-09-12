@@ -71,7 +71,7 @@ const enUS = {
         },
         build: {
             title: 'Scan Game Assets',
-            desc: 'Read the game files and register their visual assets into a clear list; the first run may take a few seconds',
+            desc: 'The first scan reads the game files and records visual assets; it may take a few seconds',
             rebuildTitle: 'Rescan Game Assets',
             rebuildDesc: 'Database is ready; scan again to sync the latest game assets',
             elapsed: 'Elapsed {s}s',
@@ -83,8 +83,8 @@ const enUS = {
 
     stats: {
         visualHint: 'Visual assets',
-        materialHint: 'Material lists',
-        textureHint: 'Texture references',
+        materialHint: 'Materials',
+        textureHint: 'Textures',
         virtualHint: 'Virtual textures',
     },
 
@@ -135,10 +135,10 @@ const enUS = {
         none: 'None',
         textures: 'Textures · {count}',
         textureLabel: 'Textures',
-        noTextures: 'No textures referenced by this asset',
+        noTextures: 'This asset has no textures',
         virtualTextures: 'Virtual Textures · {count}',
         virtualTextureLabel: 'Virtual Textures',
-        noVirtualTextures: 'No virtual textures referenced by this asset',
+        noVirtualTextures: 'This asset has no virtual textures',
     },
 
     preview: {

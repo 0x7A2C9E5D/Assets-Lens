@@ -72,7 +72,7 @@ const zhCN = {
         },
         build: {
             title: '扫描游戏资源',
-            desc: '读取游戏文件并登记其中的视觉资源，首次操作可能需要数秒',
+            desc: '首次扫描会读取游戏文件并记录视觉资源，可能需要数秒',
             rebuildTitle: '重新扫描游戏资源',
             rebuildDesc: '数据库已就绪，再次扫描即可同步最新的游戏资源',
             elapsed: '已用时 {s} 秒',
@@ -84,8 +84,8 @@ const zhCN = {
 
     stats: {
         visualHint: '视觉资源',
-        materialHint: '材质清单',
-        textureHint: '纹理引用',
+        materialHint: '材质',
+        textureHint: '纹理',
         virtualHint: '虚拟纹理',
     },
 
@@ -136,7 +136,7 @@ const zhCN = {
         none: '无',
         textures: '纹理 · {count}',
         textureLabel: '纹理',
-        noTextures: '该资源没有纹理引用',
+        noTextures: '该资源没有纹理',
         virtualTextures: '虚拟纹理 · {count}',
         virtualTextureLabel: '虚拟纹理',
         noVirtualTextures: '该资源没有虚拟纹理',
