@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use maclarian::merged::{GameDataResolver, MergedDatabase};
+use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
 use maclarian::pak::PakReaderCache;
 
-use crate::export::{build_gtp_index, build_pak_index, main_paks};
+use crate::export::{build_pak_index, find_vt_matches, main_paks};
 
 /// How many archives maclarian's table cache keeps parsed: enough for every main archive of a full
 /// install (~26), so a sweep leaves all the tables it walked resident instead of evicting them.
@@ -29,9 +29,6 @@ pub struct AppState {
     /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
     /// picks a sequence instead of re-sorting every id on each page request.
     pub visual_ids_by_id: Vec<String>,
-    /// Index of the `.gtp` paths inside `VirtualTextures.pak`, looked up by GTex hash;
-    /// built lazily on the first export that needs virtual textures
-    pub texture_index: Option<Vec<String>>,
     /// Main archives in file-name order (data partitions excluded), so a read can walk them
     pub paks: Vec<PathBuf>,
     /// maclarian's PAK table cache shared by every command: opening an archive parses its whole file
@@ -48,7 +45,6 @@ impl AppState {
             merged_db: None,
             visual_ids: Vec::new(),
             visual_ids_by_id: Vec::new(),
-            texture_index: None,
             paks: Vec::new(),
             cache: None,
         }
@@ -59,7 +55,6 @@ impl AppState {
         self.merged_db = None;
         self.visual_ids.clear();
         self.visual_ids_by_id.clear();
-        self.texture_index = None;
         // The cached tables and the archive list still describe the previous directory
         self.paks.clear();
         self.cache = None;
@@ -126,24 +121,26 @@ impl AppState {
         }
     }
 
-    /// Return the virtual texture index. The first call reads the file table of
-    /// `VirtualTextures.pak` (the only archive that holds virtual textures) and caches the result;
-    /// the archive is huge, so the index is built once per session rather than per export.
-    pub fn gtp_index(&mut self) -> Vec<String> {
-        if let Some(index) = &self.texture_index {
-            return index.clone();
-        }
-
-        // A missing archive and an unreadable one degrade the same way: the export runs without
-        // virtual textures instead of failing, so both paths log and fall back to an empty index.
-        let built = match self.vt_pak() {
-            Some(vt_pak) => build_gtp_index(&vt_pak),
-            None => {
-                eprintln!("[maclarian] VirtualTextures.pak not found; virtual textures are skipped");
-                Vec::new()
-            }
+    /// Resolve the `.gtp` page file behind each virtual texture hash, with maclarian's own lookup
+    /// (`export::find_vt_matches`). This is the only way a virtual texture gets a location: the
+    /// merged database stores the hash and nothing else.
+    ///
+    /// `MergedResolver` exists only for a database it owns, and this state holds the one database
+    /// there is, so it is moved into the resolver and straight back out. That is a pointer move, not
+    /// a copy, which is what keeps the official API affordable per request.
+    pub fn vt_matches(&mut self, hashes: &[&str]) -> Vec<GtpMatch> {
+        // Without the one archive holding virtual textures there is nothing to look in, and taking
+        // the database out first would only drop it on the floor
+        let Some(vt_pak) = self.vt_pak() else {
+            return Vec::new();
         };
-        self.texture_index = Some(built.clone());
-        built
+        let Some(db) = self.merged_db.take() else {
+            return Vec::new();
+        };
+
+        let resolver = MergedResolver::from_database(db);
+        let matches = find_vt_matches(&resolver, hashes, &vt_pak);
+        self.merged_db = Some(resolver.into_database());
+        matches
     }
 }

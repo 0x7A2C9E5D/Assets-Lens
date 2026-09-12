@@ -29,6 +29,10 @@ export interface VirtualTextureRef {
     id: string
     name: string
     hash: string
+    /** Page file (`.gtp`) holding this texture's layers; empty when no page file names the hash */
+    path: string
+    /** Archive holding that page file (e.g. `VirtualTextures.pak`); empty when unresolved */
+    source: string
 }
 
 export interface VisualAsset {
@@ -37,7 +41,7 @@ export interface VisualAsset {
     name: string
     path: string
     /** Archive holding the GR2 mesh (e.g. `Models.pak`); empty when it cannot be resolved */
-    meshPak: string
+    source: string
     materialIds: string[]
     textures: TextureRef[]
     virtualTextures: VirtualTextureRef[]

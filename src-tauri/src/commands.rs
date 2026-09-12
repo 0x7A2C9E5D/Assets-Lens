@@ -292,18 +292,33 @@ pub fn list_visuals(
 ///
 /// The archives holding the mesh and each texture come along for free: `build_database` filled
 /// maclarian's `source_pak` fields in one pass (see `AppState::fill_source_paks`), so naming them
-/// never re-lists a file table here.
+/// never re-lists a file table here. Virtual textures are the exception — the database keeps their
+/// hash and nothing else — so their page files are resolved through maclarian's own lookup
+/// (`AppState::vt_matches`).
 #[tauri::command]
 pub fn get_visual(
     state: State<'_, SharedState>,
     id: String,
 ) -> Result<Option<VisualAssetDetail>, String> {
-    let st = lock(&state)?;
+    let mut st = lock(&state)?;
 
-    match st.merged_db.as_ref().and_then(|db| db.visuals_by_id.get(&id)) {
-        Some(asset) => Ok(Some(VisualAssetDetail::from(asset))),
-        None => Ok(None),
-    }
+    // The hashes are read first: the resolver round trip needs the state mutably (it hands the
+    // database to maclarian and takes it straight back), so no borrow of it may be alive by then
+    let hashes: Vec<String> = match st.merged_db.as_ref().and_then(|db| db.visuals_by_id.get(&id)) {
+        Some(asset) => asset
+            .virtual_textures
+            .iter()
+            .map(|vt| vt.gtex_hash.clone())
+            .collect(),
+        None => return Ok(None),
+    };
+    let matches = st.vt_matches(&hashes.iter().map(String::as_str).collect::<Vec<&str>>());
+
+    Ok(st
+        .merged_db
+        .as_ref()
+        .and_then(|db| db.visuals_by_id.get(&id))
+        .map(|asset| VisualAssetDetail::new(asset, &matches)))
 }
 
 /// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview
@@ -369,7 +384,7 @@ pub async fn export_visual_asset(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, String> {
-        let (cache, paks, asset, gtp_index, vt_pak) = {
+        let (cache, paks, asset, vt_matches) = {
             let mut st = lock(&state)?;
             let asset = st
                 .merged_db
@@ -377,25 +392,27 @@ pub async fn export_visual_asset(
                 .and_then(|db| db.visuals_by_id.get(&id))
                 .cloned()
                 .ok_or_else(|| NOT_BUILT.to_string())?;
-            // The GTP index is only needed when virtual textures are exported separately
-            let gtp_index = if options.texture_format.is_export() {
-                st.gtp_index()
-            } else {
-                Vec::new()
-            };
+            // Virtual textures are resolved even when they are not exported separately: it is one
+            // file-table read, and the manifest should name the page file either way
+            let hashes: Vec<String> = asset
+                .virtual_textures
+                .iter()
+                .map(|vt| vt.gtex_hash.clone())
+                .collect();
+            let vt_matches =
+                st.vt_matches(&hashes.iter().map(String::as_str).collect::<Vec<&str>>());
             // Shared with the previews: the archives this export needs are usually cached already
             let (cache, paks) = st.archives()?;
-            (cache, paks, asset, gtp_index, st.vt_pak())
+            (cache, paks, asset, vt_matches)
         };
 
         run_export(
             &asset,
             &cache,
             &paks,
-            vt_pak.as_deref(),
+            &vt_matches,
             &dest_root,
             &options,
-            &gtp_index,
             &|progress| {
                 let _ = on_progress.send(progress);
             },
