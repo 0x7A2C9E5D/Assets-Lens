@@ -143,10 +143,10 @@ const exportOpen = ref(false)
                   :key="vt.id"
                   class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
               >
-                <p class="break-all font-mono text-[12px] text-glow-cyan">{{ vt.name }}</p>
+                <!-- Page file maclarian resolved for this hash; until it resolves, the hash is all there is -->
+                <p class="break-all font-mono text-[12px] text-glow-cyan">{{ vt.path || vt.hash }}</p>
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
-                  <!-- Page file maclarian resolved for this hash; until it resolves, the hash is all there is -->
-                  <span class="break-all font-mono">{{ vt.path || vt.hash }}</span>
+                  <span>{{ vt.name }}</span>
                   <span
                       v-if="vt.source"
                       :title="$t('detail.pakLabel')"

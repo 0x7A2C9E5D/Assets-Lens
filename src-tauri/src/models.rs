@@ -50,7 +50,8 @@ pub struct VirtualTextureSummary {
     /// resolved it; empty when no page file names the hash. `VirtualTextureRef` itself has no path —
     /// the hash is the only location information the merged database carries
     pub path: String,
-    /// Archive holding that page file (e.g. `VirtualTextures.pak`); empty when unresolved
+    /// Archive holding that page file, named after the match's own field (`GtpMatch::pak_path`, e.g.
+    /// `VirtualTextures.pak`); empty when unresolved
     pub source: String,
 }
 
