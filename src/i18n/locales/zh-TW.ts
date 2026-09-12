@@ -91,7 +91,7 @@ const zhTW = {
 
     browse: {
         title: '瀏覽資源',
-        subtitle: '點選表頭可依名稱或 ID 排序；點選任一項目即可查看詳細資料',
+        subtitle: '點選表頭可依名稱或 ID 排序',
         searchPlaceholder: '依名稱或 ID 搜尋',
         searchClearAria: '清除搜尋',
         searchEmpty: '沒有符合「{term}」的資源',

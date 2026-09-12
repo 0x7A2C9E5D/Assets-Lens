@@ -91,7 +91,7 @@ const zhCN = {
 
     browse: {
         title: '浏览资源',
-        subtitle: '点击表头可按名称或 ID 排序；点击任意条目即可查看详情',
+        subtitle: '点击表头可按名称或 ID 排序',
         searchPlaceholder: '按名称或 ID 搜索',
         searchClearAria: '清空搜索',
         searchEmpty: '没有匹配 “{term}” 的资源',

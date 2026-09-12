@@ -90,7 +90,7 @@ const enUS = {
 
     browse: {
         title: 'Browse Assets',
-        subtitle: 'Sort by name or ID from the column headers; click any entry to inspect it',
+        subtitle: 'Sort by name or ID from the column headers',
         searchPlaceholder: 'Search by name or UUID',
         searchClearAria: 'Clear search',
         searchEmpty: 'No assets match "{term}"',
