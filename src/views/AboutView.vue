@@ -75,12 +75,10 @@ function openLink(url: string) {
 
     <!-- App header + project links: a single card so the hero identity and the external resources share one panel -->
     <div class="glass-card p-6">
-      <div class="flex flex-wrap items-center gap-5">
-        <div
-            class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-glow-cyan/25 to-glow-blue/10 text-glow-cyan ring-1 ring-cyan-300/30"
-        >
-          <Aperture class="h-8 w-8"/>
-        </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- The mark stands on its own: the glyph is the whole element, so the gap to the title is just
+             the row gap — no slot or plate padding sits between them -->
+        <Aperture class="h-8 w-8 shrink-0 text-glow-cyan"/>
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-lg font-semibold text-[#E6EDF7]">{{ $t('app.title') }}</p>
