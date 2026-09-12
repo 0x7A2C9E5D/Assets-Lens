@@ -53,13 +53,13 @@ const exportOpen = ref(false)
       <div class="min-h-0 flex-1 overflow-y-auto space-y-5 pr-1">
         <ModelPreview :path="asset.path"/>
 
-        <div class="space-y-3">
-          <div class="rounded-xl border border-white/5 bg-ink-900/50 p-3">
-            <p class="flex items-center gap-2 text-xs text-muted">
-              <FileBox class="h-3.5 w-3.5"/>
-              {{ $t('detail.mesh') }}
-            </p>
-            <p class="mt-1 break-all font-mono text-[13px] text-glow-cyan">{{ asset.path }}</p>
+        <div>
+          <p class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted">
+            <FileBox class="h-3.5 w-3.5"/>
+            {{ $t('detail.mesh') }}
+          </p>
+          <div class="mt-2 rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25">
+            <p class="break-all font-mono text-[12px] text-glow-cyan">{{ asset.path }}</p>
           </div>
         </div>
 
