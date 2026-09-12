@@ -73,7 +73,7 @@ const enUS = {
             title: 'Scan Game Assets',
             desc: 'Read the game files and register their visual assets into a clear list; the first run may take a few seconds',
             rebuildTitle: 'Rescan Game Assets',
-            rebuildDesc: 'Database is ready; rescan to sync the latest game assets, usually only takes a few seconds',
+            rebuildDesc: 'Database is ready; rescan to sync the latest game assets',
             elapsed: 'Elapsed {s}s',
             actionBuilding: 'Scanning…',
             actionRebuild: 'Scan Again',

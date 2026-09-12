@@ -72,9 +72,9 @@ const zhCN = {
         },
         build: {
             title: '扫描游戏资源',
-            desc: '读取游戏文件并登记其中的视觉资源，首次操作可能需要数十秒',
+            desc: '读取游戏文件并登记其中的视觉资源，首次操作可能需要数秒',
             rebuildTitle: '重新扫描游戏资源',
-            rebuildDesc: '数据库已就绪，重新扫描可同步最新游戏资源，通常只需几秒',
+            rebuildDesc: '数据库已就绪，重新扫描可同步最新游戏资源',
             elapsed: '已用时 {s} 秒',
             actionBuilding: '扫描中…',
             actionRebuild: '重新扫描',
