@@ -229,6 +229,50 @@ impl Package {
         }
         Ok(out)
     }
+
+    /// Resolve which archive actually holds each of `targets`, as `target -> archive file name`.
+    ///
+    /// The whole batch is answered by a single pass over the cached file tables: a visual easily
+    /// references a dozen textures, and rescanning a table with hundreds of thousands of entries per
+    /// texture would be far too slow. Priority follows the pool's own order — the same rule `read`
+    /// applies, so the first archive containing a path wins. Nothing is decompressed.
+    pub fn locate_many(&mut self, targets: &[String]) -> HashMap<String, String> {
+        // Normalized path -> target exactly as the caller spelled it, so the result can be keyed by
+        // the original string
+        let mut pending: HashMap<String, String> = targets
+            .iter()
+            .filter(|target| !target.is_empty())
+            .map(|target| (normalize_path(target), target.clone()))
+            .collect();
+        let mut located = HashMap::new();
+
+        for pak in self.paks.clone() {
+            if pending.is_empty() {
+                break;
+            }
+            if self.ensure(&pak).is_err() {
+                continue;
+            }
+            let name = match pak.file_name().and_then(|n| n.to_str()) {
+                Some(name) => name.to_string(),
+                None => continue,
+            };
+
+            if let Some(entries) = self.tables.get(&pak) {
+                for entry in entries {
+                    let path = normalize_path(&entry.path.to_string_lossy());
+                    if let Some(target) = pending.remove(&path) {
+                        located.insert(target, name.clone());
+                    }
+                    if pending.is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        located
+    }
 }
 
 /// Lock the shared PAK pool for a single read

@@ -1,9 +1,16 @@
 <script lang="ts" setup>
 import {defineAsyncComponent, ref} from 'vue'
 import {useI18n} from 'vue-i18n'
-import {Download, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
+import {
+  Download,
+  FileArchive,
+  FileBox,
+  Grid2x2,
+  Image as ImageIcon,
+  MousePointerClick,
+  Palette,
+} from 'lucide-vue-next'
 import type {VisualAsset} from '../api/tauri'
-import {visualLabel} from '../utils/labels'
 import ExportDialog from './ExportDialog.vue'
 
 /**
@@ -38,7 +45,7 @@ const exportOpen = ref(false)
             {{ $t('detail.visualAsset') }}
           </p>
           <h3 class="mt-1 break-all font-mono text-base font-semibold text-[#E6EDF7]">
-            {{ visualLabel(asset.name, asset.id) }}
+            {{ asset.name }}
           </h3>
         </div>
         <button
@@ -61,6 +68,14 @@ const exportOpen = ref(false)
           </p>
           <div class="mt-2 rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25">
             <p class="break-all font-mono text-[12px] text-glow-cyan">{{ asset.path }}</p>
+            <p
+                v-if="asset.meshPak"
+                :title="$t('detail.pakLabel')"
+                class="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted"
+            >
+              <FileArchive class="h-3 w-3 shrink-0"/>
+              <span class="truncate font-mono">{{ asset.meshPak }}</span>
+            </p>
           </div>
         </div>
 
@@ -96,7 +111,7 @@ const exportOpen = ref(false)
                   :key="tex.id"
                   class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
               >
-                <p class="break-all font-mono text-[12px] text-[#E6EDF7]">{{ tex.path }}</p>
+                <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span>{{ tex.width }} × {{ tex.height }}</span>
                   <span v-if="tex.parameterName" class="text-glow-gold">{{ tex.parameterName }}</span>

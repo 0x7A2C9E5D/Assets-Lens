@@ -15,6 +15,8 @@ pub struct TextureSummary {
     pub id: String,
     pub name: String,
     pub path: String,
+    /// Archive holding this DDS (e.g. `Textures.pak`); resolved by `get_visual`, because maclarian
+    /// never fills `TextureRef::source_pak` — the export manifest leaves it empty as well
     pub source: String,
     pub width: u32,
     pub height: u32,
@@ -27,7 +29,7 @@ impl From<&TextureRef> for TextureSummary {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.dds_path.clone(),
-            source: value.source_pak.clone(),
+            source: String::new(),
             width: value.width,
             height: value.height,
             parameter_name: value.parameter_name.clone(),
@@ -62,6 +64,9 @@ pub struct VisualAssetDetail {
     pub id: String,
     pub name: String,
     pub path: String,
+    /// Archive holding the GR2 mesh (e.g. `Models.pak`); left empty here and filled in by
+    /// `get_visual`, which is the only place with access to the PAK pool
+    pub mesh_pak: String,
     pub material_ids: Vec<String>,
     pub textures: Vec<TextureSummary>,
     pub virtual_textures: Vec<VirtualTextureSummary>,
@@ -73,6 +78,7 @@ impl From<&VisualAsset> for VisualAssetDetail {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.gr2_path.clone(),
+            mesh_pak: String::new(),
             material_ids: value.material_ids.clone(),
             textures: value.textures.iter().map(TextureSummary::from).collect(),
             virtual_textures: value.virtual_textures.iter().map(VirtualTextureSummary::from).collect(),

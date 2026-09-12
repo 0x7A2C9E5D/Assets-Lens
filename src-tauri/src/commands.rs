@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -284,18 +285,51 @@ pub fn list_visuals(
     })
 }
 
-/// Query the detail of a single visual asset by its GUID (names are not unique)
+/// Query the detail of a single visual asset by its GUID (names are not unique).
+///
+/// The archives holding the mesh and each texture are resolved here rather than at build time:
+/// which PAK contains a file can only be answered by consulting the archives, and that scan is
+/// heavy enough to belong off the main thread (see `Package::locate_many`).
 #[tauri::command]
-pub fn get_visual(
-    state: State<'_, SharedState>,
+pub async fn get_visual(
+    app: AppHandle,
     id: String,
 ) -> Result<Option<VisualAssetDetail>, String> {
-    let st = lock(&state)?;
-    Ok(st
-        .merged_db
-        .as_ref()
-        .and_then(|db| db.visuals_by_id.get(&id))
-        .map(VisualAssetDetail::from))
+    let state = app.state::<SharedState>().inner().clone();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, String> {
+        let (mut detail, pool) = {
+            let mut st = lock(&state)?;
+            let detail = match st
+                .merged_db
+                .as_ref()
+                .and_then(|db| db.visuals_by_id.get(&id))
+            {
+                Some(asset) => VisualAssetDetail::from(asset),
+                None => return Ok(None),
+            };
+            // `pool()` takes `&mut`, so it runs after the detail is owned; the lock is dropped with
+            // this block, leaving the archives to be scanned without holding the state
+            (detail, st.pool().ok())
+        };
+
+        // Only the mesh is resolved: textures and virtual textures always sit in their own fixed
+        // archive (`Textures.pak` / `VirtualTextures.pak`), while a GR2 is in `Models.pak` for some
+        // visuals and `Shared.pak` for others, which no rule can predict
+        let located = match pool {
+            Some(pool) => lock_pool(&pool)
+                .map(|mut package| package.locate_many(std::slice::from_ref(&detail.path)))
+                .unwrap_or_default(),
+            None => HashMap::new(),
+        };
+
+        // Archive names are decoration: an unresolved file just renders without one
+        detail.mesh_pak = located.get(&detail.path).cloned().unwrap_or_default();
+
+        Ok(Some(detail))
+    })
+        .await
+        .map_err(|err| format!("Detail task terminated unexpectedly: {err}"))?
 }
 
 /// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview

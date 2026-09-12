@@ -15,9 +15,8 @@ import {
   type VisualAsset,
 } from '../api/tauri'
 import ProgressBar from './ProgressBar.vue'
-import {visualLabel} from '../utils/labels'
 
-/** The asset itself: the request is addressed by its GUID, which the header also shows next to the name */
+/** The asset itself: the request is addressed by its GUID */
 const props = defineProps<{ asset: VisualAsset | null }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -138,10 +137,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               {{ $t('export.title') }}
             </h2>
             <p
-                :title="asset ? visualLabel(asset.name, asset.id) : undefined"
+                :title="asset?.name"
                 class="mt-1 truncate font-mono text-[12px] text-glow-cyan"
             >
-              {{ asset ? visualLabel(asset.name, asset.id) : $t('export.emptyName') }}
+              {{ asset ? asset.name : $t('export.emptyName') }}
             </p>
           </div>
           <button

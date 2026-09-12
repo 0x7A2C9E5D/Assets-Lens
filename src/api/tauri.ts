@@ -18,6 +18,7 @@ export interface TextureRef {
     id: string
     name: string
     path: string
+    /** Archive holding this DDS (e.g. `Textures.pak`); empty when it cannot be resolved */
     source: string
     width: number
     height: number
@@ -35,6 +36,8 @@ export interface VisualAsset {
     id: string
     name: string
     path: string
+    /** Archive holding the GR2 mesh (e.g. `Models.pak`); empty when it cannot be resolved */
+    meshPak: string
     materialIds: string[]
     textures: TextureRef[]
     virtualTextures: VirtualTextureRef[]
