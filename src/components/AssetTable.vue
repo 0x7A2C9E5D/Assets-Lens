@@ -1,26 +1,40 @@
 <script lang="ts" setup>
-import type {VisualSummary} from '../api/tauri'
-import {Grid2x2, Image, Loader2, Palette} from 'lucide-vue-next'
+import type {VisualSort, VisualSummary} from '../api/tauri'
+import {ArrowDown, ArrowUp, Grid2x2, Image, Loader2, Palette} from 'lucide-vue-next'
 
 const props = defineProps<{
   rows: VisualSummary[]
+  /** Selected row, identified by the visual GUID (names are not unique) */
   selected: string | null
   loading: boolean
+  /** Active sort column and direction: that header stays lit and carries the arrow */
+  sortBy: VisualSort
+  sortDesc: boolean
   hideEmpty?: boolean
 }>()
 
-const emit = defineEmits(['select', 'move'])
+const emit = defineEmits(['select', 'move', 'sort'])
 
-function isActive(name: string) {
-  return props.selected === name
+function isActive(id: string) {
+  return props.selected === id
 }
 
-/** Four-column layout: the name column is ≥220px wide to fit asset names, and 1fr absorbs the
- *  remaining space so the table fills its wrapper; the three count columns are fixed at 80px
- *  (14px icon + padding) — they skip fr distribution for a compact, gap-free fit.
- *  Key: with the numeric columns fixed the table always fills the wrapper with zero leftover and
- *  the name column simply grows as needed */
-const GRID_COLS = 'minmax(220px, 1fr) repeat(3, 80px)'
+function isSorted(field: VisualSort) {
+  return props.sortBy === field
+}
+
+/** Header label colour: the active sort column stays lit, the other one only lights up on hover */
+function headerClass(field: VisualSort) {
+  return isSorted(field) ? 'text-glow-cyan' : 'hover:text-[#E6EDF7]'
+}
+
+/** Five-column layout: the UUID column leads and caps at 300px (a full 36-char GUID at 12px mono +
+ *  padding) but starts at 0, so a narrow window shrinks it to a truncating stub — with a `title`
+ *  fallback — instead of pushing the other columns out of the grid; the name column is ≥220px wide
+ *  to fit asset names and its 1fr absorbs the remaining space, so the table always fills its
+ *  wrapper with zero leftover; the three count columns are fixed at 80px (14px icon + padding) —
+ *  they skip fr distribution for a compact, gap-free fit. */
+const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
 </script>
 
 <template>
@@ -44,7 +58,30 @@ const GRID_COLS = 'minmax(220px, 1fr) repeat(3, 80px)'
           :style="{gridTemplateColumns: GRID_COLS}"
           class="sticky top-0 z-10 grid w-full items-center bg-ink-800/95 text-xs uppercase tracking-wider text-muted shadow-[inset_0_-1px_0_0_rgb(255_255_255_/_0.05)]"
       >
-        <div class="px-4 py-3 font-medium">{{ $t('table.headerName') }}</div>
+        <button
+            :aria-label="$t('table.sortById')"
+            :class="headerClass('id')"
+            :title="$t('table.sortById')"
+            class="flex w-full items-center justify-center gap-1 px-4 py-3 font-medium uppercase tracking-wider transition-colors"
+            type="button"
+            @click="emit('sort', 'id')"
+        >
+          <span class="min-w-0 truncate">{{ $t('table.headerUuid') }}</span>
+          <ArrowUp v-if="isSorted('id') && !sortDesc" class="h-3 w-3 shrink-0"/>
+          <ArrowDown v-else-if="isSorted('id')" class="h-3 w-3 shrink-0"/>
+        </button>
+        <button
+            :aria-label="$t('table.sortByName')"
+            :class="headerClass('name')"
+            :title="$t('table.sortByName')"
+            class="flex w-full items-center justify-center gap-1 px-4 py-3 font-medium uppercase tracking-wider transition-colors"
+            type="button"
+            @click="emit('sort', 'name')"
+        >
+          <span class="min-w-0 truncate">{{ $t('table.headerName') }}</span>
+          <ArrowUp v-if="isSorted('name') && !sortDesc" class="h-3 w-3 shrink-0"/>
+          <ArrowDown v-else-if="isSorted('name')" class="h-3 w-3 shrink-0"/>
+        </button>
         <div
             :title="$t('table.headerMaterial')"
             class="flex items-center justify-center px-3 py-3"
@@ -67,18 +104,21 @@ const GRID_COLS = 'minmax(220px, 1fr) repeat(3, 80px)'
 
       <div
           v-for="row in rows"
-          :key="row.name"
-          :class="isActive(row.name) ? 'bg-glow-cyan/10' : ''"
+          :key="row.id"
+          :class="isActive(row.id) ? 'bg-glow-cyan/10' : ''"
           :style="{gridTemplateColumns: GRID_COLS}"
           class="grid w-full cursor-pointer items-center transition-colors shadow-[inset_0_-1px_0_0_rgb(255_255_255_/_0.05)] last:shadow-none hover:bg-white/5"
-          @click="emit('select', row.name)"
+          @click="emit('select', row.id)"
       >
-        <div class="relative truncate px-4 py-2 font-mono text-[13px]">
+        <div :title="row.id" class="truncate px-4 py-2 text-center font-mono text-[12px] text-muted">
+          {{ row.id }}
+        </div>
+        <div class="relative truncate px-4 py-2 text-center font-mono text-[13px]">
           <span
-              v-if="isActive(row.name)"
+              v-if="isActive(row.id)"
               class="absolute inset-y-1 left-0 w-[3px] rounded-r bg-glow-cyan"
           />
-          <span :class="isActive(row.name) ? 'text-glow-cyan' : 'text-[#E6EDF7]'">
+          <span :class="isActive(row.id) ? 'text-glow-cyan' : 'text-[#E6EDF7]'">
             {{ row.name }}
           </span>
         </div>

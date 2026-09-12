@@ -20,9 +20,13 @@ pub struct AppState {
     pub resolver: Option<Arc<GameDataResolver>>,
     pub game_path: Option<std::path::PathBuf>,
     pub merged_db: Option<MergedDatabase>,
-    /// Sorted visual names kept after building, so pagination order stays stable
-    /// (HashMap iteration order is not deterministic)
-    pub visual_names: Vec<String>,
+    /// Sorted visual GUIDs kept after building, so pagination order stays stable
+    /// (HashMap iteration order is not deterministic). Ids rather than names: a name can belong to
+    /// several visuals, so keying the list by name would silently drop the duplicates.
+    pub visual_ids: Vec<String>,
+    /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
+    /// picks a sequence instead of re-sorting every id on each page request.
+    pub visual_ids_by_id: Vec<String>,
     /// Index of `.gtp` paths across all PAK archives, looked up by GTex hash;
     /// built lazily on the first export that needs virtual textures
     pub texture_index: Option<Vec<String>>,
@@ -38,7 +42,8 @@ impl AppState {
             resolver: None,
             game_path: None,
             merged_db: None,
-            visual_names: Vec::new(),
+            visual_ids: Vec::new(),
+            visual_ids_by_id: Vec::new(),
             texture_index: None,
             packages: None,
         }
@@ -47,7 +52,8 @@ impl AppState {
     /// Clear all caches after switching the game data directory
     pub fn reset_index(&mut self) {
         self.merged_db = None;
-        self.visual_names.clear();
+        self.visual_ids.clear();
+        self.visual_ids_by_id.clear();
         self.texture_index = None;
         // The archives still open belong to the previous directory
         self.packages = None;

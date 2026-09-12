@@ -12,10 +12,13 @@ import {
   type MeshFormat,
   pickDirectory,
   type TextureFormat,
+  type VisualAsset,
 } from '../api/tauri'
 import ProgressBar from './ProgressBar.vue'
+import {visualLabel} from '../utils/labels'
 
-const props = defineProps<{ assetName: string | null }>()
+/** The asset itself: the request is addressed by its GUID, which the header also shows next to the name */
+const props = defineProps<{ asset: VisualAsset | null }>()
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -37,7 +40,7 @@ const meshFormat = ref<MeshFormat>('gr2')
 /** Texture output format; asset.json is always generated */
 const textureFormat = ref<TextureFormat>('dds')
 
-const canStart = computed(() => !!props.assetName && !!destDir.value && !running.value)
+const canStart = computed(() => !!props.asset && !!destDir.value && !running.value)
 
 const phaseLabel = computed(() => {
   const phase = progress.value?.phase
@@ -50,7 +53,7 @@ async function chooseDir() {
 }
 
 async function start() {
-  if (!props.assetName || !destDir.value) return
+  if (!props.asset || !destDir.value) return
 
   running.value = true
   errorMsg.value = ''
@@ -69,7 +72,7 @@ async function start() {
 
   try {
     result.value = await exportVisualAsset(
-        props.assetName,
+        props.asset.id,
         destDir.value,
         requested,
         channel,
@@ -134,8 +137,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <Download class="h-4 w-4 text-glow-cyan"/>
               {{ $t('export.title') }}
             </h2>
-            <p class="mt-1 truncate font-mono text-[12px] text-glow-cyan">
-              {{ assetName || $t('export.emptyName') }}
+            <p
+                :title="asset ? visualLabel(asset.name, asset.id) : undefined"
+                class="mt-1 truncate font-mono text-[12px] text-glow-cyan"
+            >
+              {{ asset ? visualLabel(asset.name, asset.id) : $t('export.emptyName') }}
             </p>
           </div>
           <button

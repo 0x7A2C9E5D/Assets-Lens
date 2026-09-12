@@ -91,8 +91,8 @@ const zhCN = {
 
     browse: {
         title: '浏览资源',
-        subtitle: '按资源名称顺序浏览；点击任意条目即可查看详情',
-        searchPlaceholder: '按名称搜索资源',
+        subtitle: '点击表头可按名称或 ID 排序；点击任意条目即可查看详情',
+        searchPlaceholder: '按名称或 ID 搜索',
         searchClearAria: '清空搜索',
         searchEmpty: '没有匹配 “{term}” 的资源',
         searchClearAction: '清空搜索',
@@ -103,9 +103,12 @@ const zhCN = {
 
     table: {
         headerName: '资源名称',
+        headerUuid: 'UUID',
         headerMaterial: '材质',
         headerTexture: '纹理',
         headerVirtual: '虚拟纹理',
+        sortByName: '按名称排序',
+        sortById: '按 ID 排序',
         empty: '没有可显示的条目',
     },
 

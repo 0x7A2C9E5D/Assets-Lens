@@ -33,6 +33,29 @@ fn parse_fraction(current: usize, total: usize) -> f32 {
     }
 }
 
+/// Every visual GUID in both ascending orders the list can be sorted by: by (name, id) — the
+/// default — and by id. Names are only a sort key: they are not unique, so using them as the
+/// identity would collapse same-named visuals into one list row. Sorting by name first keeps those
+/// duplicates adjacent while the id tiebreak keeps pagination deterministic.
+///
+/// Both orders are built here, once, so a sort change only picks a different cached sequence
+/// instead of re-sorting every id on each page request.
+fn sorted_visual_ids(db: &MergedDatabase) -> (Vec<String>, Vec<String>) {
+    let mut rows: Vec<(&str, &str)> = db
+        .visuals_by_id
+        .values()
+        .map(|visual| (visual.name.as_str(), visual.id.as_str()))
+        .collect();
+    rows.sort_unstable();
+    let by_name: Vec<String> = rows.into_iter().map(|(_, id)| id.to_string()).collect();
+
+    let mut ids: Vec<&str> = db.visuals_by_id.keys().map(String::as_str).collect();
+    ids.sort_unstable();
+    let by_id: Vec<String> = ids.into_iter().map(str::to_string).collect();
+
+    (by_name, by_id)
+}
+
 /// Auto-detect the BG3 Data directory (default Steam install location)
 #[tauri::command]
 pub fn detect_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
@@ -138,9 +161,8 @@ pub async fn build_database(
         db.resolve_references();
 
         let stats = db.stats();
-        let mut visual_names: Vec<String> = db.visual_names().map(|n| n.to_string()).collect();
-        visual_names.sort();
-        let visual_count = visual_names.len();
+        let (visual_ids, visual_ids_by_id) = sorted_visual_ids(&db);
+        let visual_count = visual_ids.len();
 
         // The lock is taken again only to publish the result. A build that raced with a directory
         // switch belongs to the directory that is no longer current, so it is dropped instead.
@@ -152,15 +174,15 @@ pub async fn build_database(
                         .to_string(),
                 );
             }
-            st.visual_names = visual_names;
+            st.visual_ids = visual_ids;
+            st.visual_ids_by_id = visual_ids_by_id;
             st.merged_db = Some(db);
         }
 
         on_progress.send(BuildProgress { percent: 1.0 }).ok();
 
         Ok(DatabaseStats {
-            // The UI browses assets by visual name, and visuals_by_name collapses duplicates.
-            // Count unique names so the dashboard matches the browse list.
+            // One entry per visual GUID, so the dashboard always matches the browse list
             visual_count,
             material_count: stats.material_count,
             texture_count: stats.texture_count,
@@ -180,8 +202,8 @@ pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, 
         Some(db) => {
             let stats = db.stats();
             Ok(Some(DatabaseStats {
-                // Same as build_database: the dashboard should reflect what the UI can actually browse.
-                visual_count: db.visual_names().count(),
+                // Same as build_database: the dashboard should reflect what the UI can actually browse
+                visual_count: st.visual_ids.len(),
                 material_count: stats.material_count,
                 texture_count: stats.texture_count,
                 virtual_texture_count: stats.virtual_texture_count,
@@ -199,34 +221,59 @@ pub fn app_info() -> AppInfo {
     }
 }
 
-/// Browse visual assets page by page (keyword is an optional filter, kept for later search reuse)
+/// Browse visual assets page by page. `keyword` is an optional filter matched against the asset
+/// name or its GUID (so a pasted ID finds its row); `sort` picks the column and `descending` the
+/// direction, both resolved against the orders cached when the database was built.
 #[tauri::command]
 pub fn list_visuals(
     state: State<'_, SharedState>,
     offset: usize,
     limit: usize,
     keyword: Option<String>,
+    sort: Option<String>,
+    descending: Option<bool>,
 ) -> Result<Page<VisualSummary>, String> {
     let st = lock(&state)?;
     let db = st.merged_db.as_ref().ok_or_else(|| NOT_BUILT.to_string())?;
 
-    let matched: Vec<&String> = match keyword {
-        Some(kw) if !kw.trim().is_empty() => {
-            let kw = kw.to_lowercase();
-            st.visual_names
-                .iter()
-                .filter(|name| name.to_lowercase().contains(&kw))
-                .collect()
-        }
-        _ => st.visual_names.iter().collect(),
+    // "id" opts into the GUID order; anything else (including a missing value) keeps the name order
+    let ids = match sort.as_deref() {
+        Some("id") => &st.visual_ids_by_id,
+        _ => &st.visual_ids,
     };
+
+    let keyword = keyword
+        .map(|kw| kw.trim().to_lowercase())
+        .filter(|kw| !kw.is_empty());
+
+    let mut matched: Vec<&String> = ids
+        .iter()
+        .filter(|id| match keyword.as_deref() {
+            None => true,
+            Some(kw) => {
+                // The cached order only holds GUIDs, so the name to match against comes from the
+                // DB. GUIDs are ASCII, so folding them stays a cheap ASCII-lowercase compare.
+                id.as_str().to_ascii_lowercase().contains(kw)
+                    || db
+                        .visuals_by_id
+                        .get(*id)
+                        .is_some_and(|visual| visual.name.to_lowercase().contains(kw))
+            }
+        })
+        .collect();
+
+    // The cached sequences are ascending and a page is sliced out of the matches, so a descending
+    // request flips the whole match set rather than the page
+    if descending.unwrap_or(false) {
+        matched.reverse();
+    }
 
     let total = matched.len();
     let start = offset.min(total);
     let end = (start + limit).min(total);
     let items: Vec<VisualSummary> = matched[start..end]
         .iter()
-        .filter_map(|name| db.get_by_visual_name(name))
+        .filter_map(|id| db.visuals_by_id.get(*id))
         .map(VisualSummary::from)
         .collect();
 
@@ -237,17 +284,17 @@ pub fn list_visuals(
     })
 }
 
-/// Query the detail of a single visual asset
+/// Query the detail of a single visual asset by its GUID (names are not unique)
 #[tauri::command]
 pub fn get_visual(
     state: State<'_, SharedState>,
-    name: String,
+    id: String,
 ) -> Result<Option<VisualAssetDetail>, String> {
     let st = lock(&state)?;
     Ok(st
         .merged_db
         .as_ref()
-        .and_then(|db| db.get_by_visual_name(&name))
+        .and_then(|db| db.visuals_by_id.get(&id))
         .map(VisualAssetDetail::from))
 }
 
@@ -304,7 +351,7 @@ pub async fn get_visual_preview(
 #[tauri::command]
 pub async fn export_visual_asset(
     app: AppHandle,
-    name: String,
+    id: String,
     dest_dir: String,
     options: ExportOptions,
     on_progress: Channel<ExportProgress>,
@@ -322,7 +369,7 @@ pub async fn export_visual_asset(
             let asset = st
                 .merged_db
                 .as_ref()
-                .and_then(|db| db.get_by_visual_name(&name))
+                .and_then(|db| db.visuals_by_id.get(&id))
                 .cloned()
                 .ok_or_else(|| NOT_BUILT.to_string())?;
             // The GTP index is only needed when virtual textures are exported separately

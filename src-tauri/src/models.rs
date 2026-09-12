@@ -58,6 +58,8 @@ impl From<&VirtualTextureRef> for VirtualTextureSummary {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualAssetDetail {
+    /// Visual resource ID (GUID) — the lookup key, since names are not unique
+    pub id: String,
     pub name: String,
     pub path: String,
     pub material_ids: Vec<String>,
@@ -68,6 +70,7 @@ pub struct VisualAssetDetail {
 impl From<&VisualAsset> for VisualAssetDetail {
     fn from(value: &VisualAsset) -> Self {
         Self {
+            id: value.id.clone(),
             name: value.name.clone(),
             path: value.gr2_path.clone(),
             material_ids: value.material_ids.clone(),
@@ -91,6 +94,9 @@ pub struct ModelPreview {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualSummary {
+    /// Visual resource ID (GUID): the row identity — one name can belong to several visuals, so the
+    /// list cannot be keyed by name
+    pub id: String,
     pub name: String,
     pub material_count: usize,
     pub texture_count: usize,
@@ -100,6 +106,7 @@ pub struct VisualSummary {
 impl From<&VisualAsset> for VisualSummary {
     fn from(value: &VisualAsset) -> Self {
         Self {
+            id: value.id.clone(),
             name: value.name.clone(),
             material_count: value.material_ids.len(),
             texture_count: value.textures.len(),

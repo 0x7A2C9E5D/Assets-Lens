@@ -7,7 +7,15 @@ import AssetDetail from '../components/AssetDetail.vue'
 import AssetTable from '../components/AssetTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationBar from '../components/PaginationBar.vue'
-import {dbStats, getVisual, listVisuals, type DatabaseStats, type VisualAsset, type VisualSummary,} from '../api/tauri'
+import {
+  dbStats,
+  getVisual,
+  listVisuals,
+  type DatabaseStats,
+  type VisualAsset,
+  type VisualSort,
+  type VisualSummary,
+} from '../api/tauri'
 
 const router = useRouter()
 const {t} = useI18n()
@@ -15,6 +23,7 @@ const limit = ref(20)
 const offset = ref(0)
 const total = ref(0)
 const rows = ref<VisualSummary[]>([])
+/** Selected visual GUID: the list is not deduplicated by name, so the name cannot identify a row */
 const selected = ref<string | null>(null)
 const asset = ref<VisualAsset | null>(null)
 const loading = ref(false)
@@ -24,13 +33,17 @@ const stats = ref<DatabaseStats | null>(null)
 /** The list is only worth loading once the backend reports a built database */
 const ready = computed(() => stats.value !== null)
 
+/** Sort state: the backend owns the order (paging happens there), the header just picks a column */
+const sortBy = ref<VisualSort>('name')
+const sortDesc = ref(false)
+
 const searchTerm = ref('')
 const searchActive = computed(() => searchTerm.value.trim().length > 0)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 function load() {
   loading.value = true
-  listVisuals(offset.value, limit.value, searchTerm.value)
+  listVisuals(offset.value, limit.value, searchTerm.value, sortBy.value, sortDesc.value)
       .then((page) => {
         rows.value = page.items
         total.value = page.total
@@ -45,12 +58,12 @@ function load() {
       })
 }
 
-function selectRow(name: string) {
-  selected.value = name
+function selectRow(id: string) {
+  selected.value = id
   asset.value = null
   detailLoading.value = true
 
-  getVisual(name)
+  getVisual(id)
       .then((result) => {
         asset.value = result
       })
@@ -65,10 +78,22 @@ function selectRow(name: string) {
 
 function moveSelection(delta: number) {
   if (!rows.value.length) return
-  const names = rows.value.map((row) => row.name)
-  const index = names.indexOf(selected.value ?? '')
-  const next = index === -1 ? 0 : Math.min(Math.max(index + delta, 0), names.length - 1)
-  selectRow(names[next])
+  const ids = rows.value.map((row) => row.id)
+  const index = ids.indexOf(selected.value ?? '')
+  const next = index === -1 ? 0 : Math.min(Math.max(index + delta, 0), ids.length - 1)
+  selectRow(ids[next])
+}
+
+/** Header click: the active column flips direction, another column starts ascending again */
+function toggleSort(field: VisualSort) {
+  if (sortBy.value === field) {
+    sortDesc.value = !sortDesc.value
+  } else {
+    sortBy.value = field
+    sortDesc.value = false
+  }
+  offset.value = 0
+  load()
 }
 
 function changePage(nextOffset: number) {
@@ -171,8 +196,11 @@ onMounted(() => {
               :loading="loading"
               :rows="rows"
               :selected="selected"
+              :sort-by="sortBy"
+              :sort-desc="sortDesc"
               @move="moveSelection"
               @select="selectRow"
+              @sort="toggleSort"
           />
         </div>
 

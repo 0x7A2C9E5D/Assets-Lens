@@ -31,6 +31,8 @@ export interface VirtualTextureRef {
 }
 
 export interface VisualAsset {
+    /** Visual resource ID (GUID) — the lookup key, since names are not unique */
+    id: string
     name: string
     path: string
     materialIds: string[]
@@ -39,6 +41,8 @@ export interface VisualAsset {
 }
 
 export interface VisualSummary {
+    /** Visual resource ID (GUID): the row identity — one name can belong to several visuals */
+    id: string
     name: string
     materialCount: number
     textureCount: number
@@ -85,20 +89,31 @@ export function dbStats(): Promise<DatabaseStats | null> {
     return invoke<DatabaseStats | null>('db_stats')
 }
 
+/** Sort columns the browse list offers; each maps to an order cached by the backend */
+export type VisualSort = 'name' | 'id'
+
+/**
+ * One page of visual assets. `keyword` matches the asset name or its GUID; `sort` / `descending`
+ * select the backend's cached order — sorting has to happen there, because the list is paged there.
+ */
 export function listVisuals(
     offset: number,
     limit: number,
     keyword?: string,
+    sort: VisualSort = 'name',
+    descending = false,
 ): Promise<Page<VisualSummary>> {
     return invoke<Page<VisualSummary>>('list_visuals', {
         offset,
         limit,
         keyword: keyword && keyword.trim() ? keyword : null,
+        sort,
+        descending,
     })
 }
 
-export function getVisual(name: string): Promise<VisualAsset | null> {
-    return invoke<VisualAsset | null>('get_visual', {name})
+export function getVisual(id: string): Promise<VisualAsset | null> {
+    return invoke<VisualAsset | null>('get_visual', {id})
 }
 
 /** Fetch the GLB mesh geometry (no textures) converted from the asset's GR2 file for the three.js preview */
@@ -152,16 +167,17 @@ export interface ExportResult {
 }
 
 /**
- * Export a single visual asset to the given directory (the backend creates a subdirectory named
- * after the asset). Progress is pushed stage by stage through the Channel.
+ * Export a single visual asset (addressed by its GUID — the name is not unique) to the given
+ * directory; the backend creates a subdirectory named after the asset. Progress is pushed stage by
+ * stage through the Channel.
  */
 export function exportVisualAsset(
-    name: string,
+    id: string,
     destDir: string,
     options: ExportOptions,
     onProgress: Channel<ExportProgress>,
 ): Promise<ExportResult> {
-    return invoke<ExportResult>('export_visual_asset', {name, destDir, options, onProgress})
+    return invoke<ExportResult>('export_visual_asset', {id, destDir, options, onProgress})
 }
 
 /** Open the system directory picker and return the selected path (null when canceled) */

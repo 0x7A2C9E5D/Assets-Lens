@@ -11,7 +11,7 @@ A **Tauri 2** desktop tool: it locates the local *Baldur's Gate 3* Data director
 ### Features
 
 - **Database page**: auto-detect the default Steam install path, or pick the Data directory containing `Shared.pak` through the native folder dialog; while building the merged index, per-file progress (pushed over a `Channel`) and elapsed time are shown, followed by Visual / Material / Texture / Virtual Texture stat cards
-- **Browse page**: a stably sorted, paginated list of visual assets with debounced keyword search and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D preview, GR2 mesh path, source PAK, material IDs, DDS texture list and virtual texture hashes in the right-hand detail panel
+- **Browse page**: a paginated list of visual assets, sortable by name or GUID from the column headers, with debounced keyword search that matches a name or a GUID and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D preview, GR2 mesh path, source PAK, material IDs, DDS texture list and virtual texture hashes in the right-hand detail panel
 - **3D preview**: an embedded three.js viewport loaded on demand; the backend converts GR2 to GLB and ships it as Base64 — geometry only, no textures, rendered with a neutral unlit material so broken normals or missing maps can never turn the model black
 - **Asset export**: the detail panel's *Export* button opens format options and a target directory, then writes to `<target>/<asset name>/`; progress is pushed phase by phase and a single missing item only records a note instead of aborting the export
 - **About page**: the running version sits next to the app name — with a single amber arrow welded into the badge when a newer release is out, whose tooltip carries the published number — plus GitHub / Nexus Mods links, the tech stack, credits and the rights / privacy / license statements
@@ -170,7 +170,7 @@ This tool is an independently developed, unofficial third-party application, nei
 ### 功能
 
 - **数据库页**：自动检测 Steam 默认安装路径，或用系统原生目录对话框手动选择含 `Shared.pak` 的 Data 目录；构建合并索引时通过 `Channel` 推送逐文件进度并显示耗时，完成后展示 Visual / Material / Texture / Virtual Texture 统计卡片
-- **浏览页**：按名称对视觉资源稳定排序分页浏览，支持关键字搜索（防抖过滤）与键盘 `↑` / `↓` 依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径、来源 PAK、材质 ID、DDS 纹理列表与虚拟纹理哈希
+- **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓` 依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径、来源 PAK、材质 ID、DDS 纹理列表与虚拟纹理哈希
 - **3D 预览**：详情面板内嵌 three.js 视口，按需加载；后端把 GR2 转换成 GLB 后以 Base64 传给前端，纯几何、无贴图，使用中性灰无光照材质，避免法线/贴图缺失导致模型全黑
 - **资源导出**：详情面板「导出」按钮 → 选择网格格式与纹理格式、目标目录，导出到 `<目标目录>/<资源名>/`；逐阶段推送进度，单项缺失只记「提示」不中断整个导出
 - **关于页**：应用名旁显示当前运行版本；当 Nexus Mods 上已发布更新的版本时，版本徽标内会多出一个琥珀色箭头（已发布版本号只出现在悬浮提示里），并提供 GitHub / Nexus Mods 外链、技术栈、致谢与权利 / 隐私 / 许可声明

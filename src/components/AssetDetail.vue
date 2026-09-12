@@ -3,6 +3,7 @@ import {defineAsyncComponent, ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {Download, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
 import type {VisualAsset} from '../api/tauri'
+import {visualLabel} from '../utils/labels'
 import ExportDialog from './ExportDialog.vue'
 
 /**
@@ -37,7 +38,7 @@ const exportOpen = ref(false)
             {{ $t('detail.visualAsset') }}
           </p>
           <h3 class="mt-1 break-all font-mono text-base font-semibold text-[#E6EDF7]">
-            {{ asset.name }}
+            {{ visualLabel(asset.name, asset.id) }}
           </h3>
         </div>
         <button
@@ -135,6 +136,6 @@ const exportOpen = ref(false)
     </div>
 
     <!-- Export dialog: teleported to body so it is unaffected by the detail panel's scrolling and stacking context -->
-    <ExportDialog v-if="exportOpen" :asset-name="asset?.name ?? null" @close="exportOpen = false"/>
+    <ExportDialog v-if="exportOpen" :asset="asset" @close="exportOpen = false"/>
   </aside>
 </template>

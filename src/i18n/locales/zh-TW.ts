@@ -91,8 +91,8 @@ const zhTW = {
 
     browse: {
         title: '瀏覽資源',
-        subtitle: '依資源名稱排序瀏覽；點選任一項目即可查看詳細資料',
-        searchPlaceholder: '依名稱搜尋資源',
+        subtitle: '點選表頭可依名稱或 ID 排序；點選任一項目即可查看詳細資料',
+        searchPlaceholder: '依名稱或 ID 搜尋',
         searchClearAria: '清除搜尋',
         searchEmpty: '沒有符合「{term}」的資源',
         searchClearAction: '清除搜尋',
@@ -103,9 +103,12 @@ const zhTW = {
 
     table: {
         headerName: '資源名稱',
+        headerUuid: 'UUID',
         headerMaterial: '材質',
         headerTexture: '紋理',
         headerVirtual: '虛擬紋理',
+        sortByName: '依名稱排序',
+        sortById: '依 ID 排序',
         empty: '沒有可顯示的項目',
     },
 
