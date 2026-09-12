@@ -95,26 +95,19 @@ impl AppState {
             return index.clone();
         }
 
+        // A missing pool and a poisoned lock degrade the same way: the export simply runs without
+        // virtual textures instead of failing, so both paths log and fall back to an empty index.
+        let skipped = |err: String| {
+            eprintln!("[maclarian] build GTP index failed: {err}");
+            Vec::new()
+        };
         let built = match self.pool() {
-            Ok(pool) => match lock_pool(&pool) {
-                Ok(mut pool) => build_gtp_index(&mut pool),
-                Err(err) => {
-                    eprintln!("[maclarian] build GTP index failed: {err}");
-                    Vec::new()
-                }
-            },
-            Err(err) => {
-                eprintln!("[maclarian] build GTP index failed: {err}");
-                Vec::new()
-            }
+            Ok(pool) => lock_pool(&pool)
+                .map(|mut pool| build_gtp_index(&mut pool))
+                .unwrap_or_else(skipped),
+            Err(err) => skipped(err),
         };
         self.texture_index = Some(built.clone());
         built
-    }
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self::new()
     }
 }

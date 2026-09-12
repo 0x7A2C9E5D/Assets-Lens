@@ -13,6 +13,7 @@ import {
   pickDirectory,
   type TextureFormat,
 } from '../api/tauri'
+import ProgressBar from './ProgressBar.vue'
 
 const props = defineProps<{ assetName: string | null }>()
 
@@ -37,11 +38,6 @@ const meshFormat = ref<MeshFormat>('gr2')
 const textureFormat = ref<TextureFormat>('dds')
 
 const canStart = computed(() => !!props.assetName && !!destDir.value && !running.value)
-
-const percent = computed(() => {
-  const value = progress.value?.percent ?? 0
-  return `${Math.min(100, Math.max(0, value * 100)).toFixed(1)}%`
-})
 
 const phaseLabel = computed(() => {
   const phase = progress.value?.phase
@@ -234,22 +230,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
           <!-- Progress -->
           <div v-if="running" class="space-y-2 py-2">
-            <div class="flex items-center justify-between text-xs text-muted">
-              <span class="flex items-center gap-2">
-                <Loader2 class="h-3.5 w-3.5 animate-spin text-glow-cyan"/>
-                {{ phaseLabel }}
-              </span>
-              <span class="shrink-0 font-mono">{{ percent }}</span>
-            </div>
-            <div class="relative h-2.5 w-full overflow-hidden rounded-full bg-ink-900/80">
-              <div
-                  :style="{ width: percent }"
-                  class="h-full rounded-full bg-gradient-to-r from-glow-cyan to-glow-blue transition-[width] duration-200"
-              />
-              <div
-                  class="pointer-events-none absolute inset-y-0 left-0 w-1/3 animate-shimmer bg-gradient-to-r from-transparent via-white/25 to-transparent"
-              />
-            </div>
+            <ProgressBar :percent="progress?.percent ?? 0">
+              <Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-glow-cyan"/>
+              {{ phaseLabel }}
+            </ProgressBar>
             <p v-if="progress?.currentFile" class="truncate font-mono text-[11px] text-muted/70">
               {{ progress.currentFile }}
             </p>

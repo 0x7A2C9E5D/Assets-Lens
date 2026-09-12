@@ -12,19 +12,12 @@ import zhTW from './locales/zh-TW'
 
 /** Parsed locale used by the matcher */
 interface LocaleInfo {
-    /** Canonical tag, e.g. `zh-CN` */
-    name: string
     /** Tag with likely subtags filled in, e.g. `zh-Hans-CN` */
     maximized: string
     /** Language plus script, region dropped, e.g. `zh-Hans` */
     neutral: string
     /** Bare language subtag, e.g. `zh` */
     language: string
-}
-
-/** Matching rules, so the lookup below depends on the contract and not on the `Intl` implementation */
-interface CultureMatcher {
-    matches<L extends LocaleInfo>(targetLocale: LocaleInfo, availableLocales: readonly L[]): L[]
 }
 
 /**
@@ -35,42 +28,19 @@ function parseCulture(raw: string): LocaleInfo {
     // Clean up first: Intl rejects POSIX-style tags such as `zh_CN.UTF-8` outright
     const cleaned = raw.trim().toLowerCase().replace(/_/g, '-').split(/[.@]/)[0]
     try {
-        const locale = new Intl.Locale(cleaned)
-        const maximized = locale.maximize()
-        const script = maximized.script
+        const maximized = new Intl.Locale(cleaned).maximize()
         return {
-            name: locale.baseName.toLowerCase(),
             maximized: maximized.baseName.toLowerCase(),
-            neutral: (script ? `${maximized.language}-${script}` : maximized.language).toLowerCase(),
+            neutral: (maximized.script
+                ? `${maximized.language}-${maximized.script}`
+                : maximized.language
+            ).toLowerCase(),
             language: maximized.language.toLowerCase(),
         }
     } catch {
         // Malformed tag, or an engine without Intl.Locale
         const language = cleaned.split('-')[0]
-        return {name: cleaned, maximized: cleaned, neutral: language, language}
-    }
-}
-
-/**
- * Most specific first: the same culture once likely subtags are filled in, then the same neutral
- * culture (same language and script, region ignored). There is no language-only level on purpose —
- * Chinese written in the wrong script is a wrong answer, not a graceful fallback.
- */
-class IntlCultureMatcher implements CultureMatcher {
-    matches<L extends LocaleInfo>(
-        targetLocale: LocaleInfo,
-        availableLocales: readonly L[],
-    ): L[] {
-        const find = (predicate: (locale: L) => boolean): L[] | null => {
-            const hits = availableLocales.filter(predicate)
-            return hits.length > 0 ? hits : null
-        }
-
-        return (
-            find((locale) => locale.maximized === targetLocale.maximized) ??
-            find((locale) => locale.neutral === targetLocale.neutral) ??
-            []
-        )
+        return {maximized: cleaned, neutral: language, language}
     }
 }
 
@@ -121,9 +91,7 @@ export const SUPPORTED_LOCALES: readonly {code: LocaleCode; label: string}[] = C
 
 /** Fallback language: English, looked up among the shipped bundles instead of spelled out */
 export const DEFAULT_LOCALE: LocaleCode =
-    SUPPORTED_LOCALES.find(({code}) => parseCulture(code).language === 'en')?.code ??
-    CODES[0] ??
-    'en-US'
+    SUPPORTED_LOCALES.find(({code}) => parseCulture(code).language === 'en')?.code ?? 'en-US'
 
 /** Only codes that actually ship a bundle are settable */
 function isSupported(value: unknown): value is LocaleCode {
@@ -140,12 +108,19 @@ const AVAILABLE_CULTURES: readonly AvailableCulture[] = SUPPORTED_LOCALES.map(({
     code,
 }))
 
-const cultureMatcher: CultureMatcher = new IntlCultureMatcher()
-
-/** Best shipped locale for one tag, or null so the caller can try its next preference */
+/**
+ * Best shipped locale for one tag, or null so the caller can try its next preference. Most specific
+ * first: the same culture once likely subtags are filled in, then the same neutral culture (same
+ * language and script, region ignored). There is no language-only level on purpose — Chinese written
+ * in the wrong script is a wrong answer, not a graceful fallback.
+ */
 function resolveCulture(raw: string): LocaleCode | null {
-    const [best] = cultureMatcher.matches(parseCulture(raw), AVAILABLE_CULTURES)
-    return best?.code ?? null
+    const target = parseCulture(raw)
+    return (
+        AVAILABLE_CULTURES.find((locale) => locale.maximized === target.maximized)?.code ??
+        AVAILABLE_CULTURES.find((locale) => locale.neutral === target.neutral)?.code ??
+        null
+    )
 }
 
 /** First match in the user's ordered preferences, else English */

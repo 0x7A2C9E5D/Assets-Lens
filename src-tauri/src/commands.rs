@@ -31,6 +31,28 @@ const NOT_BUILT: &str = "Resource database has not been built. Please go to the 
 const BASE_PROGRESS_SHARE: f32 = 0.9;
 const MOD_PROGRESS_SHARE: f32 = 1.0 - BASE_PROGRESS_SHARE;
 
+/// How far one archive has been parsed, as a fraction (0 while the archive reports no file count)
+fn parse_fraction(current: usize, total: usize) -> f32 {
+    if total == 0 {
+        0.0
+    } else {
+        current as f32 / total as f32
+    }
+}
+
+/// Split the per-visual source map into (base game, installed mod) counts, as shown on the dashboard
+fn count_visual_sources(sources: &HashMap<String, AssetSource>) -> (usize, usize) {
+    let base = sources
+        .values()
+        .filter(|origin| **origin == AssetSource::Base)
+        .count();
+    let owned = sources
+        .values()
+        .filter(|origin| **origin == AssetSource::Mod)
+        .count();
+    (base, owned)
+}
+
 /// Auto-detect the BG3 Data directory (default Steam install location)
 #[tauri::command]
 pub fn detect_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
@@ -126,14 +148,7 @@ pub async fn build_database(
         }
 
         let channel = on_progress.clone();
-        channel
-            .send(BuildProgress {
-                current: 0,
-                total: 0,
-                current_file: Some("Shared.pak".to_string()),
-                percent: 0.0,
-            })
-            .ok();
+        channel.send(BuildProgress { percent: 0.0 }).ok();
 
         // Without mods the base game archive owns the whole bar; with mods it stops at 90%
         let base_share = if mod_count > 0 {
@@ -144,17 +159,9 @@ pub async fn build_database(
 
         let pak_path = game_path.join("Shared.pak");
         let mut db = MergedDatabase::new(game_path.display().to_string());
-        let parsed = resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, file| {
-            let fraction = if total == 0 {
-                0.0
-            } else {
-                current as f32 / total as f32
-            };
+        let parsed = resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, _| {
             let _ = channel.send(BuildProgress {
-                current,
-                total,
-                current_file: Some(file.to_string()),
-                percent: base_share * fraction,
+                percent: base_share * parse_fraction(current, total),
             });
         });
 
@@ -176,17 +183,9 @@ pub async fn build_database(
             let channel = on_progress.clone();
             let slot_start = BASE_PROGRESS_SHARE + MOD_PROGRESS_SHARE * index as f32 / mod_count as f32;
             let slot_span = MOD_PROGRESS_SHARE / mod_count as f32;
-            let parsed = resolver.parse_pak_with_progress(pak, &mut db, move |current, total, file| {
-                let fraction = if total == 0 {
-                    0.0
-                } else {
-                    current as f32 / total as f32
-                };
+            let parsed = resolver.parse_pak_with_progress(pak, &mut db, move |current, total, _| {
                 let _ = channel.send(BuildProgress {
-                    current,
-                    total,
-                    current_file: Some(file.to_string()),
-                    percent: slot_start + slot_span * fraction,
+                    percent: slot_start + slot_span * parse_fraction(current, total),
                 });
             });
 
@@ -239,14 +238,7 @@ pub async fn build_database(
 
         // The dashboard reads these counts on every render; computing them once here keeps the
         // hot path off the PAK pool.
-        let base_visual_count = visual_sources
-            .values()
-            .filter(|origin| **origin == AssetSource::Base)
-            .count();
-        let mod_visual_count = visual_sources
-            .values()
-            .filter(|origin| **origin == AssetSource::Mod)
-            .count();
+        let (base_visual_count, mod_visual_count) = count_visual_sources(&visual_sources);
 
         // The lock is taken again only to publish the result. A build that raced with a directory
         // switch belongs to the directory that is no longer current, so it is dropped instead.
@@ -263,14 +255,7 @@ pub async fn build_database(
             st.merged_db = Some(db);
         }
 
-        on_progress
-            .send(BuildProgress {
-                current: 1,
-                total: 1,
-                current_file: None,
-                percent: 1.0,
-            })
-            .ok();
+        on_progress.send(BuildProgress { percent: 1.0 }).ok();
 
         Ok(DatabaseStats {
             // The UI browses assets by visual name, and visuals_by_name collapses duplicates.
@@ -296,16 +281,7 @@ pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, 
     match st.merged_db.as_ref() {
         Some(db) => {
             let stats = db.stats();
-            let base_visual_count = st
-                .visual_sources
-                .values()
-                .filter(|origin| **origin == AssetSource::Base)
-                .count();
-            let mod_visual_count = st
-                .visual_sources
-                .values()
-                .filter(|origin| **origin == AssetSource::Mod)
-                .count();
+            let (base_visual_count, mod_visual_count) = count_visual_sources(&st.visual_sources);
             Ok(Some(DatabaseStats {
                 // Same as build_database: the dashboard should reflect what the UI can actually browse.
                 visual_count: db.visual_names().count(),
@@ -389,16 +365,8 @@ pub fn list_visuals(
     let end = (start + limit).min(total);
     let items: Vec<VisualSummary> = matched[start..end]
         .iter()
-        .filter_map(|name| db.get_by_visual_name(name).map(|asset| (name, asset)))
-        .map(|(name, asset)| {
-            let mut summary = VisualSummary::from(asset);
-            summary.origin = st
-                .visual_sources
-                .get(*name)
-                .copied()
-                .unwrap_or(AssetSource::Base);
-            summary
-        })
+        .filter_map(|name| db.get_by_visual_name(name))
+        .map(VisualSummary::from)
         .collect();
 
     Ok(Page {

@@ -12,12 +12,11 @@ const GAME_ID = 3474
 const MOD_ID = 24924
 const ENDPOINT = 'https://api.nexusmods.com/v2/graphql'
 
-/** Minimal document: one mod, its version and when it was last updated */
+/** Minimal document: one mod and its version */
 const MOD_RELEASE_QUERY = `
   query ModRelease($gameId: ID!, $modId: ID!) {
     mod(gameId: $gameId, modId: $modId) {
       version
-      updatedAt
     }
   }
 `
@@ -25,13 +24,11 @@ const MOD_RELEASE_QUERY = `
 /** A published release as reported by Nexus Mods */
 export interface ModRelease {
     version: string
-    /** ISO 8601 timestamp of the last update, empty when the API omits it */
-    updatedAt: string
 }
 
 /** Only the fields this client reads; everything else in the payload is ignored */
 interface ModReleaseResponse {
-    data?: { mod?: { version?: unknown; updatedAt?: unknown } | null }
+    data?: { mod?: { version?: unknown } | null }
     errors?: { message?: string }[]
 }
 
@@ -60,11 +57,7 @@ export async function fetchLatestRelease(): Promise<ModRelease> {
         throw new Error(`Nexus Mods API returned no version: ${reason}`)
     }
 
-    const updatedAt = payload.data?.mod?.updatedAt
-    return {
-        version,
-        updatedAt: typeof updatedAt === 'string' ? updatedAt : '',
-    }
+    return {version}
 }
 
 /**

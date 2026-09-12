@@ -9,7 +9,9 @@ const width = computed(() => `${Math.min(100, Math.max(0, props.percent * 100)).
 <template>
   <div class="space-y-2">
     <div class="flex items-center justify-between text-xs text-muted">
-      <span class="truncate font-mono">{{ $t('progress.working') }}</span>
+      <span class="flex min-w-0 items-center gap-2 truncate font-mono">
+        <slot>{{ $t('progress.working') }}</slot>
+      </span>
       <span class="shrink-0 font-mono">{{ width }}</span>
     </div>
     <div class="relative h-2.5 w-full overflow-hidden rounded-full bg-ink-900/80">

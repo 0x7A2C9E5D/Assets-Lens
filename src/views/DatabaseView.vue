@@ -36,20 +36,13 @@ const building = ref(false)
 const stats = ref<DatabaseStats | null>(null)
 const errorMsg = ref('')
 const elapsed = ref(0)
-const progress = ref<BuildProgress>({current: 0, total: 0, currentFile: null, percent: 0})
+const progress = ref<BuildProgress>({percent: 0})
 
-const statusText = computed(() => {
-  if (building.value) return t('database.status.building')
-  if (stats.value) return t('database.status.ready')
-  if (gamePath.value) return t('database.status.pending')
-  return t('database.status.unset')
-})
-
-const statusClass = computed(() => {
-  if (building.value) return 'border-glow-gold/40 text-glow-gold'
-  if (stats.value) return 'border-emerald-400/40 text-emerald-300'
-  if (gamePath.value) return 'border-glow-cyan/40 text-glow-cyan'
-  return 'border-white/10 text-muted'
+const status = computed(() => {
+  if (building.value) return {text: t('database.status.building'), class: 'border-glow-gold/40 text-glow-gold'}
+  if (stats.value) return {text: t('database.status.ready'), class: 'border-emerald-400/40 text-emerald-300'}
+  if (gamePath.value) return {text: t('database.status.pending'), class: 'border-glow-cyan/40 text-glow-cyan'}
+  return {text: t('database.status.unset'), class: 'border-white/10 text-muted'}
 })
 
 /**
@@ -132,7 +125,7 @@ function build() {
   if (!gamePath.value) return
   building.value = true
   errorMsg.value = ''
-  progress.value = {current: 0, total: 0, currentFile: null, percent: 0}
+  progress.value = {percent: 0}
 
   const started = Date.now()
 
@@ -199,11 +192,11 @@ onMounted(() => {
         <p class="mt-1 text-sm text-muted">{{ $t('database.subtitle') }}</p>
       </div>
       <span
-          :class="statusClass"
+          :class="status.class"
           class="flex items-center gap-2 self-end rounded-full border bg-white/5 px-3 py-1.5 text-xs"
       >
         <Loader2 v-if="building" class="h-3.5 w-3.5 animate-spin"/>
-        {{ statusText }}
+        {{ status.text }}
       </span>
     </header>
 

@@ -11,7 +11,7 @@ import {fetchLatestRelease, isNewerVersion} from '../api/nexus'
 import {getAppInfo} from '../api/tauri'
 import {version as APP_VERSION} from '../../package.json'
 
-export type ReleaseState = 'idle' | 'checking' | 'latest' | 'outdated' | 'failed'
+type ReleaseState = 'idle' | 'checking' | 'latest' | 'outdated' | 'failed'
 
 const localVersion = ref('')
 const remoteVersion = ref('')

@@ -17,11 +17,12 @@ const total = ref(0)
 const rows = ref<VisualSummary[]>([])
 const selected = ref<string | null>(null)
 const asset = ref<VisualAsset | null>(null)
-const ready = ref(false)
 const loading = ref(false)
 const detailLoading = ref(false)
 const errorMsg = ref('')
 const stats = ref<DatabaseStats | null>(null)
+/** The list is only worth loading once the backend reports a built database */
+const ready = computed(() => stats.value !== null)
 /** Active tab: which archive family the list should be filtered by */
 const activeSource = ref<AssetSource>('base')
 
@@ -114,7 +115,6 @@ onUnmounted(() => {
 onMounted(() => {
   dbStats()
       .then((result) => {
-        ready.value = result !== null
         stats.value = result
         if (ready.value) load()
       })

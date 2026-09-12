@@ -29,14 +29,14 @@ use crate::models::{
 };
 
 /// Progress phases (the frontend uses these to look up i18n copy)
-pub const PHASE_PREPARE: &str = "prepare";
-pub const PHASE_MODEL: &str = "model";
+const PHASE_PREPARE: &str = "prepare";
+const PHASE_MODEL: &str = "model";
 /// Raw GR2 copy (no conversion happening, so the frontend shows different copy)
-pub const PHASE_MODEL_RAW: &str = "modelRaw";
-pub const PHASE_TEXTURES: &str = "textures";
-pub const PHASE_VIRTUAL: &str = "virtualTextures";
-pub const PHASE_MANIFEST: &str = "manifest";
-pub const PHASE_DONE: &str = "done";
+const PHASE_MODEL_RAW: &str = "modelRaw";
+const PHASE_TEXTURES: &str = "textures";
+const PHASE_VIRTUAL: &str = "virtualTextures";
+const PHASE_MANIFEST: &str = "manifest";
+const PHASE_DONE: &str = "done";
 
 /// The three layers exported from a virtual texture (order matches `VirtualTextureLayer`).
 /// Extractor output is `<name>_<layer>.dds`; export file names drop the trailing `Map`

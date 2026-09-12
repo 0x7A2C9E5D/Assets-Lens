@@ -4,9 +4,6 @@ import {open} from '@tauri-apps/plugin-dialog'
 import {openUrl} from '@tauri-apps/plugin-opener'
 
 export interface BuildProgress {
-    current: number
-    total: number
-    currentFile: string | null
     percent: number
 }
 
@@ -40,10 +37,8 @@ export interface VirtualTextureRef {
 }
 
 export interface VisualAsset {
-    id: string
     name: string
     path: string
-    source: string
     materialIds: string[]
     textures: TextureRef[]
     virtualTextures: VirtualTextureRef[]
@@ -51,10 +46,6 @@ export interface VisualAsset {
 
 export interface VisualSummary {
     name: string
-    path: string
-    source: string
-    /** Which archive family this asset ultimately resolves to (mod override wins) */
-    origin: 'base' | 'mod'
     materialCount: number
     textureCount: number
     virtualTextureCount: number

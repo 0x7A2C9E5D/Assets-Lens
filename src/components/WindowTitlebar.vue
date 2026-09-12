@@ -62,14 +62,14 @@ onUnmounted(() => {
       @dblclick="handleHeaderDoubleClick"
       @mousedown="handleHeaderMouseDown"
   >
-    <!-- Left placeholder (drag logic is delegated to the header) -->
+    <!-- Spacer: pushes the toolbar right, and doubles as the drag surface of the title bar -->
     <div class="flex h-full flex-1"/>
 
-    <!-- Right toolbar: buttons can be freely added or removed (locale switcher + custom placeholder + window controls) -->
+    <!-- Right toolbar: locale switcher, divider, window controls -->
     <div class="flex h-full items-center gap-1 px-4">
       <LocaleSwitcher/>
 
-      <!-- Toolbar custom-button placeholder: for future Settings / Help etc.; currently empty, keeps only the divider -->
+      <!-- Divider between the toolbar and the window controls -->
       <div aria-hidden="true" class="mx-2 h-5 w-px bg-white/10"/>
 
       <button

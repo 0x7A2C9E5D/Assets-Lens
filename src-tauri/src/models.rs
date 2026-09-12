@@ -5,9 +5,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildProgress {
-    pub current: usize,
-    pub total: usize,
-    pub current_file: Option<String>,
     pub percent: f32,
 }
 
@@ -61,10 +58,8 @@ impl From<&VirtualTextureRef> for VirtualTextureSummary {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualAssetDetail {
-    pub id: String,
     pub name: String,
     pub path: String,
-    pub source: String,
     pub material_ids: Vec<String>,
     pub textures: Vec<TextureSummary>,
     pub virtual_textures: Vec<VirtualTextureSummary>,
@@ -73,10 +68,8 @@ pub struct VisualAssetDetail {
 impl From<&VisualAsset> for VisualAssetDetail {
     fn from(value: &VisualAsset) -> Self {
         Self {
-            id: value.id.clone(),
             name: value.name.clone(),
             path: value.gr2_path.clone(),
-            source: value.source_pak.clone(),
             material_ids: value.material_ids.clone(),
             textures: value.textures.iter().map(TextureSummary::from).collect(),
             virtual_textures: value.virtual_textures.iter().map(VirtualTextureSummary::from).collect(),
@@ -96,8 +89,7 @@ pub struct ModelPreview {
 
 /// Which archive family a visual asset belongs to. Mods override the base game on path collisions
 /// (the later merge wins), so a name only ever resolves to one source
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetSource {
     /// Shipped by the base game (Shared.pak)
     Base,
@@ -110,10 +102,6 @@ pub enum AssetSource {
 #[serde(rename_all = "camelCase")]
 pub struct VisualSummary {
     pub name: String,
-    pub path: String,
-    pub source: String,
-    /// Which archive family this visual ultimately resolves to (mod override wins)
-    pub origin: AssetSource,
     pub material_count: usize,
     pub texture_count: usize,
     pub virtual_texture_count: usize,
@@ -123,11 +111,6 @@ impl From<&VisualAsset> for VisualSummary {
     fn from(value: &VisualAsset) -> Self {
         Self {
             name: value.name.clone(),
-            path: value.gr2_path.clone(),
-            source: value.source_pak.clone(),
-            // Source filter is applied at list time; the in-DB struct does not know which archive
-            // family won the merge for its name, so callers overwrite this field after the fact
-            origin: AssetSource::Base,
             material_count: value.material_ids.len(),
             texture_count: value.textures.len(),
             virtual_texture_count: value.virtual_textures.len(),

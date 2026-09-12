@@ -33,7 +33,7 @@ let Orbit: OrbitCtor | null = null
 let renderer: THREE.WebGLRenderer | null = null
 let scene: THREE.Scene | null = null
 let camera: THREE.PerspectiveCamera | null = null
-let controls: THREE.Object3D | null = null
+let controls: InstanceType<OrbitCtor> | null = null
 let observer: ResizeObserver | null = null
 let model: THREE.Object3D | null = null
 let grid: THREE.Object3D | null = null
@@ -93,7 +93,7 @@ async function initScene() {
   orbit.enableDamping = true
   orbit.dampingFactor = 0.08
   orbit.enablePan = false
-  controls = orbit as unknown as THREE.Object3D
+  controls = orbit
 
   observer = new ResizeObserver(() => resize())
   observer.observe(host)
@@ -115,8 +115,7 @@ function resize() {
 function loop() {
   frameHandle = requestAnimationFrame(loop)
   if (!renderer || !scene || !camera) return
-      ;
-  (controls as unknown as { update(): void } | null)?.update()
+  controls?.update()
   renderer.render(scene, camera)
 }
 
@@ -151,12 +150,7 @@ function removeGrid() {
 
 function renderGlb(bytes: Uint8Array) {
   if (!scene || !camera || !core || !Gltf) return
-  const orbit = controls as unknown as {
-    target: THREE.Vector3
-    minDistance: number
-    maxDistance: number
-    update(): void
-  } | null
+  const orbit = controls
 
   // Copy into a standalone ArrayBuffer: Uint8Array.buffer is typed ArrayBufferLike (could be a
   // SharedArrayBuffer), while GLTFLoader.parse only accepts an ArrayBuffer
@@ -277,7 +271,7 @@ onBeforeUnmount(() => {
   observer?.disconnect()
   clearModel()
   removeGrid()
-  ;(controls as unknown as { dispose?(): void } | null)?.dispose?.()
+  controls?.dispose()
   // dispose() frees this renderer's GPU objects but keeps the WebGL context alive; WebView2 only
   // tolerates about 16 live contexts before discarding the oldest, so a context left behind on every
   // unmount shows up as a black preview after enough asset/route switches. Losing the context is
