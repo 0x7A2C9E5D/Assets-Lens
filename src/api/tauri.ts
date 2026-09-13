@@ -24,8 +24,8 @@ export interface TextureRef {
     height: number
     parameterName: string | null
     /** Names of this asset's materials that bind this texture; absent when there are none to name.
-     *  The texture row shows the texture's own `name` instead, so the panel currently renders
-     *  nothing from this — kept in the payload for the material section */
+     *  The material section inverts this relation (material name → the textures under it); a
+     *  texture row itself carries no material reference */
     materialNames?: string[]
 }
 

@@ -28,8 +28,8 @@ pub struct TextureSummary {
     pub parameter_name: Option<String>,
     /// Names of this asset's materials that bind this texture, in the asset's own material order.
     /// Filled by `get_visual` only, and left out of the JSON while empty (the export manifest
-    /// resolves no names). The texture row no longer renders this — a texture shows its own `name`
-    /// — so it is currently unused by the panel and kept for the material section.
+    /// resolves no names). The material section inverts this to list a material's textures; the
+    /// texture rows themselves carry no material reference.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub material_names: Vec<String>,
 }

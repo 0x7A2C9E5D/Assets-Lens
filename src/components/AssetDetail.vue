@@ -1,8 +1,8 @@
 <script lang="ts" setup>
-import {defineAsyncComponent, ref} from 'vue'
+import {computed, defineAsyncComponent, ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {ChevronDown, Download, FileArchive, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
-import type {VisualAsset} from '../api/tauri'
+import type {TextureRef, VisualAsset} from '../api/tauri'
 import ExportDialog from './ExportDialog.vue'
 
 /**
@@ -12,11 +12,40 @@ import ExportDialog from './ExportDialog.vue'
  */
 const ModelPreview = defineAsyncComponent(() => import('./ModelPreview.vue'))
 
-defineProps<{ asset: VisualAsset | null; loading: boolean }>()
+const props = defineProps<{ asset: VisualAsset | null; loading: boolean }>()
 
 useI18n()
 
 const exportOpen = ref(false)
+
+/**
+ * Material → textures. The payload only carries the relation one way round: every texture row
+ * lists the material names that bind it, so the material section has to invert it. A name is the
+ * only key available (that is what the backend fills in), which also means an unnamed material
+ * shows no textures. Built once per asset instead of rescanning the texture list for every row.
+ */
+const texturesByMaterial = computed(() => {
+  const byMaterial = new Map<string, TextureRef[]>()
+  for (const texture of props.asset?.textures ?? []) {
+    for (const name of texture.materialNames ?? []) {
+      const bound = byMaterial.get(name)
+      if (bound) {
+        bound.push(texture)
+      } else {
+        byMaterial.set(name, [texture])
+      }
+    }
+  }
+  return byMaterial
+})
+
+/** Material rows, each paired with the textures it binds (empty when none are named) */
+const materialsWithTextures = computed(() =>
+  (props.asset?.materials ?? []).map((material) => ({
+    ...material,
+    textures: texturesByMaterial.value.get(material.name) ?? [],
+  })),
+)
 
 /**
  * Section collapsing: every section starts folded, so the panel opens as a compact summary — the
@@ -118,18 +147,41 @@ function toggle(section: SectionKey) {
                 :class="collapsed.materials ? '-rotate-90' : ''"
             />
           </button>
-          <div v-show="!collapsed.materials" class="mt-2 flex flex-wrap gap-1.5">
-            <span
-                v-for="material in asset.materials"
+          <div v-show="!collapsed.materials" class="mt-2 space-y-2">
+            <div
+                v-for="material in materialsWithTextures"
                 :key="material.id"
-                :title="material.sourceFile || material.id"
-                class="break-all rounded-lg border border-cyan-300/15 bg-white/5 px-2 py-1 font-mono text-[11px] text-muted"
+                :title="material.id"
+                class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
             >
-              {{ material.name || material.id }}
-            </span>
-            <span v-if="!asset.materials.length" class="text-xs text-muted/70">
+              <p v-if="material.sourceFile" class="break-all font-mono text-[12px] text-glow-cyan">
+                {{ material.sourceFile }}
+              </p>
+              <p class="mt-1.5 break-all font-mono text-[11px] text-muted">
+                {{ material.name || material.id }}
+              </p>
+              <ul
+                  v-if="material.textures.length"
+                  class="mt-2.5 flex flex-wrap gap-1.5 border-t border-white/5 pt-2"
+              >
+                <li
+                    v-for="texture in material.textures"
+                    :key="texture.id"
+                    class="flex max-w-full items-center gap-1.5 rounded-md bg-white/[0.04] px-1.5 py-1"
+                >
+                  <ImageIcon class="h-3 w-3 shrink-0 text-cyan-300/70"/>
+                  <span class="break-all font-mono text-[11px] text-muted">
+                    {{ texture.name || texture.id }}
+                  </span>
+                  <span v-if="texture.parameterName" class="shrink-0 text-[10px] text-muted/50">
+                    {{ texture.parameterName }}
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <p v-if="!asset.materials.length" class="text-xs text-muted/70">
               {{ $t('detail.none') }}
-            </span>
+            </p>
           </div>
         </div>
 
@@ -159,10 +211,10 @@ function toggle(section: SectionKey) {
                   class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
               >
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
+                <!-- The name and the material slot are material-side facts: the material section already
+                     lists them, so a texture row keeps only what belongs to the file itself. -->
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
-                  <span v-if="tex.name" class="break-all font-mono">{{ tex.name }}</span>
                   <span>{{ tex.width }} × {{ tex.height }}</span>
-                  <span v-if="tex.parameterName">{{ tex.parameterName }}</span>
                   <span
                       v-if="tex.source"
                       :title="$t('detail.pakLabel')"
