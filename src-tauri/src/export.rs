@@ -19,7 +19,7 @@ use maclarian::converter::dds_bytes_to_png_bytes;
 use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
 use maclarian::merged::{GtpMatch, MergedResolver, VirtualTextureRef, VisualAsset};
 use maclarian::pak::{PakOperations, PakReaderCache};
-use maclarian::virtual_texture::{VirtualTextureExtractor, get_subfolder_name};
+use maclarian::virtual_texture::{GtsFile, VirtualTextureExtractor};
 
 use crate::models::{
     ExportManifest, ExportOptions, ExportProgress,
@@ -514,9 +514,9 @@ pub fn run_export(
     }
 
     // ---- 3. Virtual textures: GTP + GTS → three layer DDS files ----
-    // Every virtual texture is read out of the archive its `GtpMatch` came from: that archive and the
-    // page file's own path are the extraction's whole input. A hash maclarian's lookup did not resolve
-    // (no archive, or no page file naming it) reports as not found.
+    // Every virtual texture is read out of the archive its `GtpMatch` came from — nothing here
+    // rebuilds a path from an archive's name; a hash maclarian's lookup did not resolve (no archive,
+    // or no page file naming it) reports as not found.
     if !vt_targets.is_empty() {
         let vt_dir = out_dir.join("virtual_textures");
         fs::create_dir_all(&vt_dir)
@@ -527,34 +527,37 @@ pub fn run_export(
             std::process::id(),
             next_temp_id()
         ));
-        for (seq, vt) in vt_targets.iter().enumerate() {
-            emit(PHASE_VIRTUAL, Some(vt.name.clone()));
+        let shared = temp_root.join("files");
+        if let Err(err) = fs::create_dir_all(&shared) {
+            push_warning(&mut warnings, "vtStagingFailed", err.to_string());
+        } else {
+            for (seq, vt) in vt_targets.iter().enumerate() {
+                emit(PHASE_VIRTUAL, Some(vt.name.clone()));
 
-            let Some(matched) = match_for_hash(vt_matches, &vt.gtex_hash) else {
-                push_warning(&mut warnings, "vtGtpNotFound", vt.gtex_hash.clone());
-                continue;
-            };
+                let Some(matched) = match_for_hash(vt_matches, &vt.gtex_hash) else {
+                    push_warning(&mut warnings, "vtGtpNotFound", vt.gtex_hash.clone());
+                    continue;
+                };
 
-            // A directory per virtual texture: the extraction writes its three layers there, and the
-            // next one starts from an empty directory even if this one failed halfway
-            let stage = temp_root.join(format!("stage_{seq}"));
-            let mut guard = lock_cache(cache)?;
-            if let Err(err) = export_virtual_texture(
-                &mut guard,
-                &matched.pak_path,
-                &matched.gtp_path,
-                &vt.name,
-                &vt_dir,
-                &stage,
-                convert_to_png,
-                &mut files,
-                &mut warnings,
-            ) {
-                push_warning(&mut warnings, "vtFailed", format!("{}: {err}", vt.name));
+                let stage = temp_root.join(format!("stage_{seq}"));
+                let mut guard = lock_cache(cache)?;
+                if let Err(err) = export_virtual_texture(
+                    &mut guard,
+                    matched,
+                    &vt.name,
+                    &vt_dir,
+                    &shared,
+                    &stage,
+                    convert_to_png,
+                    &mut files,
+                    &mut warnings,
+                ) {
+                    push_warning(&mut warnings, "vtFailed", format!("{}: {err}", vt.name));
+                }
+                // Released per virtual texture, so a long export keeps interleaving with previews
+                drop(guard);
+                let _ = fs::remove_dir_all(&stage);
             }
-            // Released per virtual texture, so a long export keeps interleaving with previews
-            drop(guard);
-            let _ = fs::remove_dir_all(&stage);
         }
         let _ = fs::remove_dir_all(&temp_root);
     }
@@ -609,20 +612,18 @@ fn next_temp_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-/// Extract a single virtual texture: `source` is the archive its page file lives in and `path` is
-/// that page file — those two are the whole input, both halves of the pair are read from `source`.
+/// Extract a single virtual texture: pull its GTP/GTS out of the archive the match came from
+/// (`GtpMatch::pak_path`), resolve the three layer DDS files, and write them to the export dir.
 ///
-/// The sidecar needs no lookup: BG3 names it after the tileset that the page file's own name carries
-/// (`..._3_<hash>.gtp` ← `..._3.gts`, the very convention maclarian's own GTS lookup follows), and
-/// the GTex hash is read out of the page file's name as well. Both files are staged into `stage`
-/// first, because the extraction reads them from disk.
+/// Both halves of the pair come from the match: the page file *is* the match, and the sidecar is the
+/// one whose own page list declares it (see `gts_for_match`) — no path is derived from a name.
 #[allow(clippy::too_many_arguments)]
 fn export_virtual_texture(
     cache: &mut PakReaderCache,
-    source: &Path,
-    path: &str,
+    matched: &GtpMatch,
     vt_name: &str,
     vt_dir: &Path,
+    shared: &Path,
     stage: &Path,
     convert_to_png: bool,
     files: &mut Vec<ExportedFile>,
@@ -630,17 +631,24 @@ fn export_virtual_texture(
 ) -> Result<(), String> {
     fs::create_dir_all(stage).map_err(|e| format!("Failed to create staging directory: {e}"))?;
 
-    let gtp_path = stage.join(file_name(path)?);
-    fs::write(&gtp_path, read_from(cache, source, path)?)
-        .map_err(|e| format!("Failed to stage GTP: {e}"))?;
+    let gtp_name = Path::new(&matched.gtp_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("Invalid GTP path: {}", matched.gtp_path))?;
 
-    // The sidecar shares the page file's own name: BG3 appends the GTex hash to a tileset name, and
-    // maclarian's `get_subfolder_name` strips exactly that hash back off
-    let gts_rel = format!("{}.gts", get_subfolder_name(path));
-    let gts_path = stage.join(file_name(&gts_rel)?);
-    fs::write(&gts_path, read_from(cache, source, &gts_rel)?)
-        .map_err(|e| format!("Failed to stage GTS: {e}"))?;
+    // The archive is the match's own field: GTP and GTS are read from where maclarian found the page
+    // file, not from a path derived from the archive's name
+    let match_pak = matched.pak_path.as_path();
 
+    let gtp_path = shared.join(gtp_name);
+    if !gtp_path.exists() {
+        let bytes = read_from(cache, match_pak, &matched.gtp_path)?;
+        fs::write(&gtp_path, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
+    }
+
+    // The match carries the sidecar too: the GTS that declares this page file is the one to extract
+    // with, so the pairing is decided once instead of being retried until an extraction succeeds
+    let gts_path = gts_for_match(cache, matched, shared)?;
     VirtualTextureExtractor::extract_with_gts(&gtp_path, &gts_path, stage)
         .map_err(|err| format!("Virtual texture extraction failed: {err}"))?;
 
@@ -697,11 +705,65 @@ fn export_virtual_texture(
     Ok(())
 }
 
-/// The last segment of a path inside an archive, e.g. the `Albedo_Normal_Physical_3_<hash>.gtp` of
-/// `Generated/Public/VirtualTextures/Albedo_Normal_Physical_3_<hash>.gtp`
-fn file_name(path: &str) -> Result<&str, String> {
-    Path::new(path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| format!("Invalid page file path: {path}"))
+/// The GTS sidecar that declares the match's page file, staged into the `shared` directory.
+///
+/// The pairing is the metadata's own: a GTS lists the page files it holds, so the sidecar whose
+/// `GtsFile::find_page_file_index` answers with the match's hash is the one extraction must use.
+/// Nothing is derived from the page file's name and no candidate is tried until one extracts.
+///
+/// The sidecars sit next to the page files in the very archive the match came from
+/// (`GtpMatch::pak_path`; a full install keeps all 16 of them in `VirtualTextures.pak` and in no other
+/// archive), so this looks in that archive instead of in a path built from an archive's name.
+///
+/// maclarian compares the hash case-sensitively, and the match carries the lowercase one the lookup
+/// searched with (`find_vt_matches`), which is why it is folded once more here.
+fn gts_for_match(
+    cache: &mut PakReaderCache,
+    matched: &GtpMatch,
+    shared: &Path,
+) -> Result<PathBuf, String> {
+    let hash = matched.gtex_hash.trim().to_ascii_lowercase();
+    if hash.is_empty() {
+        return Err("the match carries no GTex hash".to_string());
+    }
+
+    let pak = matched.pak_path.as_path();
+    let candidates = PakOperations::list(pak)
+        .map_err(|e| format!("Failed to list {}: {e}", pak.display()))?
+        .into_iter()
+        .filter(|path| path.to_lowercase().ends_with(".gts"));
+
+    for rel in candidates {
+        // A sidecar that cannot be read or parsed cannot be the one declaring this page file
+        let Some(path) = stage_file(cache, pak, &rel, shared) else {
+            continue;
+        };
+        if declares_page_file(&path, &hash) {
+            return Ok(path);
+        }
+    }
+
+    Err(format!("no .gts in {} declares {hash}", pak.display()))
+}
+
+/// Whether the sidecar staged at `path` lists a page file for `hash` (an unreadable one does not)
+fn declares_page_file(path: &Path, hash: &str) -> bool {
+    GtsFile::open(path).is_ok_and(|gts| gts.find_page_file_index(hash).is_some())
+}
+
+/// Copy one file out of the archive a match recorded into the shared staging directory, reusing it
+/// when an earlier virtual texture of the same export staged it already (a GTS covers many pages).
+///
+/// `None` means the archive does not hold that path or the read failed: for a sidecar candidate that
+/// is the same answer as "not the one".
+fn stage_file(cache: &mut PakReaderCache, pak: &Path, rel: &str, shared: &Path) -> Option<PathBuf> {
+    let name = Path::new(rel).file_name().and_then(|n| n.to_str())?;
+    let path = shared.join(name);
+    if path.exists() {
+        return Some(path);
+    }
+
+    let bytes = read_from(cache, pak, rel).ok()?;
+    fs::write(&path, bytes).ok()?;
+    Some(path)
 }
