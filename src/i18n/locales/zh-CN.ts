@@ -194,7 +194,7 @@ const zhCN = {
             pngConvertFailed: 'PNG 转换失败，已保留 DDS：{detail}',
             pngWriteFailed: 'PNG 写入失败：{detail}',
             vtStagingFailed: '虚拟纹理暂存目录不可用：{detail}',
-            vtGtpNotFound: '未找到 GTex hash「{detail}」对应的 GTP 文件',
+            vtGtpNotFound: '虚拟纹理没有对应的贴图文件，已跳过：{detail}',
             vtFailed: '虚拟纹理提取失败：{detail}',
             manifestWriteFailed: 'asset.json 写入失败：{detail}',
             manifestSerializeFailed: 'asset.json 序列化失败：{detail}',

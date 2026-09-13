@@ -194,7 +194,7 @@ const zhTW = {
             pngConvertFailed: 'PNG 轉換失敗，已保留 DDS：{detail}',
             pngWriteFailed: 'PNG 寫入失敗：{detail}',
             vtStagingFailed: '虛擬紋理暫存資料夾無法使用：{detail}',
-            vtGtpNotFound: '找不到 GTex hash「{detail}」對應的 GTP 檔案',
+            vtGtpNotFound: '虛擬紋理沒有對應的貼圖檔案，已略過：{detail}',
             vtFailed: '虛擬紋理擷取失敗：{detail}',
             manifestWriteFailed: 'asset.json 寫入失敗：{detail}',
             manifestSerializeFailed: 'asset.json 序列化失敗：{detail}',
