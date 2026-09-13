@@ -23,6 +23,18 @@ export interface TextureRef {
     width: number
     height: number
     parameterName: string | null
+    /** Names of this asset's materials that bind this texture; absent when there are none to name.
+     *  The texture row shows the texture's own `name` instead, so the panel currently renders
+     *  nothing from this — kept in the payload for the material section */
+    materialNames?: string[]
+}
+
+/** Material reference: the GUID stays the identity, the name is the readable label */
+export interface MaterialRef {
+    id: string
+    name: string
+    /** Base material template (`.lsf`) the material is derived from */
+    sourceFile: string
 }
 
 export interface VirtualTextureRef {
@@ -46,7 +58,7 @@ export interface VisualAsset {
     path: string
     /** Archive holding the GR2 mesh (e.g. `Models.pak`); empty when it cannot be resolved */
     meshPak: string
-    materialIds: string[]
+    materials: MaterialRef[]
     textures: TextureRef[]
     virtualTextures: VirtualTextureRef[]
 }

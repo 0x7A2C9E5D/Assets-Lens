@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
+use serde::Deserialize;
 
 use crate::archives::Archives;
 use crate::virtual_textures::PageFileSizes;
@@ -14,6 +15,87 @@ const PAK_PREFERENCE: &[&str] = &["Models.pak", "Textures.pak"];
 /// Archive holding the virtual texture page files. It is the one name the GTex lookup cannot get
 /// from a match (the match is what it produces), so it is spelled out here.
 const VIRTUAL_TEXTURES_PAK: &str = "VirtualTextures.pak";
+
+/// One material of the built database: the name that makes its GUID readable, plus the textures it
+/// binds (texture GUIDs, in parameter order).
+pub struct MaterialInfo {
+    /// Human-readable name from `MaterialBank` (e.g. `BEAR_Body_A`); empty when the resource has none
+    pub name: String,
+    /// Base material template (`.lsf`) the material is derived from
+    pub source_file: String,
+    /// GUIDs of the textures this material binds
+    pub texture_ids: Vec<String>,
+}
+
+/// One material as it appears in the serialized database, carrying only what the panel needs.
+///
+/// Deserialized into this shape rather than picked out of a `serde_json::Value`: the database
+/// holds every visual and texture as well, and building that whole tree only to reach `materials`
+/// is a memory spike worth skipping. Unknown fields are ignored, while `name` is required — a
+/// renamed field stops here instead of quietly leaving every material without a label.
+#[derive(Deserialize)]
+struct RawMaterial {
+    name: String,
+    #[serde(default)]
+    source_file: String,
+    #[serde(default)]
+    texture_ids: Vec<RawTextureParam>,
+}
+
+/// A texture binding inside a material; the parameter name it also carries is already on the
+/// texture itself
+#[derive(Deserialize)]
+struct RawTextureParam {
+    texture_id: String,
+}
+
+/// The `materials` map of a serialized `MergedDatabase`; every other field is skipped
+#[derive(Deserialize)]
+struct RawMaterials {
+    #[serde(default)]
+    materials: HashMap<String, RawMaterial>,
+}
+
+/// Read every material out of an already-built database, keyed by material GUID.
+///
+/// maclarian keeps `MaterialDef` — and the map holding it — crate-private, so serializing the
+/// database is the only door out. This runs once per build, where the cost disappears next to the
+/// parse itself; nothing is cached on disk, so a rebuilt database pays it again.
+pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
+    let json = match serde_json::to_string(db) {
+        Ok(json) => json,
+        Err(err) => {
+            eprintln!("[maclarian] material names unavailable: {err}");
+            return HashMap::new();
+        }
+    };
+    let parsed: RawMaterials = match serde_json::from_str(&json) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            eprintln!("[maclarian] material names unavailable: {err}");
+            return HashMap::new();
+        }
+    };
+
+    parsed
+        .materials
+        .into_iter()
+        .map(|(id, material)| {
+            (
+                id,
+                MaterialInfo {
+                    name: material.name,
+                    source_file: material.source_file,
+                    texture_ids: material
+                        .texture_ids
+                        .into_iter()
+                        .map(|param| param.texture_id)
+                        .collect(),
+                },
+            )
+        })
+        .collect()
+}
 
 /// Global application state: BG3 data directory, resource resolver, the built database,
 /// and a stable name cache for consistent pagination order.
@@ -34,6 +116,9 @@ pub struct AppState {
     /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
     /// picks a sequence instead of re-sorting every id on each page request.
     pub visual_ids_by_id: Vec<String>,
+    /// Materials by GUID, filled once per build. The database itself cannot be queried for them
+    /// (see `extract_materials`), so the names are read out at build time and kept here.
+    pub materials: HashMap<String, MaterialInfo>,
     /// PAK read pool shared by every command: opening an archive parses its whole file table, so the
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
     /// reading an archive needs `&mut` on its reader.
@@ -53,6 +138,7 @@ impl AppState {
             merged_db: None,
             visual_ids: Vec::new(),
             visual_ids_by_id: Vec::new(),
+            materials: HashMap::new(),
             archives: None,
             page_file_sizes: HashMap::new(),
         }
@@ -63,6 +149,8 @@ impl AppState {
         self.merged_db = None;
         self.visual_ids.clear();
         self.visual_ids_by_id.clear();
+        // The names were read out of the database that was just dropped
+        self.materials.clear();
         // The archives still open belong to the previous directory
         self.archives = None;
         // Page file sizes were read from those archives

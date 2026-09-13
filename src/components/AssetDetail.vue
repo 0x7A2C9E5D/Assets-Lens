@@ -77,13 +77,14 @@ const exportOpen = ref(false)
           </p>
           <div class="mt-2 flex flex-wrap gap-1.5">
             <span
-                v-for="id in asset.materialIds"
-                :key="id"
-                class="rounded-lg border border-cyan-300/15 bg-white/5 px-2 py-1 font-mono text-[11px] text-muted"
+                v-for="material in asset.materials"
+                :key="material.id"
+                :title="material.sourceFile || material.id"
+                class="break-all rounded-lg border border-cyan-300/15 bg-white/5 px-2 py-1 font-mono text-[11px] text-muted"
             >
-              {{ id }}
+              {{ material.name || material.id }}
             </span>
-            <span v-if="!asset.materialIds.length" class="text-xs text-muted/70">
+            <span v-if="!asset.materials.length" class="text-xs text-muted/70">
               {{ $t('detail.none') }}
             </span>
           </div>
@@ -104,6 +105,7 @@ const exportOpen = ref(false)
               >
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+                  <span v-if="tex.name" class="break-all font-mono">{{ tex.name }}</span>
                   <span>{{ tex.width }} × {{ tex.height }}</span>
                   <span v-if="tex.parameterName">{{ tex.parameterName }}</span>
                   <span

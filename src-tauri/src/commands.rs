@@ -14,7 +14,7 @@ use crate::models::{
     match_for_hash, AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult,
     ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
-use crate::state::AppState;
+use crate::state::{extract_materials, AppState};
 use crate::virtual_textures;
 
 pub type SharedState = Arc<Mutex<AppState>>;
@@ -176,6 +176,11 @@ pub async fn build_database(
         // has been parsed.
         db.resolve_references();
 
+        // Read out while the database is here rather than on the first detail view: maclarian does
+        // not expose a material's name any other way (see `extract_materials`), and a one-off cost
+        // inside a build that already runs for minutes is not something a click should pay for.
+        let materials = extract_materials(&db);
+
         let stats = db.stats();
         let (visual_ids, visual_ids_by_id) = sorted_visual_ids(&db);
         let visual_count = visual_ids.len();
@@ -192,6 +197,7 @@ pub async fn build_database(
             }
             st.visual_ids = visual_ids;
             st.visual_ids_by_id = visual_ids_by_id;
+            st.materials = materials;
             st.merged_db = Some(db);
         }
 
@@ -334,7 +340,7 @@ pub async fn get_visual(
             } else {
                 st.vt_matches(&hashes)
             };
-            let detail = VisualAssetDetail::new(&asset, &matches);
+            let detail = VisualAssetDetail::new(&asset, &matches, &st.materials);
 
             // The size cache travels with the detail and is put back at the end: it is only ever
             // touched here, and holding the state lock while the archives are read is what the

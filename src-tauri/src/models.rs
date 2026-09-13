@@ -1,5 +1,9 @@
+use std::collections::HashMap;
+
 use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use serde::{Deserialize, Serialize};
+
+use crate::state::MaterialInfo;
 
 /// Build progress, pushed to the frontend through a Tauri Channel
 #[derive(Clone, Serialize)]
@@ -22,6 +26,12 @@ pub struct TextureSummary {
     pub width: u32,
     pub height: u32,
     pub parameter_name: Option<String>,
+    /// Names of this asset's materials that bind this texture, in the asset's own material order.
+    /// Filled by `get_visual` only, and left out of the JSON while empty (the export manifest
+    /// resolves no names). The texture row no longer renders this — a texture shows its own `name`
+    /// — so it is currently unused by the panel and kept for the material section.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub material_names: Vec<String>,
 }
 
 impl From<&TextureRef> for TextureSummary {
@@ -34,8 +44,54 @@ impl From<&TextureRef> for TextureSummary {
             width: value.width,
             height: value.height,
             parameter_name: value.parameter_name.clone(),
+            material_names: Vec::new(),
         }
     }
+}
+
+/// Material reference. The GUID stays the identity (names are not unique), the name is what makes
+/// a material row readable, and the template file is where the material is defined.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialSummary {
+    pub id: String,
+    /// Human-readable name from `MaterialBank`; empty when the material is unknown, in which case
+    /// the detail panel falls back to the GUID
+    pub name: String,
+    /// Base material template (`.lsf`) the material is derived from
+    pub source_file: String,
+}
+
+impl MaterialSummary {
+    /// `known` is the name cache entry for this GUID; an unknown material keeps an empty name
+    /// rather than dropping the row
+    fn new(id: &str, known: Option<&MaterialInfo>) -> Self {
+        Self {
+            id: id.to_string(),
+            name: known.map(|material| material.name.clone()).unwrap_or_default(),
+            source_file: known
+                .map(|material| material.source_file.clone())
+                .unwrap_or_default(),
+        }
+    }
+}
+
+/// Names of the materials of one asset that bind `texture`. More than one is possible (two
+/// materials of the same mesh may share a mask), so this is a list; a material with no name
+/// contributes nothing, because a bare GUID would only repeat what the material section already
+/// shows.
+fn material_names_for(
+    texture: &TextureRef,
+    material_ids: &[String],
+    materials: &HashMap<String, MaterialInfo>,
+) -> Vec<String> {
+    material_ids
+        .iter()
+        .filter_map(|id| materials.get(id))
+        .filter(|material| material.texture_ids.iter().any(|id| id == &texture.id))
+        .map(|material| material.name.clone())
+        .filter(|name| !name.is_empty())
+        .collect()
 }
 
 /// Streaming virtual texture reference (GTex)
@@ -109,22 +165,41 @@ pub struct VisualAssetDetail {
     /// Archive holding the GR2 mesh (e.g. `Models.pak`); left empty here and filled in by
     /// `get_visual`, which is the only place with access to the PAK pool
     pub mesh_pak: String,
-    pub material_ids: Vec<String>,
+    pub materials: Vec<MaterialSummary>,
     pub textures: Vec<TextureSummary>,
     pub virtual_textures: Vec<VirtualTextureSummary>,
 }
 
 impl VisualAssetDetail {
     /// `matches` are the page files resolved for this asset's virtual textures; pass an empty
-    /// slice to skip the lookup (the rows then show the hash without a page file)
-    pub fn new(value: &VisualAsset, matches: &[GtpMatch]) -> Self {
+    /// slice to skip the lookup (the rows then show the hash without a page file).
+    /// `materials` is the name cache built with the database: it labels the material rows and
+    /// decides which material each texture row belongs to
+    pub fn new(
+        value: &VisualAsset,
+        matches: &[GtpMatch],
+        materials: &HashMap<String, MaterialInfo>,
+    ) -> Self {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.gr2_path.clone(),
             mesh_pak: String::new(),
-            material_ids: value.material_ids.clone(),
-            textures: value.textures.iter().map(TextureSummary::from).collect(),
+            materials: value
+                .material_ids
+                .iter()
+                .map(|id| MaterialSummary::new(id, materials.get(id)))
+                .collect(),
+            textures: value
+                .textures
+                .iter()
+                .map(|texture| {
+                    let mut summary = TextureSummary::from(texture);
+                    summary.material_names =
+                        material_names_for(texture, &value.material_ids, materials);
+                    summary
+                })
+                .collect(),
             virtual_textures: value
                 .virtual_textures
                 .iter()
