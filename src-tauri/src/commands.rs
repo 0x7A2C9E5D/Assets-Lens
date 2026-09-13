@@ -433,9 +433,16 @@ pub async fn get_visual(
         let located = match pool {
             Some(pool) => match lock_pool(&pool) {
                 Ok(mut archives) => {
-                    let mut targets = Vec::with_capacity(detail.textures.len() + 1);
+                    let mut targets =
+                        Vec::with_capacity(detail.textures.len() + detail.materials.len() + 1);
                     targets.push(detail.path.clone());
                     targets.extend(detail.textures.iter().map(|tex| tex.path.clone()));
+                    targets.extend(
+                        detail
+                            .materials
+                            .iter()
+                            .map(|material| material.source_file.clone()),
+                    );
                     let located = archives.locate_many(&targets);
 
                     // Page file sizes come out of the same lock: a GTS is one file read from the
@@ -460,8 +467,13 @@ pub async fn get_visual(
             None => HashMap::new(),
         };
 
-        // Archive names are decoration: an unresolved file just renders without one
+        // Archive names are decoration: an unresolved file just renders without one. A material is
+        // reported by the archive of its template — the only path of a material that can be looked up
+        // at all, and one an unknown material does not have
         detail.mesh_pak = located.get(&detail.path).cloned().unwrap_or_default();
+        for material in &mut detail.materials {
+            material.pak = located.get(&material.source_file).cloned().unwrap_or_default();
+        }
         for tex in &mut detail.textures {
             tex.source = located.get(&tex.path).cloned().unwrap_or_default();
         }

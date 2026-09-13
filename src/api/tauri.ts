@@ -35,6 +35,8 @@ export interface MaterialRef {
     name: string
     /** Base material template (`.lsf`) the material is derived from */
     sourceFile: string
+    /** Archive holding that template (e.g. `Materials.pak`); empty when it cannot be resolved */
+    pak: string
 }
 
 export interface VirtualTextureRef {

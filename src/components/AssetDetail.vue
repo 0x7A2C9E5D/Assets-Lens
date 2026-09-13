@@ -193,6 +193,20 @@ function toggle(section: SectionKey) {
                   {{ material.id }}
                 </span>
               </p>
+              <!-- The archive belongs to the template path above, so it sits under the identity line
+                   rather than after the bindings — the chips below are what the material binds -->
+              <p
+                  v-if="material.pak"
+                  class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted"
+              >
+                <span
+                    :title="$t('detail.pakLabel')"
+                    class="flex min-w-0 items-center gap-1.5"
+                >
+                  <FileArchive class="h-3 w-3 shrink-0"/>
+                  <span class="truncate font-mono">{{ material.pak }}</span>
+                </span>
+              </p>
               <ul
                   v-if="material.bindings.length"
                   class="mt-2.5 flex flex-wrap gap-1.5 border-t border-white/5 pt-2"

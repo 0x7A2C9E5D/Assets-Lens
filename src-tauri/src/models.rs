@@ -60,6 +60,11 @@ pub struct MaterialSummary {
     pub name: String,
     /// Base material template (`.lsf`) the material is derived from
     pub source_file: String,
+    /// Archive holding that template (e.g. `Materials.pak`); left empty here and filled in by
+    /// `get_visual`, which is the only place with access to the PAK pool. It names the archive of the
+    /// template rather than of the material itself: every material of a merged document lives in the
+    /// same archive, which no lookup can attribute to one material
+    pub pak: String,
 }
 
 impl MaterialSummary {
@@ -72,6 +77,7 @@ impl MaterialSummary {
             source_file: known
                 .map(|material| material.source_file.clone())
                 .unwrap_or_default(),
+            pak: String::new(),
         }
     }
 }
