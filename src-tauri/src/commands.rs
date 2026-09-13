@@ -9,12 +9,13 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 use crate::archives::lock_pool;
+use crate::effects_materials;
 use crate::export::run_export;
 use crate::models::{
     match_for_hash, AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult,
     ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
-use crate::state::{extract_materials, fill_virtual_texture_parameters, AppState};
+use crate::state::{extract_materials, fill_virtual_texture_parameters, AppState, MaterialInfo};
 use crate::virtual_texture_params;
 use crate::virtual_textures;
 
@@ -203,6 +204,9 @@ pub async fn build_database(
             st.visual_ids = visual_ids;
             st.visual_ids_by_id = visual_ids_by_id;
             st.materials = materials;
+            // The effects material headers were part of the cache that just got replaced, so they
+            // are read again on the first detail view that needs them
+            st.effects_materials_read = false;
             st.merged_db = Some(db);
         }
 
@@ -283,6 +287,68 @@ fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Re
         return Ok(());
     }
     fill_virtual_texture_parameters(&mut st.materials, &parameters);
+    Ok(())
+}
+
+/// Fill in the name and the template of the materials the database build skipped.
+///
+/// The build only parses the `_merged.lsf` files holding character assets, so a material a visual
+/// references can be absent from `materials` — VFX materials live in the effects banks, which that
+/// filter excludes. Without them the material row has nothing to show but a bare GUID, so they are
+/// read here (see `effects_materials`).
+///
+/// Reading them costs a couple of seconds, hence the two guards: it happens on the first detail
+/// view that actually references an unknown material, and what it reads is kept, so the next such
+/// asset — and every asset after it — reads nothing at all.
+fn ensure_effects_materials(state: &SharedState, visual_id: &str) -> Result<(), String> {
+    let (pool, game_path) = {
+        let mut st = lock(state)?;
+
+        // Already read, or read once and found nothing: either way there is nothing left to gain
+        if st.effects_materials_read {
+            return Ok(());
+        }
+
+        let unknown = st
+            .merged_db
+            .as_ref()
+            .and_then(|db| db.visuals_by_id.get(visual_id))
+            .is_some_and(|asset| {
+                asset
+                    .material_ids
+                    .iter()
+                    .any(|id| !st.materials.contains_key(id))
+            });
+        if !unknown {
+            return Ok(());
+        }
+
+        let game_path = st
+            .game_path
+            .clone()
+            .ok_or_else(|| NOT_CONFIGURED.to_string())?;
+        (st.pool()?, game_path)
+    };
+
+    // Read on its own: the banks come out of the archives, and the pool lock is not taken while the
+    // state lock is held
+    let headers = {
+        let mut archives = lock_pool(&pool)?;
+        effects_materials::read_headers(&mut archives, &game_path)
+    };
+
+    let mut st = lock(state)?;
+    // A directory switch can land while the banks are read: the headers then belong to materials
+    // that are already gone
+    if st.game_path.as_deref() != Some(game_path.as_path()) {
+        return Ok(());
+    }
+    st.effects_materials_read = true;
+    st.materials.extend(
+        headers
+            .into_iter()
+            .map(|(id, header)| (id, MaterialInfo::from(header))),
+    );
     Ok(())
 }
 
@@ -394,8 +460,10 @@ pub async fn get_visual(
         // The binding chips show the parameter each virtual texture fills. Those names are not in the
         // parsed database, so they are read off this asset's material templates first — and only
         // while some binding of this asset has no name yet (see
-        // `ensure_virtual_texture_parameters`).
+        // `ensure_virtual_texture_parameters`). The materials the build skipped are read just after,
+        // so their rows can show a name and a template too (see `ensure_effects_materials`).
         ensure_virtual_texture_parameters(&state, &id)?;
+        ensure_effects_materials(&state, &id)?;
 
         let (mut detail, matches, pool, mut page_file_sizes) = {
             let mut st = lock(&state)?;

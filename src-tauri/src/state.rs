@@ -6,6 +6,7 @@ use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolv
 use serde::Deserialize;
 
 use crate::archives::Archives;
+use crate::effects_materials::MaterialHeader;
 use crate::virtual_textures::PageFileSizes;
 
 /// Read preference for the shared PAK pool. Callers name the archive they expect (meshes from
@@ -29,6 +30,19 @@ pub struct MaterialInfo {
     /// its materials, so this is what tells those rows which material they came from: a virtual
     /// texture is only ever reachable through the material that parameterizes it.
     pub virtual_textures: Vec<VirtualTextureBinding>,
+}
+
+/// A header read out of the effects material banks carries no bindings: the resources that material
+/// references were never parsed (see `effects_materials`), so the cache entry starts empty there.
+impl From<MaterialHeader> for MaterialInfo {
+    fn from(header: MaterialHeader) -> Self {
+        Self {
+            name: header.name,
+            source_file: header.source_file,
+            texture_ids: Vec::new(),
+            virtual_textures: Vec::new(),
+        }
+    }
 }
 
 /// A virtual texture one material binds, together with the parameter that binding fills.
@@ -176,6 +190,14 @@ pub struct AppState {
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
     /// reading an archive needs `&mut` on its reader.
     pub archives: Option<Arc<Mutex<Archives>>>,
+    /// True once the effects material banks have been read into `materials`.
+    ///
+    /// Those banks hold the materials the database build skips (see `effects_materials`), and
+    /// reading them costs a couple of seconds, so they are read on the first detail view of an
+    /// asset that needs them rather than at build time. Everything they define is kept, so the flag
+    /// also spares the next such asset — including one whose material was not found, which would
+    /// otherwise re-read every bank.
+    pub effects_materials_read: bool,
     /// Page file sizes by GTS path, filled by `virtual_textures::page_file_size`. Reading a GTS
     /// costs a full extraction while one GTS serves every page file of its tile set, so browsing a
     /// model whose virtual textures share a tile set would otherwise read the same file repeatedly.
@@ -193,6 +215,7 @@ impl AppState {
             visual_ids_by_id: Vec::new(),
             materials: HashMap::new(),
             archives: None,
+            effects_materials_read: false,
             page_file_sizes: HashMap::new(),
         }
     }
@@ -206,6 +229,8 @@ impl AppState {
         self.materials.clear();
         // The archives still open belong to the previous directory
         self.archives = None;
+        // The effects banks belong to that directory as well
+        self.effects_materials_read = false;
         // Page file sizes were read from those archives
         self.page_file_sizes.clear();
     }
