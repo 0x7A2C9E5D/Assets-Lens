@@ -39,7 +39,7 @@ const PHASE_DONE: &str = "done";
 
 /// The three layers exported from a virtual texture (order matches `VirtualTextureLayer`).
 /// Extractor output is `<name>_<layer>.dds`; export file names drop the trailing `Map`
-/// (`BaseMap` → `Base`, see `export_virtual_texture`)
+/// (`BaseMap` → `Base`, see `export_vt_layer`)
 const VT_LAYERS: [&str; 3] = ["BaseMap", "NormalMap", "PhysicalMap"];
 
 /// Append a structured warning (code is localized by the frontend, detail keeps the raw message)
@@ -84,9 +84,18 @@ fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     candidate
 }
 
+/// Record one written artifact in the export result
+fn record_file(files: &mut Vec<ExportedFile>, path: &Path, kind: &str, size_bytes: usize) {
+    files.push(ExportedFile {
+        path: path.display().to_string(),
+        kind: kind.to_string(),
+        size_bytes,
+    });
+}
+
 /// Write a PNG; on success remove the intermediate DDS and record an export entry, on failure push
-/// a `pngWriteFailed` warning. Returns `true` when the PNG has been written (callers then
-/// `continue` to skip the DDS fallback entry).
+/// a `pngWriteFailed` warning. Returns `true` when the PNG has been written (callers then skip the
+/// DDS fallback entry).
 fn try_write_png_and_record(
     png: &[u8],
     png_path: &Path,
@@ -96,20 +105,36 @@ fn try_write_png_and_record(
     source_label: &str,
 ) -> bool {
     if let Err(err) = fs::write(png_path, png) {
-        push_warning(
-            warnings,
-            "pngWriteFailed",
-            format!("{source_label}: {err}"),
-        );
+        push_warning(warnings, "pngWriteFailed", format!("{source_label}: {err}"));
         false
     } else {
         let _ = fs::remove_file(dds_path);
-        files.push(ExportedFile {
-            path: png_path.display().to_string(),
-            kind: "png".to_string(),
-            size_bytes: png.len(),
-        });
+        record_file(files, png_path, "png", png.len());
         true
+    }
+}
+
+/// Write the PNG form of `dds_path` and drop the DDS once the PNG is in place. Returns `true` when
+/// the PNG replaced the DDS (callers then skip the DDS entry), `false` when the DDS has to stay:
+/// either the conversion or to write failed, each reporting its own warning
+fn replace_dds_with_png(
+    dds_bytes: &[u8],
+    dir: &Path,
+    stem: &str,
+    dds_path: &Path,
+    files: &mut Vec<ExportedFile>,
+    warnings: &mut Vec<ExportWarning>,
+    source_label: &str,
+) -> bool {
+    match dds_bytes_to_png_bytes(dds_bytes) {
+        Ok(png) => {
+            let png_path = unique_path(dir, stem, "png");
+            try_write_png_and_record(&png, &png_path, dds_path, files, warnings, source_label)
+        }
+        Err(err) => {
+            push_warning(warnings, "pngConvertFailed", format!("{source_label}: {err}"));
+            false
+        }
     }
 }
 
@@ -155,6 +180,73 @@ impl<'a> ProgressTracker<'a> {
     }
 }
 
+/// Everything decided before the first artifact is written: where it goes, in which form, and how
+/// many items the progress bar will count. Bundling it keeps the steps below at four to six
+/// parameters instead of threading every path and flag through the whole pipeline
+struct ExportPlan<'a> {
+    dir_name: String,
+    out_dir: PathBuf,
+    mesh_format: MeshFormat,
+    export_textures: bool,
+    convert_to_png: bool,
+    vt_targets: Vec<&'a VirtualTextureRef>,
+    progress_total: usize,
+}
+
+impl ExportPlan<'_> {
+    /// Where the extracted layers of the virtual textures go
+    fn vt_dir(&self) -> PathBuf {
+        self.out_dir.join("virtual_textures")
+    }
+}
+
+/// Decide what the export will contain and create its output directory
+fn plan_export<'a>(
+    asset: &'a VisualAsset,
+    dest_root: &Path,
+    options: &ExportOptions,
+) -> Result<ExportPlan<'a>, String> {
+    // Textures are always exported separately (regular + virtual); the format is a single switch
+    let export_textures = options.texture_format.is_export();
+
+    let dir_name = sanitize_file_name(&asset.name);
+    let out_dir = dest_root.join(&dir_name);
+    fs::create_dir_all(&out_dir)
+        .map_err(|e| format!("Failed to create export directory: {e}"))?;
+
+    let vt_targets = vt_targets_of(asset, export_textures);
+    let texture_total = if export_textures {
+        asset.textures.len()
+    } else {
+        0
+    };
+    // 1 mesh + 1 manifest, plus texture files and virtual textures
+    let progress_total = 2 + texture_total + vt_targets.len();
+
+    Ok(ExportPlan {
+        dir_name,
+        out_dir,
+        mesh_format: options.mesh_format,
+        export_textures,
+        convert_to_png: options.texture_format.is_png(),
+        vt_targets,
+        progress_total,
+    })
+}
+
+/// Page files worth extracting: extracting needs a hash to resolve the `GtpMatch` naming the page
+/// file in the archives, and virtual textures are only exported together with the textures
+fn vt_targets_of(asset: &VisualAsset, export_textures: bool) -> Vec<&VirtualTextureRef> {
+    if !export_textures {
+        return Vec::new();
+    }
+    asset
+        .virtual_textures
+        .iter()
+        .filter(|vt| !vt.gtex_hash.trim().is_empty())
+        .collect()
+}
+
 /// Export a single visual asset. The GLB is the core artifact — its failure aborts the whole
 /// export, while a single texture / virtual texture failure only records a warning.
 pub fn run_export(
@@ -165,104 +257,47 @@ pub fn run_export(
     vt_matches: &[GtpMatch],
     on_progress: &dyn Fn(ExportProgress),
 ) -> Result<ExportResult, String> {
+    let plan = plan_export(asset, dest_root, options)?;
+
     let mut files: Vec<ExportedFile> = Vec::new();
     let mut warnings: Vec<ExportWarning> = Vec::new();
-
-    let dir_name = sanitize_file_name(&asset.name);
-    let out_dir = dest_root.join(&dir_name);
-    fs::create_dir_all(&out_dir)
-        .map_err(|e| format!("Failed to create export directory: {e}"))?;
-
-    // Textures are always exported separately (regular + virtual); the format is a single switch
-    let extract_textures = options.texture_format.is_export();
-    let convert_to_png = options.texture_format.is_png();
-
-    let vt_targets: Vec<&VirtualTextureRef> = if extract_textures {
-        asset
-            .virtual_textures
-            .iter()
-            .filter(|vt| !vt.gtex_hash.trim().is_empty())
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    let texture_total = if extract_textures {
-        asset.textures.len()
-    } else {
-        0
-    };
-    // 1 mesh + 1 manifest, plus texture files and virtual textures
-    let total = 2 + texture_total + vt_targets.len();
-    let mut progress = ProgressTracker::new(total, on_progress);
+    let mut progress = ProgressTracker::new(plan.progress_total, on_progress);
     progress.phase(PHASE_PREPARE, 0.0);
 
-    // ---- 1. Mesh: raw GR2 straight out of the PAK, or a plain GR2 → GLB conversion ----
-    let mesh_format = options.mesh_format;
-    files.push(export_mesh(
-        asset,
-        pool,
-        &out_dir,
-        &dir_name,
-        mesh_format,
-        &mut progress,
-    )?);
+    // 1. Mesh: raw GR2 straight out of the PAK, or a plain GR2 → GLB conversion
+    export_mesh(asset, pool, &plan, &mut files, &mut progress)?;
 
-    // ---- 2. Textures: pull DDS from PAKs, optionally converting to PNG ----
-    if extract_textures {
-        export_textures(
-            asset,
-            pool,
-            &out_dir,
-            convert_to_png,
-            &mut files,
-            &mut warnings,
-            &mut progress,
-        )?;
-    }
+    // 2. Textures: pull DDS from PAKs, optionally converting to PNG
+    export_textures(asset, pool, &plan, &mut files, &mut warnings, &mut progress)?;
 
-    // ---- 3. Virtual textures: GTP + GTS → three layer DDS files ----
-    // Every hash was resolved to a `GtpMatch` up front, which is where both the page file and the
-    // archive holding it come from.
-    if !vt_targets.is_empty() {
-        export_virtual_textures(
-            pool,
-            &vt_targets,
-            vt_matches,
-            &out_dir,
-            convert_to_png,
-            &mut files,
-            &mut warnings,
-            &mut progress,
-        )?;
-    }
+    // 3. Virtual textures: GTP + GTS → three layer DDS files. Every hash was resolved to a
+    // `GtpMatch` up front, which carries both the page file and the archive holding it
+    export_virtual_textures(pool, &plan, vt_matches, &mut files, &mut warnings, &mut progress)?;
 
-    // ---- 4. Metadata manifest (always written, but never listed among the exported files) ----
+    // 4. Metadata manifest (always written, but never listed among the exported files)
     progress.item(PHASE_MANIFEST, None);
-    let manifest = build_manifest(asset, vt_matches, mesh_format, &files);
-    write_manifest(&manifest, &out_dir, &mut warnings);
+    let manifest = build_manifest(asset, vt_matches, &plan, &files);
+    write_manifest(&manifest, &plan.out_dir, &mut warnings);
 
     progress.phase(PHASE_DONE, 1.0);
-
     Ok(ExportResult {
-        output_dir: out_dir.display().to_string(),
+        output_dir: plan.out_dir.display().to_string(),
         files,
         warnings,
     })
 }
 
-/// Read the mesh and write it into `out_dir`. Unlike a texture, the mesh is not optional: any
-/// failure here aborts the whole export instead of recording a warning
+/// Read the mesh and write it into the export directory. Unlike a texture, the mesh is not
+/// optional: any failure here aborts the whole export instead of recording a warning
 fn export_mesh(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
-    out_dir: &Path,
-    dir_name: &str,
-    mesh_format: MeshFormat,
+    plan: &ExportPlan<'_>,
+    files: &mut Vec<ExportedFile>,
     progress: &mut ProgressTracker<'_>,
-) -> Result<ExportedFile, String> {
+) -> Result<(), String> {
     progress.item(
-        if mesh_format.is_glb() {
+        if plan.mesh_format.is_glb() {
             PHASE_MODEL
         } else {
             PHASE_MODEL_RAW
@@ -270,27 +305,33 @@ fn export_mesh(
         Some(asset.gr2_path.clone()),
     );
 
+    let mesh_bytes = read_mesh_bytes(asset, pool, plan.mesh_format)?;
+
+    let mesh_ext = plan.mesh_format.extension();
+    let mesh_path = plan.out_dir.join(format!("{}.{mesh_ext}", plan.dir_name));
+    fs::write(&mesh_path, &mesh_bytes)
+        .map_err(|e| format!("Failed to write mesh ({mesh_ext}): {e}"))?;
+    record_file(files, &mesh_path, mesh_ext, mesh_bytes.len());
+
+    Ok(())
+}
+
+/// Pull the mesh bytes out of the archives, converted to GLB unless the raw GR2 was asked for
+fn read_mesh_bytes(
+    asset: &VisualAsset,
+    pool: &Arc<Mutex<Archives>>,
+    mesh_format: MeshFormat,
+) -> Result<Vec<u8>, String> {
     let gr2_bytes = lock_pool(pool)?
         .read(&asset.gr2_path, Some("Models.pak"))
         .map_err(|err| format!("Mesh data unavailable: {err}"))?;
 
-    let mesh_bytes = match mesh_format {
+    match mesh_format {
         // Raw GR2: the archive bytes are the artifact, nothing to convert
-        MeshFormat::Gr2 => gr2_bytes,
+        MeshFormat::Gr2 => Ok(gr2_bytes),
         MeshFormat::Glb => convert_gr2_bytes_to_glb(&gr2_bytes)
-            .map_err(|e| format!("Failed to convert mesh to GLB: {e}"))?,
-    };
-
-    let mesh_ext = mesh_format.extension();
-    let mesh_path = out_dir.join(format!("{dir_name}.{mesh_ext}"));
-    fs::write(&mesh_path, &mesh_bytes)
-        .map_err(|e| format!("Failed to write mesh ({mesh_ext}): {e}"))?;
-
-    Ok(ExportedFile {
-        path: mesh_path.display().to_string(),
-        kind: mesh_ext.to_string(),
-        size_bytes: mesh_bytes.len(),
-    })
+            .map_err(|e| format!("Failed to convert mesh to GLB: {e}")),
+    }
 }
 
 /// Pull every regular texture of the asset out of the archives, optionally converting it to PNG.
@@ -298,29 +339,43 @@ fn export_mesh(
 fn export_textures(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
-    out_dir: &Path,
-    convert_to_png: bool,
+    plan: &ExportPlan<'_>,
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
     progress: &mut ProgressTracker<'_>,
 ) -> Result<(), String> {
-    if asset.textures.is_empty() {
+    // Regular textures are optional: nothing to do when only the mesh was asked for, or when the
+    // asset has no material textures at all
+    if !plan.export_textures || asset.textures.is_empty() {
         return Ok(());
     }
 
-    let tex_dir = out_dir.join("textures");
+    let tex_dir = plan.out_dir.join("textures");
     fs::create_dir_all(&tex_dir)
         .map_err(|e| format!("Failed to create textures directory: {e}"))?;
 
     for tex in &asset.textures {
         progress.item(PHASE_TEXTURES, Some(tex.dds_path.clone()));
+        export_texture(tex, pool, &tex_dir, plan.convert_to_png, files, warnings)?;
+    }
 
-        // Locked per file only: decompressing one texture is quick, and it leaves the pool
-        // available to other commands (a preview) while the export runs
-        match lock_pool(pool)?.read(&tex.dds_path, Some(tex.source_pak.as_str())) {
-            Ok(dds) => write_texture(tex, &dds, &tex_dir, convert_to_png, files, warnings),
-            Err(err) => push_warning(warnings, "textureUnavailable", err),
-        }
+    Ok(())
+}
+
+/// Read one texture out of the archives and write it into `tex_dir`
+fn export_texture(
+    tex: &TextureRef,
+    pool: &Arc<Mutex<Archives>>,
+    tex_dir: &Path,
+    convert_to_png: bool,
+    files: &mut Vec<ExportedFile>,
+    warnings: &mut Vec<ExportWarning>,
+) -> Result<(), String> {
+    // Locked per file only: decompressing one texture is quick, and it leaves the pool available to
+    // other commands (a preview) while the export runs
+    match lock_pool(pool)?.read(&tex.dds_path, Some(tex.source_pak.as_str())) {
+        Ok(dds) => write_texture(tex, &dds, tex_dir, convert_to_png, files, warnings),
+        Err(err) => push_warning(warnings, "textureUnavailable", err),
     }
 
     Ok(())
@@ -335,112 +390,140 @@ fn write_texture(
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
 ) {
-    // Name files after the actual DDS resource in the archive (e.g. `Body_BM`),
-    // never the material parameter slot (e.g. `ColorTexture`) or bank display name
-    let stem = sanitize_file_name(
+    let stem = texture_stem(tex);
+    let dds_path = unique_path(tex_dir, &stem, "dds");
+    if let Err(err) = fs::write(&dds_path, dds) {
+        push_warning(warnings, "textureWriteFailed", format!("{}: {err}", tex.dds_path));
+        return;
+    }
+
+    let replaced = convert_to_png
+        && replace_dds_with_png(dds, tex_dir, &stem, &dds_path, files, warnings, &tex.dds_path);
+    if !replaced {
+        record_file(files, &dds_path, "dds", dds.len());
+    }
+}
+
+/// File stem of a texture: named after the actual DDS resource in the archive (e.g. `Body_BM`),
+/// never after the material parameter slot (e.g. `ColorTexture`) or the bank display name
+fn texture_stem(tex: &TextureRef) -> String {
+    sanitize_file_name(
         Path::new(&tex.dds_path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or_else(|| tex.parameter_name.as_deref().unwrap_or(&tex.name)),
-    );
-    let dds_path = unique_path(tex_dir, &stem, "dds");
-    if let Err(err) = fs::write(&dds_path, dds) {
-        push_warning(
-            warnings,
-            "textureWriteFailed",
-            format!("{}: {err}", tex.dds_path),
-        );
-        return;
-    }
-
-    if convert_to_png {
-        match dds_bytes_to_png_bytes(dds) {
-            Ok(png) => {
-                let png_path = unique_path(tex_dir, &stem, "png");
-                if try_write_png_and_record(
-                    &png,
-                    &png_path,
-                    &dds_path,
-                    files,
-                    warnings,
-                    &tex.dds_path,
-                ) {
-                    return;
-                }
-            }
-            Err(err) => push_warning(
-                warnings,
-                "pngConvertFailed",
-                format!("{}: {err}", tex.dds_path),
-            ),
-        }
-    }
-
-    files.push(ExportedFile {
-        path: dds_path.display().to_string(),
-        kind: "dds".to_string(),
-        size_bytes: dds.len(),
-    });
+    )
 }
 
 /// Extract every virtual texture of the asset. All of them share one staging directory — a GTS is
 /// read once no matter how many page files of its tile set pass through — while each get its own
 /// extraction output directory, so a failed candidate cannot leave artifacts behind for the next
-#[allow(clippy::too_many_arguments)]
 fn export_virtual_textures(
     pool: &Arc<Mutex<Archives>>,
-    vt_targets: &[&VirtualTextureRef],
+    plan: &ExportPlan<'_>,
     vt_matches: &[GtpMatch],
-    out_dir: &Path,
-    convert_to_png: bool,
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
     progress: &mut ProgressTracker<'_>,
 ) -> Result<(), String> {
-    let vt_dir = out_dir.join("virtual_textures");
+    if plan.vt_targets.is_empty() {
+        return Ok(());
+    }
+
+    let vt_dir = plan.vt_dir();
     fs::create_dir_all(&vt_dir)
         .map_err(|e| format!("Failed to create virtual textures directory: {e}"))?;
 
-    let temp_root = std::env::temp_dir().join(format!(
-        "bg3_asset_export_{}_{}",
-        std::process::id(),
-        next_temp_id()
-    ));
-    let shared = temp_root.join("files");
-    if let Err(err) = fs::create_dir_all(&shared) {
+    let staging = VtStaging::new();
+    if let Err(err) = staging.prepare() {
         push_warning(warnings, "vtStagingFailed", err.to_string());
-    } else {
-        for (seq, vt) in vt_targets.iter().enumerate() {
-            progress.item(PHASE_VIRTUAL, Some(vt.name.clone()));
-
-            let Some(matched) = match_for_hash(vt_matches, &vt.gtex_hash) else {
-                push_warning(warnings, "vtGtpNotFound", vt.gtex_hash.clone());
-                continue;
-            };
-
-            let stage = temp_root.join(format!("stage_{seq}"));
-            let mut archive = lock_pool(pool)?;
-            if let Err(err) = export_virtual_texture(
-                &mut archive,
-                matched,
-                &vt.name,
-                &vt_dir,
-                &shared,
-                &stage,
-                convert_to_png,
-                files,
-                warnings,
-            ) {
-                push_warning(warnings, "vtFailed", format!("{}: {err}", vt.name));
-            }
-            // Released per virtual texture, so a long export keeps interleaving with previews
-            drop(archive);
-            let _ = fs::remove_dir_all(&stage);
-        }
+        return Ok(());
     }
-    let _ = fs::remove_dir_all(&temp_root);
+
+    for (seq, vt) in plan.vt_targets.iter().enumerate() {
+        progress.item(PHASE_VIRTUAL, Some(vt.name.clone()));
+        export_vt_target(pool, vt, vt_matches, seq, &staging, plan, files, warnings)?;
+    }
 
     Ok(())
+}
+
+/// Extract one virtual texture in its own staging directory. A failure is recorded as a warning:
+/// unlike the mesh, one broken virtual texture does not abort the export
+#[allow(clippy::too_many_arguments)]
+fn export_vt_target(
+    pool: &Arc<Mutex<Archives>>,
+    vt: &VirtualTextureRef,
+    vt_matches: &[GtpMatch],
+    seq: usize,
+    staging: &VtStaging,
+    plan: &ExportPlan<'_>,
+    files: &mut Vec<ExportedFile>,
+    warnings: &mut Vec<ExportWarning>,
+) -> Result<(), String> {
+    let Some(matched) = match_for_hash(vt_matches, &vt.gtex_hash) else {
+        push_warning(warnings, "vtGtpNotFound", vt.gtex_hash.clone());
+        return Ok(());
+    };
+
+    let stage = staging.stage(seq);
+    let mut archive = lock_pool(pool)?;
+    if let Err(err) = export_virtual_texture(
+        &mut archive,
+        matched,
+        &vt.name,
+        seq,
+        plan,
+        staging,
+        files,
+        warnings,
+    ) {
+        push_warning(warnings, "vtFailed", format!("{}: {err}", vt.name));
+    }
+    // Released per virtual texture, so a long export keeps interleaving with previews
+    drop(archive);
+    let _ = fs::remove_dir_all(&stage);
+
+    Ok(())
+}
+
+/// Staging area of one export run: all page files share `files` (a GTS is read once no matter how
+/// many of them use it) while each get its own output directory `stage_N`. The whole area is
+/// removed when the run ends — also when it is aborted halfway
+struct VtStaging {
+    root: PathBuf,
+}
+
+impl VtStaging {
+    fn new() -> Self {
+        Self {
+            root: std::env::temp_dir().join(format!(
+                "bg3_asset_export_{}_{}",
+                std::process::id(),
+                next_temp_id()
+            )),
+        }
+    }
+
+    /// Files staged for all page files (`virtual_textures::stage_sources` reuses them by name)
+    fn shared(&self) -> PathBuf {
+        self.root.join("files")
+    }
+
+    /// Output directory of the page file with this export sequence number
+    fn stage(&self, seq: usize) -> PathBuf {
+        self.root.join(format!("stage_{seq}"))
+    }
+
+    fn prepare(&self) -> Result<(), String> {
+        fs::create_dir_all(self.shared()).map_err(|e| e.to_string())
+    }
+}
+
+impl Drop for VtStaging {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
 }
 
 fn next_temp_id() -> u64 {
@@ -455,26 +538,26 @@ fn export_virtual_texture(
     pak: &mut Archives,
     matched: &GtpMatch,
     vt_name: &str,
-    vt_dir: &Path,
-    shared: &Path,
-    stage: &Path,
-    convert_to_png: bool,
+    seq: usize,
+    plan: &ExportPlan<'_>,
+    staging: &VtStaging,
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
 ) -> Result<(), String> {
-    fs::create_dir_all(stage).map_err(|e| format!("Failed to create staging directory: {e}"))?;
+    let stage = staging.stage(seq);
+    fs::create_dir_all(&stage).map_err(|e| format!("Failed to create staging directory: {e}"))?;
 
     // Which files the archives hold for this page file is `virtual_textures`' question; the export
     // only consumes the staged paths
     let StagedSources {
         gtp,
         gts_candidates,
-    } = virtual_textures::stage_sources(pak, matched, shared)?;
+    } = virtual_textures::stage_sources(pak, matched, &staging.shared())?;
 
-    extract_with_any_gts(&gtp, gts_candidates, stage)?;
+    extract_with_any_gts(&gtp, gts_candidates, &stage)?;
 
     let safe_name = sanitize_file_name(vt_name);
-    collect_vt_layers(stage, vt_dir, &safe_name, convert_to_png, files, warnings)
+    collect_vt_layers(&stage, &plan.vt_dir(), &safe_name, plan.convert_to_png, files, warnings)
 }
 
 /// Run the extractor with each GTS candidate until one accepts the page file: GTS naming does not
@@ -503,7 +586,7 @@ fn extract_with_any_gts(
 }
 
 /// Move the extracted layer files into `vt_dir`, named after the asset instead of the tile set, and
-/// convert them when PNG was asked for (`try_write_png_and_record` drops the DDS in that case)
+/// convert them when PNG was asked for
 fn collect_vt_layers(
     stage: &Path,
     vt_dir: &Path,
@@ -513,46 +596,39 @@ fn collect_vt_layers(
     warnings: &mut Vec<ExportWarning>,
 ) -> Result<(), String> {
     for layer in VT_LAYERS {
-        // The extractor writes `<name>_<layer>.dds` (e.g. `..._basemap.dds`); the export file
-        // drops the trailing `Map` from the layer name (`BaseMap` → `Base`), matching the
-        // engine's `Albedo_Normal_Physical` naming for split virtual textures
-        let export_suffix = layer.trim_end_matches("Map");
         let Some(src) = find_layer_output(stage, layer)? else {
             continue;
         };
+        export_vt_layer(layer, &src, vt_dir, safe_name, convert_to_png, files, warnings)?;
+    }
 
-        let stem = format!("{safe_name}_{export_suffix}");
-        let dds_path = unique_path(vt_dir, &stem, "dds");
-        if fs::rename(&src, &dds_path).is_err() {
-            fs::copy(&src, &dds_path)
-                .map_err(|e| format!("Failed to move {layer} output: {e}"))?;
-        }
+    Ok(())
+}
 
-        let dds_bytes = fs::read(&dds_path).unwrap_or_default();
-        if convert_to_png {
-            match dds_bytes_to_png_bytes(&dds_bytes) {
-                Ok(png) => {
-                    let png_path = unique_path(vt_dir, &stem, "png");
-                    if try_write_png_and_record(
-                        &png,
-                        &png_path,
-                        &dds_path,
-                        files,
-                        warnings,
-                        &stem,
-                    ) {
-                        continue;
-                    }
-                }
-                Err(err) => push_warning(warnings, "pngConvertFailed", format!("{stem}: {err}")),
-            }
-        }
+/// Move one extracted layer into `vt_dir` under its export name and record the artifact
+fn export_vt_layer(
+    layer: &str,
+    src: &Path,
+    vt_dir: &Path,
+    safe_name: &str,
+    convert_to_png: bool,
+    files: &mut Vec<ExportedFile>,
+    warnings: &mut Vec<ExportWarning>,
+) -> Result<(), String> {
+    // The extractor writes `<name>_<layer>.dds` (e.g. `..._basemap.dds`); the export file drops the
+    // trailing `Map` from the layer name (`BaseMap` → `Base`), matching the engine's
+    // `Albedo_Normal_Physical` naming for split virtual textures
+    let stem = format!("{safe_name}_{}", layer.trim_end_matches("Map"));
+    let dds_path = unique_path(vt_dir, &stem, "dds");
+    if fs::rename(src, &dds_path).is_err() {
+        fs::copy(src, &dds_path).map_err(|e| format!("Failed to move {layer} output: {e}"))?;
+    }
 
-        files.push(ExportedFile {
-            path: dds_path.display().to_string(),
-            kind: "dds".to_string(),
-            size_bytes: dds_bytes.len(),
-        });
+    let dds_bytes = fs::read(&dds_path).unwrap_or_default();
+    let replaced = convert_to_png
+        && replace_dds_with_png(&dds_bytes, vt_dir, &stem, &dds_path, files, warnings, &stem);
+    if !replaced {
+        record_file(files, &dds_path, "dds", dds_bytes.len());
     }
 
     Ok(())
@@ -578,13 +654,13 @@ fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, Strin
 fn build_manifest(
     asset: &VisualAsset,
     vt_matches: &[GtpMatch],
-    mesh_format: MeshFormat,
+    plan: &ExportPlan<'_>,
     files: &[ExportedFile],
 ) -> ExportManifest {
     ExportManifest {
         name: asset.name.clone(),
         path: asset.gr2_path.clone(),
-        mesh_format,
+        mesh_format: plan.mesh_format,
         source: asset.source_pak.clone(),
         material_ids: asset.material_ids.clone(),
         textures: asset.textures.iter().map(TextureSummary::from).collect(),
