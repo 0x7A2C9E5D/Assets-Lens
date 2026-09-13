@@ -11,7 +11,7 @@ A **Tauri 2** desktop tool: it locates the local *Baldur's Gate 3* Data director
 ### Features
 
 - **Database page**: auto-detect the default Steam install path, or pick the Data directory containing `Shared.pak` through the native folder dialog; while building the merged index, per-file progress (pushed over a `Channel`) and elapsed time are shown, followed by Visual / Material / Texture / Virtual Texture stat cards
-- **Browse page**: a paginated list of visual assets, sortable by name or GUID from the column headers, with debounced keyword search that matches a name or a GUID and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D preview, GR2 mesh path, material IDs, DDS texture list and virtual texture hashes in the right-hand detail panel, with the archive holding the mesh and each texture named next to it
+- **Browse page**: a paginated list of visual assets, sortable by name or GUID from the column headers, with debounced keyword search that matches a name or a GUID and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D preview, GR2 mesh path, material IDs, DDS texture list and virtual texture hashes in the right-hand detail panel
 - **3D preview**: an embedded three.js viewport loaded on demand; the backend converts GR2 to GLB and ships it as Base64 — geometry only, no textures, rendered with a neutral unlit material so broken normals or missing maps can never turn the model black
 - **Asset export**: the detail panel's *Export* button opens format options and a target directory, then writes to `<target>/<asset name>/`; progress is pushed phase by phase and a single missing item only records a note instead of aborting the export
 - **About page**: the running version sits next to the app name — with a single amber arrow welded into the badge when a newer release is out, whose tooltip carries the published number — plus GitHub / Nexus Mods links, the tech stack, credits and the rights / privacy / license statements
@@ -90,7 +90,7 @@ tauri-app/
 | `build_database` | Parses `Shared.pak` into the `_merged` index, streaming progress via `Channel<BuildProgress>` |
 | `db_stats` | Current database statistics (`null` before a build) |
 | `list_visuals` | Paged visual asset summaries (optional keyword filter) |
-| `get_visual` | Detail of one visual asset (materials / textures / virtual textures, each with the archive holding it) |
+| `get_visual` | Detail of one visual asset (materials / textures / virtual textures) |
 | `get_visual_preview` | Reads a GR2 and converts it to GLB, returned as Base64 for the 3D preview |
 | `export_visual_asset` | Exports one asset, streaming phase progress via `Channel<ExportProgress>` |
 
@@ -101,8 +101,6 @@ tauri-app/
 - `paks` (main archives, data partitions excluded) plus `cache` (maclarian's `PakReaderCache`) are created once per game directory by `archives()`: opening an archive parses its whole file table, so the cache is sized for a full install (`CACHED_PAKS = 32`) and keeps every table it walked resident. Callers clone the pair back out and lock the cache only around a single read, so the state lock and the cache are never held at the same time
 - `read_file` reads one path through maclarian's `read_files_bulk`, asking the archives in turn and taking the first answer — meshes, textures and virtual textures all go through that one path. Records arrive in the archives' own spelling (`Generated/Public/...`, `/`-separated, original casing), so the first try normally hits; a `\`-spelled record gets one retry, and a case-only difference falls back to a case-insensitive match against the file tables
 - `texture_index` is every `.gtp` path inside `VirtualTextures.pak`, built lazily. Virtual textures are not spread across the archives the way meshes and textures are: that single archive holds all 12974 pages plus their `.gts` sidecars, and no other archive holds any — so listing it replaces the previous full-install scan
-- `pak_index` (a `PakIndex`) answers which archive holds a mesh or a texture, the one thing maclarian does not tell us: `TextureRef::source_pak` exists, but the parser only ever writes an empty string into it, so the index is built with maclarian's own listing API — the way its `extract_dds_textures` resolves a texture — in one pass over every archive, with the first archive to list a path winning, i.e. the order `read_file` sweeps in, so a label can never contradict where the bytes come from
-- Only meshes and textures are indexed (224560 of the 567681 entries of a full install, ~40 MB and ~0.7s): those are the only two things the detail panel names an archive for. The index is built when a database build finishes, so clicking a row never waits for it
 
 **Release check** (`src/utils/release.ts` + `src/api/nexus.ts`)
 
@@ -174,7 +172,7 @@ This tool is an independently developed, unofficial third-party application, nei
 ### 功能
 
 - **数据库页**：自动检测 Steam 默认安装路径，或用系统原生目录对话框手动选择含 `Shared.pak` 的 Data 目录；构建合并索引时通过 `Channel` 推送逐文件进度并显示耗时，完成后展示 Visual / Material / Texture / Virtual Texture 统计卡片
-- **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓` 依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径、材质 ID、DDS 纹理列表与虚拟纹理哈希，网格与每张纹理所处的归档就在其旁边
+- **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓` 依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径、材质 ID、DDS 纹理列表与虚拟纹理哈希
 - **3D 预览**：详情面板内嵌 three.js 视口，按需加载；后端把 GR2 转换成 GLB 后以 Base64 传给前端，纯几何、无贴图，使用中性灰无光照材质，避免法线/贴图缺失导致模型全黑
 - **资源导出**：详情面板「导出」按钮 → 选择网格格式与纹理格式、目标目录，导出到 `<目标目录>/<资源名>/`；逐阶段推送进度，单项缺失只记「提示」不中断整个导出
 - **关于页**：应用名旁显示当前运行版本；当 Nexus Mods 上已发布更新的版本时，版本徽标内会多出一个琥珀色箭头（已发布版本号只出现在悬浮提示里），并提供 GitHub / Nexus Mods 外链、技术栈、致谢与权利 / 隐私 / 许可声明
@@ -253,7 +251,7 @@ tauri-app/
 | `build_database` | 解析 `Shared.pak` 构建 `_merged` 索引，经 `Channel<BuildProgress>` 推送进度 |
 | `db_stats` | 当前数据库统计（未构建时为 `null`） |
 | `list_visuals` | 分页（可选关键字过滤）返回视觉资源摘要 |
-| `get_visual` | 单个视觉资源详情（材质 / 纹理 / 虚拟纹理，并附各自所处归档） |
+| `get_visual` | 单个视觉资源详情（材质 / 纹理 / 虚拟纹理） |
 | `get_visual_preview` | 读取 GR2 并转换为 GLB，Base64 返回供 3D 预览 |
 | `export_visual_asset` | 导出单个资源，经 `Channel<ExportProgress>` 推送阶段进度 |
 
@@ -264,8 +262,6 @@ tauri-app/
 - `paks`（主归档，已排除数据分片）与 `cache`（maclarian 的 `PakReaderCache`）由 `archives()` 在每个游戏目录下只建一次：打开一个归档要解析整张文件表，因此缓存按完整安装的档案数配置（`CACHED_PAKS = 32`），使走过的表常驻；调用方克隆这对值后只在单次读取期间锁缓存，状态锁与缓存锁从不同时持有
 - `read_file` 用 maclarian 的 `read_files_bulk` 逐档询问并取首个命中——网格、纹理、虚拟纹理都走这同一条路径。数据库给出的路径就是归档自身的拼写（`Generated/Public/...`、`/` 分隔、原大小写），因此通常一次命中；遇到 `\` 拼写的记录重试一次，仅大小写不同时再回退为对文件表的大小写不敏感匹配
 - `texture_index` 是 `VirtualTextures.pak` 内全部 `.gtp` 路径（按需延迟构建）。虚拟纹理不像网格 / 纹理那样分散在各档：完整安装的 12974 个页及其 `.gts` 旁档只存在于这一档、其他档一个都没有，因此列一次它即可替代原先的全库扫描
-- `pak_index`（`PakIndex`）回答「某网格 / 纹理在哪个归档」——这是 maclarian 唯一没告诉我们的信息：`TextureRef::source_pak` 字段存在，但解析器只会往里面写空串；因此该索引用 maclarian 自己的列目录 API 构建（与其 `extract_dds_textures` 解析纹理的方式相同），一趟遍历所有归档，先列出该路径的归档胜出，即 `read_file` 的扫描顺序，故展示的归档绝不会与实际读取来源相矛盾
-- 只索引网格与纹理（完整安装 567681 条中占 224560 条，约 40 MB / 0.7 s）：详情面板只对这两类标注归档。索引在数据库构建结束时一并建好，点击行永远不会等它
 
 **版本检查**（`src/utils/release.ts` + `src/api/nexus.ts`）
 

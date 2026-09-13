@@ -177,9 +177,6 @@ pub async fn build_database(
             st.visual_ids = visual_ids;
             st.visual_ids_by_id = visual_ids_by_id;
             st.merged_db = Some(db);
-            // One pass over the archive file tables, a fraction of a second next to the minutes just
-            // spent parsing, so that asking which archive holds a file never makes a row click wait
-            st.ensure_pak_index();
         }
 
         on_progress.send(BuildProgress { percent: 1.0 }).ok();
@@ -289,33 +286,21 @@ pub fn list_visuals(
 
 /// Query the detail of a single visual asset by its GUID (names are not unique).
 ///
-/// Archive names come from `AppState`'s path index, which is built once per session (see
-/// `ensure_pak_index`) because resolving one would otherwise mean re-listing every file table: a
-/// map read keeps the panel instant while walking the list with the arrow keys.
+/// Which archive holds the mesh or a texture is not resolved here: answering it means consulting the
+/// archives, and that answer only matters where a file is actually read (preview / export). Archive
+/// names in the detail panel are decoration, so they stay empty rather than justify a scan on every
+/// row the user clicks.
 #[tauri::command]
 pub fn get_visual(
     state: State<'_, SharedState>,
     id: String,
 ) -> Result<Option<VisualAssetDetail>, String> {
-    let mut st = lock(&state)?;
+    let st = lock(&state)?;
 
-    // The DTO is built inside the lookup, so the borrow of the database ends with this statement and
-    // the state stays available for the archive lookups below
-    let Some(mut detail) = st
-        .merged_db
-        .as_ref()
-        .and_then(|db| db.visuals_by_id.get(&id))
-        .map(VisualAssetDetail::from)
-    else {
-        return Ok(None);
-    };
-
-    detail.mesh_pak = st.pak_of(&detail.path);
-    for texture in &mut detail.textures {
-        texture.source = st.pak_of(&texture.path);
+    match st.merged_db.as_ref().and_then(|db| db.visuals_by_id.get(&id)) {
+        Some(asset) => Ok(Some(VisualAssetDetail::from(asset))),
+        None => Ok(None),
     }
-
-    Ok(Some(detail))
 }
 
 /// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview

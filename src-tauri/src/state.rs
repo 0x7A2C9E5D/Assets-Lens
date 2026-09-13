@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use maclarian::merged::{GameDataResolver, MergedDatabase};
 use maclarian::pak::PakReaderCache;
 
-use crate::export::{build_gtp_index, build_pak_index, main_paks, PakIndex};
+use crate::export::{build_gtp_index, main_paks};
 
 /// How many archives maclarian's table cache keeps parsed: enough for every main archive of a full
 /// install (~26), so a sweep leaves all the tables it walked resident instead of evicting them.
@@ -38,10 +38,6 @@ pub struct AppState {
     /// table, so the cache is created once per game directory instead of once per preview / export.
     /// `Mutex` because reading an archive needs `&mut`.
     pub cache: Option<Arc<Mutex<PakReaderCache>>>,
-    /// Which archive holds each mesh and texture. Building it costs one pass over the file tables
-    /// (~0.7s and ~40 MB for a full install), far too much for a single selected row but nothing
-    /// once per session.
-    pub pak_index: Option<PakIndex>,
 }
 
 impl AppState {
@@ -55,7 +51,6 @@ impl AppState {
             texture_index: None,
             paks: Vec::new(),
             cache: None,
-            pak_index: None,
         }
     }
 
@@ -68,7 +63,6 @@ impl AppState {
         // The cached tables and the archive list still describe the previous directory
         self.paks.clear();
         self.cache = None;
-        self.pak_index = None;
     }
 
     /// `VirtualTextures.pak` — the one archive that holds virtual textures
@@ -94,39 +88,6 @@ impl AppState {
         self.paks = paks.clone();
         self.cache = Some(cache.clone());
         Ok((cache, paks))
-    }
-
-    /// Build the archive lookup index unless it is already there (see `pak_of`). Also called once
-    /// when a database build finishes, so the first detail click does not have to pay for it.
-    pub fn ensure_pak_index(&mut self) {
-        if self.pak_index.is_some() {
-            return;
-        }
-
-        // Without the archive list there is nothing to index; leave it unbuilt so a later call can
-        // retry once a game directory is set
-        let Ok((_, paks)) = self.archives() else {
-            return;
-        };
-        self.pak_index = Some(build_pak_index(&paks));
-    }
-
-    /// Archive that holds `target` (file name only, empty when no archive lists it). The index is
-    /// built on first use, so this is a map lookup on every later call: a row can be picked with the
-    /// arrow keys without re-reading a single file table. A record spelled with `\` separators is
-    /// retried once, since the tables always use `/`.
-    pub fn pak_of(&mut self, target: &str) -> String {
-        self.ensure_pak_index();
-
-        let slashed = target.replace('\\', "/");
-        let Some(index) = &self.pak_index else {
-            return String::new();
-        };
-        index
-            .name_of(target)
-            .or_else(|| index.name_of(&slashed))
-            .unwrap_or_default()
-            .to_string()
     }
 
     /// Return the virtual texture index. The first call reads the file table of
