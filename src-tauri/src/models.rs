@@ -81,26 +81,39 @@ impl MaterialSummary {
 /// contributes nothing, because a bare GUID would only repeat what the material section already
 /// shows.
 ///
-/// `bound_ids` picks which of a material's binding lists to search — a regular texture is one of
-/// its `texture_ids`, a virtual texture one of its `virtual_texture_ids`, and both are matched the
-/// same way.
+/// `is_bound` decides whether a material binds the resource — a regular texture is one of its
+/// `texture_ids`, a virtual texture one of its `virtual_textures`, and both are asked the same way.
 fn material_names_for(
-    id: &str,
-    bound_ids: impl Fn(&MaterialInfo) -> &[String],
+    is_bound: impl Fn(&MaterialInfo) -> bool,
     material_ids: &[String],
     materials: &HashMap<String, MaterialInfo>,
 ) -> Vec<String> {
     material_ids
         .iter()
         .filter_map(|material_id| materials.get(material_id))
-        .filter(|material| {
-            bound_ids(material)
-                .iter()
-                .any(|bound| bound.as_str() == id)
-        })
+        .filter(|material| is_bound(material))
         .map(|material| material.name.clone())
         .filter(|name| !name.is_empty())
         .collect()
+}
+
+/// Parameter the asset's materials bind the virtual texture `id` with.
+///
+/// The name belongs to the binding rather than to the resource, so it is taken from the first
+/// material that binds it — in the shipped data a virtual texture is bound once and with the same
+/// name everywhere, which is what makes one name per row enough.
+fn virtual_texture_parameter(
+    id: &str,
+    material_ids: &[String],
+    materials: &HashMap<String, MaterialInfo>,
+) -> Option<String> {
+    material_ids
+        .iter()
+        .filter_map(|material_id| materials.get(material_id))
+        .flat_map(|material| material.virtual_textures.as_slice())
+        .find(|binding| binding.id == id)
+        .map(|binding| binding.parameter_name.clone())
+        .filter(|name| !name.is_empty())
 }
 
 /// Streaming virtual texture reference (GTex)
@@ -128,6 +141,11 @@ pub struct VirtualTextureSummary {
     /// textures; the rows here carry no material reference.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub material_names: Vec<String>,
+    /// Parameter the binding fills (e.g. `virtualtexture`), read off the asset's materials — it
+    /// belongs to the binding, not to the resource. Absent from the JSON while unset, which is the
+    /// case for the export manifest, so its bytes stay exactly what they were.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameter_name: Option<String>,
 }
 
 impl VirtualTextureSummary {
@@ -149,6 +167,7 @@ impl VirtualTextureSummary {
             height: None,
             // Settled by the caller, which is the only place holding the material cache
             material_names: Vec::new(),
+            parameter_name: None,
         }
     }
 
@@ -213,8 +232,7 @@ impl VisualAssetDetail {
                 .map(|texture| {
                     let mut summary = TextureSummary::from(texture);
                     summary.material_names = material_names_for(
-                        &texture.id,
-                        |material| material.texture_ids.as_slice(),
+                        |material| material.texture_ids.iter().any(|id| id == &texture.id),
                         &value.material_ids,
                         materials,
                     );
@@ -228,11 +246,12 @@ impl VisualAssetDetail {
                     let mut summary =
                         VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash));
                     summary.material_names = material_names_for(
-                        &vt.id,
-                        |material| material.virtual_texture_ids.as_slice(),
+                        |material| material.virtual_textures.iter().any(|b| b.id == vt.id),
                         &value.material_ids,
                         materials,
                     );
+                    summary.parameter_name =
+                        virtual_texture_parameter(&vt.id, &value.material_ids, materials);
                     summary
                 })
                 .collect(),

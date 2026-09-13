@@ -62,6 +62,7 @@ const bindingsByMaterial = computed(() => {
       kind: 'virtual',
       id: virtualTexture.id,
       name: virtualTexture.name || virtualTexture.id,
+      parameterName: virtualTexture.parameterName,
     })
   }
   return byMaterial
@@ -241,8 +242,9 @@ function toggle(section: SectionKey) {
                   class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
               >
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
-                <!-- The material slot stays out: the material section already lists it beside the
-                     same texture. The name does belong here — the row reads as it. -->
+                <!-- The parameter stays out of the card: it describes a binding, not the resource,
+                     and the material section — where a material is read as a whole — already shows
+                     it. The card reports the name, the size and the archive, nothing else. -->
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span v-if="tex.name" class="break-all font-mono">{{ tex.name }}</span>
                   <span>{{ tex.width }} × {{ tex.height }}</span>
@@ -287,6 +289,8 @@ function toggle(section: SectionKey) {
                   class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
               >
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ vt.path || vt.hash }}</p>
+                <!-- Same as the texture card: the parameter belongs to the material's binding, so
+                     it is read in the material section (its chips) and not repeated here. -->
                 <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span class="break-all font-mono">{{ vt.name }}</span>
                   <span v-if="vt.width">{{ vt.width }} × {{ vt.height }}</span>

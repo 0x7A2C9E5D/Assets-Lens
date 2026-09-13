@@ -25,10 +25,23 @@ pub struct MaterialInfo {
     pub source_file: String,
     /// GUIDs of the textures this material binds
     pub texture_ids: Vec<String>,
-    /// GUIDs of the virtual textures this material binds. An asset's virtual texture list is the
-    /// union over its materials, so this is what tells those rows which material they came from:
-    /// a virtual texture is only ever reachable through the material that parameterizes it.
-    pub virtual_texture_ids: Vec<String>,
+    /// The virtual textures this material binds. An asset's virtual texture list is the union over
+    /// its materials, so this is what tells those rows which material they came from: a virtual
+    /// texture is only ever reachable through the material that parameterizes it.
+    pub virtual_textures: Vec<VirtualTextureBinding>,
+}
+
+/// A virtual texture one material binds, together with the parameter that binding fills.
+pub struct VirtualTextureBinding {
+    /// GUID of the virtual texture resource (`VirtualTextureBank`)
+    pub id: String,
+    /// `ParameterName` of the binding node (e.g. `virtualtexture`, `overlayvirtualtexture`). Empty
+    /// until the LSF pass fills it in: maclarian keeps only the GUID of a binding (see
+    /// `virtual_texture_params`), and that pass runs outside the build — right after the database is
+    /// published, or on the first detail view that gets there first
+    /// (`commands::ensure_virtual_texture_parameters`) — so it is empty only while the app has not
+    /// read the names yet.
+    pub parameter_name: String,
 }
 
 /// One material as it appears in the serialized database, carrying only what the panel needs.
@@ -44,8 +57,9 @@ struct RawMaterial {
     source_file: String,
     #[serde(default)]
     texture_ids: Vec<RawTextureParam>,
-    /// Bare GUIDs, unlike `texture_ids`: a virtual texture parameter carries no name of its own.
-    /// Absent — not empty — for the materials that bind no virtual texture, hence the default.
+    /// Bare GUIDs, unlike `texture_ids`: maclarian parses a binding down to its `ID` and drops the
+    /// parameter name that goes with it (see `virtual_texture_params`). Absent — not empty — for
+    /// the materials that bind no virtual texture, hence the default.
     #[serde(default)]
     virtual_texture_ids: Vec<String>,
 }
@@ -99,11 +113,44 @@ pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
                         .into_iter()
                         .map(|param| param.texture_id)
                         .collect(),
-                    virtual_texture_ids: material.virtual_texture_ids,
+                    // The parameter name is not in the serialized database either — the field below
+                    // is a bare GUID, so `fill_virtual_texture_parameters` supplies the name later
+                    virtual_textures: material
+                        .virtual_texture_ids
+                        .into_iter()
+                        .map(|id| VirtualTextureBinding {
+                            id,
+                            parameter_name: String::new(),
+                        })
+                        .collect(),
                 },
             )
         })
         .collect()
+}
+
+/// Fill in the parameter name of every binding the LSF pass recognized, matched by material GUID.
+///
+/// The database and that pass are read separately — maclarian drops the name, and the pass cannot
+/// know which materials the build will keep (see `extract_materials` / `virtual_texture_params`) —
+/// so the two are joined here. A binding the pass did not see keeps its empty name, and the panel
+/// then renders the chip without one.
+pub fn fill_virtual_texture_parameters(
+    materials: &mut HashMap<String, MaterialInfo>,
+    parameters: &HashMap<String, Vec<VirtualTextureBinding>>,
+) {
+    for (material_id, material) in materials.iter_mut() {
+        let Some(named_bindings) = parameters.get(material_id) else {
+            continue;
+        };
+
+        for binding in &mut material.virtual_textures {
+            // A material binds a resource once, so the first match is the only one
+            if let Some(named) = named_bindings.iter().find(|named| named.id == binding.id) {
+                binding.parameter_name.clone_from(&named.parameter_name);
+            }
+        }
+    }
 }
 
 /// Global application state: BG3 data directory, resource resolver, the built database,
@@ -137,6 +184,13 @@ pub struct AppState {
     /// model whose virtual textures share a tile set would otherwise read the same file repeatedly.
     /// An empty list is a cached "no sizes here" answer, not a missing entry.
     pub page_file_sizes: HashMap<String, PageFileSizes>,
+    /// Whether the virtual texture parameter names are in `materials` yet. The pass that reads them
+    /// walks every `_merged.lsf` of `Shared.pak` and costs seconds, so it no longer runs inside the
+    /// build: it is started right after the database is published, and any detail view that arrives
+    /// before it finishes runs it itself (see `commands::ensure_virtual_texture_parameters`). A flag
+    /// rather than "are all names empty": that would be indistinguishable from a pass that ran and
+    /// genuinely found none.
+    pub vt_parameters_ready: bool,
 }
 
 impl AppState {
@@ -150,6 +204,7 @@ impl AppState {
             materials: HashMap::new(),
             archives: None,
             page_file_sizes: HashMap::new(),
+            vt_parameters_ready: false,
         }
     }
 
@@ -164,6 +219,8 @@ impl AppState {
         self.archives = None;
         // Page file sizes were read from those archives
         self.page_file_sizes.clear();
+        // The parameter names belonged to the materials that were just dropped
+        self.vt_parameters_ready = false;
     }
 
     /// The shared PAK pool, created on the first command that needs an archive. Callers clone the

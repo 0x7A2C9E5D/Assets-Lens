@@ -3,6 +3,7 @@ pub mod export;
 mod models;
 pub mod archives;
 mod state;
+mod virtual_texture_params;
 mod virtual_textures;
 
 use std::sync::{Arc, Mutex};

@@ -14,7 +14,8 @@ use crate::models::{
     match_for_hash, AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult,
     ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
-use crate::state::{extract_materials, AppState};
+use crate::state::{extract_materials, fill_virtual_texture_parameters, AppState};
+use crate::virtual_texture_params;
 use crate::virtual_textures;
 
 pub type SharedState = Arc<Mutex<AppState>>;
@@ -179,6 +180,10 @@ pub async fn build_database(
         // Read out while the database is here rather than on the first detail view: maclarian does
         // not expose a material's name any other way (see `extract_materials`), and a one-off cost
         // inside a build that already runs for minutes is not something a click should pay for.
+        //
+        // The parameter names of the virtual texture bindings are *not* read here: that pass walks
+        // every `_merged.lsf` of `Shared.pak` and would add seconds to every build for a label only
+        // the detail view shows (see `ensure_virtual_texture_parameters`).
         let materials = extract_materials(&db);
 
         let stats = db.stats();
@@ -203,6 +208,16 @@ pub async fn build_database(
 
         on_progress.send(BuildProgress { percent: 1.0 }).ok();
 
+        // The parameter names are read on a thread of their own *after* the build is published, so
+        // the progress bar reaches 100% without waiting for them. A detail view that arrives before
+        // the pass finishes runs it itself (see `ensure_virtual_texture_parameters`).
+        let warm_state = state.clone();
+        std::thread::spawn(move || {
+            if let Err(err) = ensure_virtual_texture_parameters(&warm_state) {
+                eprintln!("[maclarian] virtual texture parameters unavailable: {err}");
+            }
+        });
+
         Ok(DatabaseStats {
             // One entry per visual GUID, so the dashboard always matches the browse list
             visual_count,
@@ -213,6 +228,49 @@ pub async fn build_database(
     })
         .await
         .map_err(|err| format!("Build task terminated unexpectedly: {err}"))?
+}
+
+/// Serializes the one pass that reads virtual texture parameter names (see
+/// `ensure_virtual_texture_parameters`): the build's own thread and a detail view that beats it there
+/// must not walk every LSF of `Shared.pak` at the same time. The second caller waits here and then
+/// finds the names already in place, so the pass runs exactly once either way.
+static VT_PARAMETERS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Make sure every material that binds a virtual texture carries the parameter name of that binding.
+///
+/// maclarian parses a virtual texture binding down to its GUID, so the name it fills
+/// (`virtualtexture`, `overlayvirtualtexture`, …) only exists in the LSF documents and has to be read
+/// separately (`virtual_texture_params::collect`). That pass walks every `_merged.lsf` of
+/// `Shared.pak` and costs seconds, so it is kept out of the build: the database is published first
+/// and the names land right after on their own thread — while a detail view that arrives earlier
+/// runs the pass itself. Either way the pass runs once; a later call returns immediately.
+fn ensure_virtual_texture_parameters(state: &SharedState) -> Result<(), String> {
+    let _pass = VT_PARAMETERS_LOCK
+        .lock()
+        .map_err(|err| format!("Virtual texture parameter lock unavailable: {err}"))?;
+
+    let (pool, game_path) = {
+        let mut st = lock(state)?;
+        if st.vt_parameters_ready {
+            return Ok(());
+        }
+        // No game directory means no materials to decorate
+        let Some(game_path) = st.game_path.clone() else {
+            return Ok(());
+        };
+        (st.pool()?, game_path)
+    };
+
+    let parameters = virtual_texture_params::collect(&pool, &game_path.join("Shared.pak"));
+
+    let mut st = lock(state)?;
+    // A directory switch can land while the pass runs: what it read belongs to the old directory
+    if st.game_path.as_deref() != Some(game_path.as_path()) {
+        return Ok(());
+    }
+    fill_virtual_texture_parameters(&mut st.materials, &parameters);
+    st.vt_parameters_ready = true;
+    Ok(())
 }
 
 /// Current database statistics (None when not built yet)
@@ -321,6 +379,11 @@ pub async fn get_visual(
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, String> {
+        // The binding chips show the parameter each virtual texture fills, and those names are read
+        // from the LSF documents on demand (see `ensure_virtual_texture_parameters`): free once the
+        // build's own thread has finished, one extra pass when a detail view beats it there.
+        ensure_virtual_texture_parameters(&state)?;
+
         let (mut detail, matches, pool, mut page_file_sizes) = {
             let mut st = lock(&state)?;
             // Owned rather than borrowed: the GTex lookup below needs `&mut` state (it hands the

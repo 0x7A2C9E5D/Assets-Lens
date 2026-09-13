@@ -53,6 +53,9 @@ export interface VirtualTextureRef {
      *  to name. Inverted the same way as `TextureRef.materialNames`, so the material section can
      *  list a material's virtual textures alongside its regular ones */
     materialNames?: string[]
+    /** Parameter the binding fills (e.g. `virtualtexture`, `overlayvirtualtexture`), read off this
+     *  asset's materials; absent when the LSF pass did not reach it, so the chip renders without it */
+    parameterName?: string
 }
 
 export interface VisualAsset {
