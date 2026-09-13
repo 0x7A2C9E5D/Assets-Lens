@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import {computed, defineAsyncComponent, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
 import {ChevronDown, Download, FileArchive, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
 import type {VisualAsset} from '../api/tauri'
 import ExportDialog from './ExportDialog.vue'
@@ -13,8 +12,6 @@ import ExportDialog from './ExportDialog.vue'
 const ModelPreview = defineAsyncComponent(() => import('./ModelPreview.vue'))
 
 const props = defineProps<{ asset: VisualAsset | null; loading: boolean }>()
-
-useI18n()
 
 const exportOpen = ref(false)
 

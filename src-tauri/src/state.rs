@@ -230,7 +230,7 @@ impl AppState {
     /// The archive that holds the virtual texture page files. maclarian's lookup needs one archive
     /// to list; which one that is cannot come from a page file (finding it is the lookup's job), so
     /// it is the single name this module spells out.
-    pub fn vt_pak(&self) -> Result<PathBuf, String> {
+    fn vt_pak(&self) -> Result<PathBuf, String> {
         let game_path = self
             .game_path
             .as_ref()

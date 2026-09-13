@@ -341,9 +341,8 @@ pub fn list_visuals(
 
     let mut matched: Vec<&String> = ids
         .iter()
-        .filter(|id| match keyword.as_deref() {
-            None => true,
-            Some(kw) => {
+        .filter(|id| {
+            keyword.as_deref().is_none_or(|kw| {
                 // The cached order only holds GUIDs, so the name to match against comes from the
                 // DB. GUIDs are ASCII, so folding them stays a cheap ASCII-lowercase compare.
                 id.as_str().to_ascii_lowercase().contains(kw)
@@ -351,7 +350,7 @@ pub fn list_visuals(
                     .visuals_by_id
                     .get(*id)
                     .is_some_and(|visual| visual.name.to_lowercase().contains(kw))
-            }
+            })
         })
         .collect();
 

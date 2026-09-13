@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import {onBeforeUnmount, onMounted, ref, watch} from 'vue'
-import {useI18n} from 'vue-i18n'
 import {Box, Loader2} from 'lucide-vue-next'
 // Type-only import: emits no runtime code. three itself is lazy-loaded below through dynamic
 // imports so the ~630 KB renderer never lands in the initial bundle.
@@ -12,8 +11,6 @@ type GltfCtor = typeof import('three/examples/jsm/loaders/GLTFLoader.js').GLTFLo
 type OrbitCtor = typeof import('three/examples/jsm/controls/OrbitControls.js').OrbitControls
 
 const props = defineProps<{ path: string | null }>()
-
-useI18n()
 
 const viewport = ref<HTMLDivElement | null>(null)
 const loading = ref(false)

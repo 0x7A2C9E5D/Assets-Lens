@@ -303,7 +303,7 @@ fn stage_gts_candidates(
 
     // 2. Same-directory prefix fallback: filter GTS files sharing the directory and a name prefix
     //    across all PAKs
-    let fallbacks: Vec<String> = pak
+    let mut fallbacks: Vec<String> = pak
         .list_all()?
         .into_iter()
         .filter(|p| {
@@ -326,10 +326,9 @@ fn stage_gts_candidates(
         .collect();
     // The closer the GTS name is to the GTP name, the more likely it hits; try in descending
     // file-name length
-    let mut fallbacks_sorted = fallbacks;
-    fallbacks_sorted.sort_by_key(|p| std::cmp::Reverse(p.len()));
+    fallbacks.sort_by_key(|p| std::cmp::Reverse(p.len()));
 
-    for rel in fallbacks_sorted {
+    for rel in fallbacks {
         stage_gts_file(pak, matched, &rel, shared, &mut staged);
     }
 

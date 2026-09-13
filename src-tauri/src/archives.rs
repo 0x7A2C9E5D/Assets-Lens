@@ -104,7 +104,7 @@ impl Archives {
     }
 
     /// List all file paths inside a PAK (`/`-separated)
-    pub fn list(&mut self, pak: &Path) -> Result<Vec<String>, String> {
+    fn list(&mut self, pak: &Path) -> Result<Vec<String>, String> {
         self.ensure(pak)?;
         Ok(self
             .tables
@@ -123,20 +123,15 @@ impl Archives {
         self.ensure(pak)?;
 
         let want = normalize_path(target);
-        let index = self
+        let entry = self
             .tables
             .get(pak)
             .and_then(|entries| {
                 entries
                     .iter()
-                    .position(|e| normalize_path(&e.path.to_string_lossy()) == want)
+                    .find(|e| normalize_path(&e.path.to_string_lossy()) == want)
             })
-            .ok_or_else(|| format!("{target} not found in {}", pak.display()))?;
-
-        let entry = self
-            .tables
-            .get(pak)
-            .and_then(|entries| entries.get(index).cloned())
+            .cloned()
             .ok_or_else(|| format!("{target} not found in {}", pak.display()))?;
         let reader = self
             .readers
