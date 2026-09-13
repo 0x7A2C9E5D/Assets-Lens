@@ -1,6 +1,4 @@
-use std::path::Path;
-
-use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
+use maclarian::merged::{TextureRef, VirtualTextureRef, VisualAsset};
 use serde::{Deserialize, Serialize};
 
 /// Build progress, pushed to the frontend through a Tauri Channel
@@ -46,44 +44,16 @@ pub struct VirtualTextureSummary {
     pub id: String,
     pub name: String,
     pub hash: String,
-    /// Page file (`.gtp`) holding this texture's layers, as maclarian's `find_gtp_by_hashes_in_pak`
-    /// resolved it; empty when no page file names the hash. `VirtualTextureRef` itself has no path —
-    /// the hash is the only location information the merged database carries
-    pub path: String,
-    /// Archive holding that page file (e.g. `VirtualTextures.pak`); empty when unresolved
-    pub source: String,
 }
 
-impl VirtualTextureSummary {
-    /// `matched` is what maclarian's resolver handed back for this hash (`AppState::vt_matches`), so
-    /// the summary states the page file that is really there instead of leaving the location blank
-    pub fn new(value: &VirtualTextureRef, matched: Option<&GtpMatch>) -> Self {
+impl From<&VirtualTextureRef> for VirtualTextureSummary {
+    fn from(value: &VirtualTextureRef) -> Self {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
             hash: value.gtex_hash.clone(),
-            path: matched.map(|m| m.gtp_path.clone()).unwrap_or_default(),
-            source: matched.map(|m| pak_name(&m.pak_path)).unwrap_or_default(),
         }
     }
-}
-
-/// Resolution maclarian handed back for `hash` — hashes are hex, so an ASCII-folded compare is exact
-pub(crate) fn match_for_hash<'a>(matches: &'a [GtpMatch], hash: &str) -> Option<&'a GtpMatch> {
-    let hash = hash.trim();
-    if hash.is_empty() {
-        return None;
-    }
-
-    matches.iter().find(|m| m.gtex_hash.eq_ignore_ascii_case(hash))
-}
-
-/// File name of an archive maclarian handed back, e.g. `VirtualTextures.pak`
-fn pak_name(path: &Path) -> String {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default()
-        .to_string()
 }
 
 /// Full visual asset information (detail panel)
@@ -103,10 +73,8 @@ pub struct VisualAssetDetail {
     pub virtual_textures: Vec<VirtualTextureSummary>,
 }
 
-impl VisualAssetDetail {
-    /// `matches` are the page files maclarian resolved for this visual's virtual texture hashes
-    /// (`AppState::vt_matches`), so the panel can name the `.gtp` behind every hash
-    pub fn new(value: &VisualAsset, matches: &[GtpMatch]) -> Self {
+impl From<&VisualAsset> for VisualAssetDetail {
+    fn from(value: &VisualAsset) -> Self {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
@@ -114,11 +82,7 @@ impl VisualAssetDetail {
             source: value.source_pak.clone(),
             material_ids: value.material_ids.clone(),
             textures: value.textures.iter().map(TextureSummary::from).collect(),
-            virtual_textures: value
-                .virtual_textures
-                .iter()
-                .map(|vt| VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash)))
-                .collect(),
+            virtual_textures: value.virtual_textures.iter().map(VirtualTextureSummary::from).collect(),
         }
     }
 }

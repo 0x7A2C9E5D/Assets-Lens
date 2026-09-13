@@ -17,14 +17,14 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use maclarian::converter::dds_bytes_to_png_bytes;
 use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
-use maclarian::merged::{GtpMatch, MergedResolver, VirtualTextureRef, VisualAsset};
+use maclarian::merged::{VirtualTextureRef, VisualAsset};
 use maclarian::pak::{PakOperations, PakReaderCache};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::models::{
     ExportManifest, ExportOptions, ExportProgress,
     ExportResult, ExportWarning, ExportedFile, MeshFormat, TextureSummary,
-    VirtualTextureSummary, match_for_hash,
+    VirtualTextureSummary,
 };
 
 /// Progress phases (the frontend uses these to look up i18n copy)
@@ -238,37 +238,41 @@ pub fn read_from(cache: &mut PakReaderCache, pak: &Path, target: &str) -> Result
         .ok_or_else(|| format!("{target} not found in {}", pak.display()))
 }
 
-/// Resolve the `.gtp` page file behind each virtual texture hash, with maclarian's own lookup
-/// (`MergedResolver::find_gtp_by_hashes_in_pak`): it lists the archive's file table and matches the
-/// 32-char hash against the page file names — the only way to learn where a virtual texture really
-/// lives, since `VirtualTextureRef` carries nothing but that hash.
+/// Build the virtual texture index: every `.gtp` path inside `VirtualTextures.pak`.
 ///
-/// The hashes variant rather than `find_virtual_textures_for_visual_in_pak`: that one looks the
-/// visual up by *name*, and names are not unique in this database (the GUID is the identity), so it
-/// could answer with another visual's page files. Both hand back the same `GtpMatch`.
-///
-/// An empty result is the honest outcome for an archive that cannot be listed or holds no page file
-/// for a hash: virtual textures are an optional artifact and must not abort an export.
-pub fn find_vt_matches(resolver: &MergedResolver, hashes: &[&str], vt_pak: &Path) -> Vec<GtpMatch> {
-    // The comparison against the file names is case-sensitive, while the database's hashes are only
-    // lowercase hex by convention
-    let wanted: Vec<String> = hashes
-        .iter()
-        .map(|hash| hash.trim().to_ascii_lowercase())
-        .filter(|hash| !hash.is_empty())
-        .collect();
-    if wanted.is_empty() {
-        return Vec::new();
-    }
-    let wanted: Vec<&str> = wanted.iter().map(String::as_str).collect();
-
-    match resolver.find_gtp_by_hashes_in_pak(&wanted, vt_pak) {
-        Ok(matches) => matches,
+/// Virtual textures are not spread over the archives the way meshes and textures are — a full
+/// install keeps all 12974 pages plus their `.gts` sidecars in that single archive and nowhere else
+/// (verified), so the index costs one file-table read instead of a sweep over every archive.
+/// Returns an empty index when the archive cannot be read: virtual textures are an optional
+/// artifact and must not abort the whole export.
+pub fn build_gtp_index(vt_pak: &Path) -> Vec<String> {
+    match PakOperations::list(vt_pak) {
+        Ok(entries) => entries
+            .into_iter()
+            .filter(|path| path.to_lowercase().ends_with(".gtp"))
+            .collect(),
         Err(err) => {
-            eprintln!("[maclarian] listing {} failed: {err}", vt_pak.display());
+            eprintln!("[maclarian] listing VirtualTextures.pak failed: {err}");
             Vec::new()
         }
     }
+}
+
+/// Find the GTP path matching a GTex hash in the index. The GTP file stem always ends with the
+/// 32-char hash: `.../Albedo_Normal_Physical_<volume>_<hash>.gtp`.
+fn find_gtp_by_hash<'a>(index: &'a [String], hash: &str) -> Option<&'a String> {
+    let hash = hash.trim().to_lowercase();
+    if hash.is_empty() {
+        return None;
+    }
+
+    index.iter().find(|path| {
+        let stem = Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        stem.to_lowercase().ends_with(&hash)
+    })
 }
 
 /// GTP path → GTS path: strip the trailing `_<32 hex digits>` and swap the extension
@@ -362,17 +366,14 @@ fn try_write_png_and_record(
 
 /// Export a single visual asset. The GLB is the core artifact — its failure aborts the whole
 /// export, while a single texture / virtual texture failure only records a warning.
-///
-/// `vt_matches` are the `.gtp` page files maclarian resolved for this asset's virtual texture
-/// hashes (`AppState::vt_matches`), so neither the export nor `asset.json` has to scan an archive
-/// for them.
 pub fn run_export(
     asset: &VisualAsset,
     cache: &Arc<Mutex<PakReaderCache>>,
     paks: &[PathBuf],
-    vt_matches: &[GtpMatch],
+    vt_pak: Option<&Path>,
     dest_root: &Path,
     options: &ExportOptions,
+    gtp_index: &[String],
     on_progress: &dyn Fn(ExportProgress),
 ) -> Result<ExportResult, String> {
     let mut files: Vec<ExportedFile> = Vec::new();
@@ -523,8 +524,8 @@ pub fn run_export(
     }
 
     // ---- 3. Virtual textures: GTP + GTS → three layer DDS files ----
-    // Virtual textures live in `VirtualTextures.pak` and nowhere else; a hash maclarian's lookup did
-    // not resolve (no archive, or no page file naming it) reports as not found.
+    // Virtual textures live in `VirtualTextures.pak` and nowhere else, so without that archive there
+    // is nothing to resolve and every hash reports as not found.
     if !vt_targets.is_empty() {
         let vt_dir = out_dir.join("virtual_textures");
         fs::create_dir_all(&vt_dir)
@@ -542,7 +543,10 @@ pub fn run_export(
             for (seq, vt) in vt_targets.iter().enumerate() {
                 emit(PHASE_VIRTUAL, Some(vt.name.clone()));
 
-                let Some(matched) = match_for_hash(vt_matches, &vt.gtex_hash) else {
+                let (Some(vt_pak), Some(gtp_rel)) = (
+                    vt_pak,
+                    vt_pak.and_then(|_| find_gtp_by_hash(gtp_index, &vt.gtex_hash)),
+                ) else {
                     push_warning(&mut warnings, "vtGtpNotFound", vt.gtex_hash.clone());
                     continue;
                 };
@@ -551,7 +555,8 @@ pub fn run_export(
                 let mut guard = lock_cache(cache)?;
                 if let Err(err) = export_virtual_texture(
                     &mut guard,
-                    matched,
+                    vt_pak,
+                    gtp_rel,
                     &vt.name,
                     &vt_dir,
                     &shared,
@@ -582,7 +587,7 @@ pub fn run_export(
         virtual_textures: asset
             .virtual_textures
             .iter()
-            .map(|vt| VirtualTextureSummary::new(vt, match_for_hash(vt_matches, &vt.gtex_hash)))
+            .map(VirtualTextureSummary::from)
             .collect(),
         files: files.clone(),
         exported_at_unix: std::time::SystemTime::now()
@@ -620,12 +625,13 @@ fn next_temp_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-/// Extract a single virtual texture: pull its GTP/GTS out of the archive maclarian matched, resolve
-/// the three layer DDS files, and write them to the export dir.
+/// Extract a single virtual texture: pull GTP/GTS out of `VirtualTextures.pak`, resolve the three
+/// layer DDS files, and write them to the export dir.
 #[allow(clippy::too_many_arguments)]
 fn export_virtual_texture(
     cache: &mut PakReaderCache,
-    matched: &GtpMatch,
+    vt_pak: &Path,
+    gtp_rel: &str,
     vt_name: &str,
     vt_dir: &Path,
     shared: &Path,
@@ -636,19 +642,19 @@ fn export_virtual_texture(
 ) -> Result<(), String> {
     fs::create_dir_all(stage).map_err(|e| format!("Failed to create staging directory: {e}"))?;
 
-    let gtp_name = Path::new(&matched.gtp_path)
+    let gtp_name = Path::new(gtp_rel)
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or_else(|| format!("Invalid GTP path: {}", matched.gtp_path))?;
+        .ok_or_else(|| format!("Invalid GTP path: {gtp_rel}"))?;
 
     let gtp_path = shared.join(gtp_name);
     if !gtp_path.exists() {
-        let bytes = read_from(cache, &matched.pak_path, &matched.gtp_path)?;
+        let bytes = read_from(cache, vt_pak, gtp_rel)?;
         fs::write(&gtp_path, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
     }
 
     // GTS naming does not always match the GTP: try each candidate until a GTS resolves this hash
-    let candidates = gts_candidates(cache, &matched.pak_path, &matched.gtp_path, shared)?;
+    let candidates = gts_candidates(cache, vt_pak, gtp_rel, shared)?;
     let mut last_err = "no GTS candidate available".to_string();
     let mut extracted = false;
     for gts_path in candidates {
