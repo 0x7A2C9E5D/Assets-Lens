@@ -180,14 +180,21 @@ function toggle(section: SectionKey) {
             <div
                 v-for="material in materialsWithBindings"
                 :key="material.id"
-                :title="material.id"
                 class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
             >
               <p v-if="material.sourceFile" class="break-all font-mono text-[12px] text-glow-cyan">
                 {{ material.sourceFile }}
               </p>
-              <p class="mt-1.5 break-all font-mono text-[11px] text-muted">
-                {{ material.name || material.id }}
+              <!-- The GUID is the material's identity, not its name: names repeat across templates,
+                   and the game's own XML refers to a material by this value. It sits next to the name
+                   rather than in a `title`, because a native tooltip cannot be selected and the whole
+                   point of showing it is to have it copied. Unnamed materials already read as their
+                   GUID, so the two would be the same string twice. -->
+              <p class="mt-1.5 flex flex-wrap items-baseline gap-x-2 font-mono text-[11px] text-muted">
+                <span class="break-all">{{ material.name || material.id }}</span>
+                <span v-if="material.name" class="break-all text-[10px] text-muted/50">
+                  {{ material.id }}
+                </span>
               </p>
               <ul
                   v-if="material.bindings.length"
