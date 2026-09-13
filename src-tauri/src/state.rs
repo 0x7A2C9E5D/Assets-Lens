@@ -4,8 +4,7 @@ use std::sync::{Arc, Mutex};
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
 use maclarian::pak::PakReaderCache;
 
-use crate::archives::{build_pak_index, main_paks};
-use crate::export::find_vt_matches;
+use crate::export::{build_pak_index, find_vt_matches, main_paks};
 
 /// How many archives maclarian's table cache keeps parsed: enough for every main archive of a full
 /// install (~26), so a sweep leaves all the tables it walked resident instead of evicting them.
