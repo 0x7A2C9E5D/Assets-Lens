@@ -2,13 +2,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
-use maclarian::pak::PakReaderCache;
+use maclarian::pak::{find_pak_files, PakReaderCache};
 
-use crate::archives::{build_pak_index, main_paks};
 use crate::export::find_vt_matches;
 
-/// How many archives maclarian's table cache keeps parsed: enough for every main archive of a full
-/// install (~26), so a sweep leaves all the tables it walked resident instead of evicting them.
+/// How many archives maclarian's table cache keeps parsed: enough for the ~26 readable archives of a
+/// full install, so a sweep leaves all the tables it walked resident instead of evicting them. The
+/// ones that cannot be opened (data partitions, localization) never get a table and do not count.
 const CACHED_PAKS: usize = 32;
 
 /// Global application state: BG3 data directory, resource resolver, the built database,
@@ -30,7 +30,7 @@ pub struct AppState {
     /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
     /// picks a sequence instead of re-sorting every id on each page request.
     pub visual_ids_by_id: Vec<String>,
-    /// Main archives in file-name order (data partitions excluded), so a read can walk them
+    /// Every `.pak` maclarian's own directory scan found, in path order, so a read can walk them
     pub paks: Vec<PathBuf>,
     /// maclarian's PAK table cache shared by every command: opening an archive parses its whole file
     /// table, so the cache is created once per game directory instead of once per preview / export.
@@ -76,6 +76,12 @@ impl AppState {
     /// The shared archive list plus maclarian's table cache, created on the first command that needs
     /// an archive. Callers clone both back out and lock the cache only around a single read, so the
     /// state lock and the cache are never held at the same time.
+    ///
+    /// The list is maclarian's own directory scan (`find_pak_files`), which walks the data directory
+    /// recursively and sorts what it finds. The numbered data partitions and the `Localization`
+    /// archives come back with it: a partition has no LSPK header of its own and cannot be opened
+    /// standalone, so every read skips it for free — filtering here would mean a second walk over the
+    /// directory to subtract entries the reads already ignore.
     pub fn archives(&mut self) -> Result<(Arc<Mutex<PakReaderCache>>, Vec<PathBuf>), String> {
         if let Some(cache) = &self.cache {
             return Ok((cache.clone(), self.paks.clone()));
@@ -85,47 +91,11 @@ impl AppState {
             .game_path
             .clone()
             .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
-        let paks = main_paks(&game_path)?;
+        let paks = find_pak_files(&game_path);
         let cache = Arc::new(Mutex::new(PakReaderCache::new(CACHED_PAKS)));
         self.paks = paks.clone();
         self.cache = Some(cache.clone());
         Ok((cache, paks))
-    }
-
-    /// Name the archive every mesh and texture of the built database came from, by filling
-    /// maclarian's own `source_pak` fields (`VisualAsset::source_pak`, `TextureRef::source_pak`).
-    ///
-    /// Those fields are declared but never written by maclarian's parser, so the values come from
-    /// listing the archive file tables (`build_pak_index`, ~0.7s for a full install) — a fraction of
-    /// the minutes just spent parsing. Filling them once here is what makes the archive name free
-    /// everywhere it is shown: the detail panel and `asset.json` both read the fields, and no click
-    /// or export ever consults a file table for it. The index itself goes out of scope again, since
-    /// it costs an order of magnitude more than the strings it hands out (`PakIndex`).
-    ///
-    /// Called with the database already stored, and only from `build_database`: without a database
-    /// there is nothing to fill.
-    pub fn fill_source_paks(&mut self) {
-        // No archive list means no answers; leaving the fields empty is the honest outcome
-        let Ok((_, paks)) = self.archives() else {
-            return;
-        };
-        let index = build_pak_index(&paks);
-        let Some(db) = self.merged_db.as_mut() else {
-            return;
-        };
-
-        for visual in db.visuals_by_id.values_mut() {
-            visual.source_pak = index.name_of(&visual.gr2_path).unwrap_or_default().to_string();
-            // Each visual carries its own clone of the texture references it uses, so filling them
-            // here covers every consumer; the texture bank itself (`db.textures`) is only consulted
-            // while resolving, which is already done
-            for texture in &mut visual.textures {
-                texture.source_pak = index
-                    .name_of(&texture.dds_path)
-                    .unwrap_or_default()
-                    .to_string();
-            }
-        }
     }
 
     /// Resolve the `.gtp` page file behind each virtual texture hash, with maclarian's own lookup

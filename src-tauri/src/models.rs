@@ -17,8 +17,9 @@ pub struct TextureSummary {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Archive holding this DDS (e.g. `Textures.pak`). maclarian's parser leaves `TextureRef`'s field
-    /// of the same name empty, so `AppState::fill_source_paks` fills it in once per database build
+    /// Archive holding this DDS (e.g. `Textures.pak`). maclarian's own code only ever writes an empty
+    /// `TextureRef::source_pak` (deserialization is the field's only writer there) and nothing fills it
+    /// here, so this is empty and the detail panel drops the row
     pub source: String,
     pub width: u32,
     pub height: u32,
@@ -95,9 +96,9 @@ pub struct VisualAssetDetail {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Archive holding the GR2 mesh (e.g. `Models.pak`), i.e. the visual's own file. maclarian's
-    /// parser leaves `VisualAsset`'s field of the same name empty, so `AppState::fill_source_paks`
-    /// fills it in once per database build
+    /// Archive holding the GR2 mesh (e.g. `Models.pak`), i.e. the visual's own file. maclarian's own
+    /// code only ever writes an empty `VisualAsset::source_pak` (deserialization is the field's only
+    /// writer there) and nothing fills it here, so this is empty and the detail panel drops the row
     pub source: String,
     pub material_ids: Vec<String>,
     pub textures: Vec<TextureSummary>,

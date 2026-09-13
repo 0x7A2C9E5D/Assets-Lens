@@ -177,10 +177,6 @@ pub async fn build_database(
             st.visual_ids = visual_ids;
             st.visual_ids_by_id = visual_ids_by_id;
             st.merged_db = Some(db);
-            // One pass over the archive file tables, a fraction of a second next to the minutes just
-            // spent parsing, so that naming the archive of a mesh or a texture never makes a row
-            // click — or an export — wait for it
-            st.fill_source_paks();
         }
 
         on_progress.send(BuildProgress { percent: 1.0 }).ok();
@@ -290,11 +286,11 @@ pub fn list_visuals(
 
 /// Query the detail of a single visual asset by its GUID (names are not unique).
 ///
-/// The archives holding the mesh and each texture come along for free: `build_database` filled
-/// maclarian's `source_pak` fields in one pass (see `AppState::fill_source_paks`), so naming them
-/// never re-lists a file table here. Virtual textures are the exception — the database keeps their
-/// hash and nothing else — so their page files are resolved through maclarian's own lookup
-/// (`AppState::vt_matches`).
+/// The archive holding the mesh or a texture is not named: maclarian only ever writes an empty
+/// `source_pak` (deserialization is its only writer) and nothing fills it afterward, so those
+/// fields stay empty and the panel drops their rows. Virtual textures are different — they do get
+/// an archive, since the database keeps their hash and nothing else, and the page file lookup
+/// (`AppState::vt_matches`) reports the archive it found each one in.
 #[tauri::command]
 pub fn get_visual(
     state: State<'_, SharedState>,
