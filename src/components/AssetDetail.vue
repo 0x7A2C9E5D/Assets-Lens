@@ -112,17 +112,17 @@ const exportOpen = ref(false)
                   class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
               >
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
+                <p
+                    v-if="tex.source"
+                    :title="$t('detail.pakLabel')"
+                    class="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted"
+                >
+                  <FileArchive class="h-3 w-3 shrink-0"/>
+                  <span class="truncate font-mono">{{ tex.source }}</span>
+                </p>
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span>{{ tex.width }} × {{ tex.height }}</span>
                   <span v-if="tex.parameterName" class="text-glow-gold">{{ tex.parameterName }}</span>
-                  <span
-                      v-if="tex.source"
-                      :title="$t('detail.pakLabel')"
-                      class="flex min-w-0 items-center gap-1.5"
-                  >
-                    <FileArchive class="h-3 w-3 shrink-0"/>
-                    <span class="truncate font-mono">{{ tex.source }}</span>
-                  </span>
                 </div>
               </div>
               <p v-if="!asset.textures.length" class="text-xs text-muted/70">
