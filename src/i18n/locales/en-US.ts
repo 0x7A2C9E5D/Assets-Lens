@@ -55,7 +55,7 @@ const enUS = {
     database: {
         title: 'Database',
         subtitle: 'Choose your game data folder and scan it to build the asset database',
-        detectFailed: 'No game location detected automatically; please choose the folder manually',
+        detectFailed: 'No game location found automatically; please choose the folder manually',
         status: {
             building: 'Scanning',
             ready: 'Ready',
@@ -65,9 +65,9 @@ const enUS = {
         dir: {
             label: 'Game data folder',
             empty: 'No folder selected yet',
-            detect: 'Auto Detect',
+            detect: 'Auto Find',
             choose: 'Choose Folder',
-            tip: 'Try Auto Detect first; if that misses, choose the game resources folder.',
+            tip: 'Try Auto Find first; if that misses, choose the game resources folder.',
         },
         build: {
             title: 'Scan Game Assets',
