@@ -11,7 +11,7 @@ A **Tauri 2** desktop tool: it locates the local *Baldur's Gate 3* Data director
 ### Features
 
 - **Database page**: auto-detect the default Steam install path, or pick the Data directory containing `Shared.pak` through the native folder dialog; while building the merged index, per-file progress (pushed over a `Channel`) and elapsed time are shown, followed by Visual / Material / Texture / Virtual Texture stat cards
-- **Browse page**: a paginated list of visual assets, sortable by name or GUID from the column headers, with debounced keyword search that matches a name or a GUID and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D preview, GR2 mesh path and source PAK, material IDs, the DDS texture list with each texture's own source PAK, and virtual texture hashes in the right-hand detail panel
+- **Browse page**: a paginated list of visual assets, sortable by name or GUID from the column headers, with debounced keyword search that matches a name or a GUID and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D preview, GR2 mesh path and source PAK, material IDs, the DDS texture list with each texture's own source PAK, and, for virtual textures, the page file each hash resolved to together with its source archive
 - **3D preview**: an embedded three.js viewport loaded on demand; the backend converts GR2 to GLB and ships it as Base64 — geometry only, no textures, rendered with a neutral unlit material so broken normals or missing maps can never turn the model black
 - **Asset export**: the detail panel's *Export* button opens format options and a target directory, then writes to `<target>/<asset name>/`; progress is pushed phase by phase and a single missing item only records a note instead of aborting the export
 - **About page**: the running version sits next to the app name — with a single amber arrow welded into the badge when a newer release is out, whose tooltip carries the published number — plus GitHub / Nexus Mods links, the tech stack, credits and the rights / privacy / license statements
@@ -70,7 +70,7 @@ tauri-app/
    ├─ src/main.rs              Binary entry point
    ├─ src/lib.rs               Tauri builder: plugins, AppState, command list
    ├─ src/models.rs            serde DTOs (uniform `camelCase` JSON contract)
-   ├─ src/state.rs             AppState: resolver / database / sort cache / PAK pool / GTP index
+   ├─ src/state.rs             AppState: resolver / database / sort cache / PAK pool / GTex lookup
    ├─ src/commands.rs          `#[tauri::command]` implementations
    ├─ src/export.rs            Export pipeline + `Package` (PAK pool) + GTP/GTS handling
    ├─ capabilities/default.json Per-window permissions (dialog, opener, window controls)
@@ -99,7 +99,7 @@ tauri-app/
 - The game directory is **never persisted on disk**: the frontend stores it in localStorage and hands it back through `set_game_path` on startup, so backend state only lives for the current session
 - `visual_names()` / `gr2_files()` come from HashMap iteration and are not order-stable; after a build they are sorted and cached in `AppState`, and paging only slices — otherwise pages would shuffle
 - `packages` (a `Package`) is a PAK read pool shared across commands: opening an archive parses its whole file table, so it is created once per game directory, capped by `MAX_CACHED_PAKS = 6`. `Package::locate_many` is what names an archive: one pass over the already-parsed tables, decompressing nothing, answers `get_visual` for a mesh and all of its textures at once — a visual easily references a dozen DDS files, and rescanning a table of hundreds of thousands of entries per texture would be far too slow
-- `texture_index` is a global index of `.gtp` paths, built lazily, used to resolve GTex hashes during virtual texture export
+- `vt_matches()` resolves a visual's GTex hashes with maclarian's own lookup (`MergedResolver::find_gtp_by_hashes_in_pak`), which reports `GtpMatch` values carrying both the `.gtp` path and the archive holding it. Only the archive to list is supplied (`VirtualTextures.pak`); a hash that matches nothing renders without a page file instead of falling back to a guess. The resolver owns the database it is built from, so the database is moved out and back per call
 
 **Release check** (`src/utils/release.ts` + `src/api/nexus.ts`)
 
@@ -122,7 +122,7 @@ tauri-app/
 
 - Every conversion reuses maclarian (`convert_gr2_bytes_to_glb`, `dds_bytes_to_png_bytes`, `VirtualTextureExtractor`, `LspkReader`) instead of reimplementing anything
 - The mesh is the core artifact — its failure aborts the export; a single texture / virtual texture failure only records an `ExportWarning` (`code` is localized on the frontend, `detail` keeps the raw message)
-- Virtual textures are staged to a temp directory as `GTP` / `GTS`, extracted, and the temp directory is cleaned up afterwards
+- Virtual textures are staged to a temp directory as `GTP` / `GTS`, extracted, and the temp directory is cleaned up afterwards; the page file is read straight out of the archive its match named, and the GTS name is derived from it (hash suffix stripped), so the pool-wide scan is left as a fallback only
 
 ### Development
 
@@ -170,7 +170,7 @@ This tool is an independently developed, unofficial third-party application, nei
 ### 功能
 
 - **数据库页**：自动检测 Steam 默认安装路径，或用系统原生目录对话框手动选择含 `Shared.pak` 的 Data 目录；构建合并索引时通过 `Channel` 推送逐文件进度并显示耗时，完成后展示 Visual / Material / Texture / Virtual Texture 统计卡片
-- **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓` 依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径与来源 PAK、材质 ID、DDS 纹理列表（每条纹理各自标注来源归档）与虚拟纹理哈希
+- **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓` 依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径与来源 PAK、材质 ID、DDS 纹理列表（每条纹理各自标注来源归档）与虚拟纹理列表（每个哈希解析到的页文件及其来源归档）
 - **3D 预览**：详情面板内嵌 three.js 视口，按需加载；后端把 GR2 转换成 GLB 后以 Base64 传给前端，纯几何、无贴图，使用中性灰无光照材质，避免法线/贴图缺失导致模型全黑
 - **资源导出**：详情面板「导出」按钮 → 选择网格格式与纹理格式、目标目录，导出到 `<目标目录>/<资源名>/`；逐阶段推送进度，单项缺失只记「提示」不中断整个导出
 - **关于页**：应用名旁显示当前运行版本；当 Nexus Mods 上已发布更新的版本时，版本徽标内会多出一个琥珀色箭头（已发布版本号只出现在悬浮提示里），并提供 GitHub / Nexus Mods 外链、技术栈、致谢与权利 / 隐私 / 许可声明
@@ -229,7 +229,7 @@ tauri-app/
    ├─ src/main.rs              二进制入口
    ├─ src/lib.rs               Tauri Builder：插件注册、AppState 托管、命令清单
    ├─ src/models.rs            serde DTO（统一 `camelCase` JSON 契约）
-   ├─ src/state.rs             AppState：resolver / 合并数据库 / 排序缓存 / PAK 池 / GTP 索引
+   ├─ src/state.rs             AppState：resolver / 合并数据库 / 排序缓存 / PAK 池 / GTex 查找
    ├─ src/commands.rs          `#[tauri::command]` 命令实现
    ├─ src/export.rs            导出流水线 + `Package`（PAK 复用池）+ GTP/GTS 解析
    ├─ capabilities/default.json 按窗口授予的权限（dialog、opener、窗口控制）
@@ -258,7 +258,7 @@ tauri-app/
 - 游戏目录**不落盘**：前端存在 localStorage，启动时经 `set_game_path` 交回后端校验，后端状态仅存活于当前会话
 - `visual_names()` / `gr2_files()` 来自 HashMap 迭代、顺序不稳定，构建后统一排序缓存到 `AppState`，分页只做切片，否则翻页会乱序
 - `packages`（`Package`）是跨命令复用的 PAK 读池：打开一个归档要解析整张文件表，因此每个游戏目录只建一次，并设 `MAX_CACHED_PAKS = 6` 上限；给文件标注归档名的是 `Package::locate_many`——对已解析的表只走一遍、不解压任何文件，一次就回答 `get_visual` 的「网格 + 其全部纹理」；一个视觉资源动辄引用十几张 DDS，若每条纹理都把几十万条的表重扫一遍就太慢了
-- `texture_index` 为 `.gtp` 路径的全局索引（按需延迟构建），用于虚拟纹理导出时的 GTex 哈希查找
+- `vt_matches()` 用 maclarian 自带查找（`MergedResolver::find_gtp_by_hashes_in_pak`）解析视觉资源的 GTex 哈希，返回的 `GtpMatch` 同时携带 `.gtp` 路径与持有它的归档。需要提供的只有「列哪一个归档」（`VirtualTextures.pak`）；匹配不到的哈希不显示页文件，而不是退化成猜测。resolver 持有构建它的那份数据库，因此每次调用都把数据库移出再放回
 
 **版本检查**（`src/utils/release.ts` + `src/api/nexus.ts`）
 
@@ -281,7 +281,7 @@ tauri-app/
 
 - 格式转换全部复用 maclarian（`convert_gr2_bytes_to_glb`、`dds_bytes_to_png_bytes`、`VirtualTextureExtractor`、`LspkReader`），不重复实现
 - GLB 网格是核心产物，其失败会中止本次导出；单个纹理 / 虚拟纹理失败只记录 `ExportWarning`（`code` 供前端 i18n 取文案，`detail` 为原始信息）
-- 虚拟纹理经临时目录暂存 `GTP` / `GTS` 后提取，结束即清理
+- 虚拟纹理经临时目录暂存 `GTP` / `GTS` 后提取，结束即清理；页文件直接从匹配结果指名的归档读取，`GTS` 名由它去掉哈希后缀推导而来，全库扫描只作兜底
 
 ### 开发
 

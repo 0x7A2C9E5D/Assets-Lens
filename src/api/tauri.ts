@@ -29,6 +29,10 @@ export interface VirtualTextureRef {
     id: string
     name: string
     hash: string
+    /** Page file (`.gtp`) inside its archive; empty when the hash resolved to no page file */
+    path: string
+    /** Archive holding that page file (e.g. `VirtualTextures.pak`), taken from the resolved match */
+    source: string
 }
 
 export interface VisualAsset {

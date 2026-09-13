@@ -1,4 +1,4 @@
-use maclarian::merged::{TextureRef, VirtualTextureRef, VisualAsset};
+use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use serde::{Deserialize, Serialize};
 
 /// Build progress, pushed to the frontend through a Tauri Channel
@@ -45,16 +45,39 @@ pub struct VirtualTextureSummary {
     pub id: String,
     pub name: String,
     pub hash: String,
+    /// Page file (`.gtp`) inside its archive; empty when no lookup was run or nothing matched
+    pub path: String,
+    /// Archive holding that page file, taken from the match itself (`GtpMatch::pak_path`) rather
+    /// than rebuilt from a configured archive name — unresolved hashes stay empty instead of
+    /// claiming a plausible-but-unverified archive
+    pub source: String,
 }
 
-impl From<&VirtualTextureRef> for VirtualTextureSummary {
-    fn from(value: &VirtualTextureRef) -> Self {
+impl VirtualTextureSummary {
+    /// `matched` is the page file resolved for this hash — `None` when the lookup found nothing
+    /// (in which case the row renders without path and archive) or was skipped by the caller
+    pub fn new(value: &VirtualTextureRef, matched: Option<&GtpMatch>) -> Self {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
             hash: value.gtex_hash.clone(),
+            path: matched.map(|m| m.gtp_path.clone()).unwrap_or_default(),
+            source: matched
+                .and_then(|m| m.pak_path.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_string(),
         }
     }
+}
+
+/// The page file resolved for one GTex hash. `GtpMatch::gtex_hash` echoes the hash that was
+/// searched for, so this is a plain lookup rather than a hash comparison.
+pub fn match_for_hash<'a>(matches: &'a [GtpMatch], hash: &str) -> Option<&'a GtpMatch> {
+    let hash = hash.trim();
+    matches
+        .iter()
+        .find(|matched| matched.gtex_hash.eq_ignore_ascii_case(hash))
 }
 
 /// Full visual asset information (detail panel)
@@ -73,8 +96,10 @@ pub struct VisualAssetDetail {
     pub virtual_textures: Vec<VirtualTextureSummary>,
 }
 
-impl From<&VisualAsset> for VisualAssetDetail {
-    fn from(value: &VisualAsset) -> Self {
+impl VisualAssetDetail {
+    /// `matches` are the page files resolved for this asset's virtual textures; pass an empty
+    /// slice to skip the lookup (the rows then show the hash without a page file)
+    pub fn new(value: &VisualAsset, matches: &[GtpMatch]) -> Self {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
@@ -82,7 +107,11 @@ impl From<&VisualAsset> for VisualAssetDetail {
             mesh_pak: String::new(),
             material_ids: value.material_ids.clone(),
             textures: value.textures.iter().map(TextureSummary::from).collect(),
-            virtual_textures: value.virtual_textures.iter().map(VirtualTextureSummary::from).collect(),
+            virtual_textures: value
+                .virtual_textures
+                .iter()
+                .map(|vt| VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash)))
+                .collect(),
         }
     }
 }

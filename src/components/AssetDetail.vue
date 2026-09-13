@@ -143,8 +143,18 @@ const exportOpen = ref(false)
                   :key="vt.id"
                   class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
               >
-                <p class="break-all font-mono text-[12px] text-glow-cyan">{{ vt.name }}</p>
-                <p class="mt-1 break-all font-mono text-[11px] text-muted">{{ vt.hash }}</p>
+                <p class="break-all font-mono text-[12px] text-glow-cyan">{{ vt.path || vt.hash }}</p>
+                <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+                  <span class="break-all font-mono">{{ vt.name }}</span>
+                  <span
+                      v-if="vt.source"
+                      :title="$t('detail.pakLabel')"
+                      class="flex min-w-0 items-center gap-1.5"
+                  >
+                    <FileArchive class="h-3 w-3 shrink-0"/>
+                    <span class="truncate font-mono">{{ vt.source }}</span>
+                  </span>
+                </div>
               </div>
               <p v-if="!asset.virtualTextures.length" class="text-xs text-muted/70">
                 {{ $t('detail.noVirtualTextures') }}

@@ -18,14 +18,13 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use maclarian::converter::dds_bytes_to_png_bytes;
 use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
-use maclarian::merged::{VirtualTextureRef, VisualAsset};
+use maclarian::merged::{GtpMatch, VirtualTextureRef, VisualAsset};
 use maclarian::pak::lspk::{FileTableEntry, LspkReader};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::models::{
-    ExportManifest, ExportOptions, ExportProgress,
-    ExportResult, ExportWarning, ExportedFile, MeshFormat, TextureSummary,
-    VirtualTextureSummary,
+    ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
+    MeshFormat, TextureSummary, VirtualTextureSummary, match_for_hash,
 };
 
 /// Progress phases (the frontend uses these to look up i18n copy)
@@ -52,8 +51,8 @@ fn push_warning(warnings: &mut Vec<ExportWarning>, code: &str, detail: impl Into
 }
 
 /// How many archives the pool keeps open at most. A cached archive pins a file handle plus its whole
-/// file table, and a full scan (the GTP index) touches every PAK in the game directory, so the cache
-/// is capped and dropped wholesale once it is full.
+/// file table, and a fallback scan touches every PAK in the game directory, so the cache is capped
+/// and dropped wholesale once it is full.
 const MAX_CACHED_PAKS: usize = 6;
 
 /// PAK read pool: each PAK is opened once and its file table and reader stay resident, so indexes
@@ -280,59 +279,29 @@ pub fn lock_pool(pool: &Arc<Mutex<Package>>) -> Result<MutexGuard<'_, Package>, 
     pool.lock().map_err(|e| format!("PAK pool lock unavailable: {e}"))
 }
 
-/// Build the virtual texture index: scan every `.gtp` path in all PAK archives.
-/// BG3 places virtual textures in `VirtualTextures*.pak` *and* inside other PAKs such as
-/// `Shared.pak` under `Generated/.../VirtualTextures/`, so a global scan is required.
-/// Returns an empty index when no GTP can be found or the archives cannot be read — virtual
-/// textures are an optional artifact and must not abort the whole export.
-pub fn build_gtp_index(pool: &mut Package) -> Vec<String> {
-    match pool.list_all() {
-        Ok(entries) => entries
-            .into_iter()
-            .filter(|p| p.to_lowercase().ends_with(".gtp"))
-            .collect(),
-        Err(err) => {
-            eprintln!("[maclarian] list all PAK entries failed: {err}");
-            Vec::new()
-        }
-    }
-}
-
-/// Find the GTP path matching a GTex hash in the index. The GTP file stem always ends with the
-/// 32-char hash: `.../Albedo_Normal_Physical_<volume>_<hash>.gtp`.
-fn find_gtp_by_hash<'a>(index: &'a [String], hash: &str) -> Option<&'a String> {
-    let hash = hash.trim().to_lowercase();
-    if hash.is_empty() {
-        return None;
-    }
-
-    index.iter().find(|path| {
-        let stem = Path::new(path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        stem.to_lowercase().ends_with(&hash)
-    })
-}
-
 /// GTP path → GTS path: strip the trailing `_<32 hex digits>` and swap the extension
-/// (`Albedo_Normal_Physical_5_<hash>.gtp` → `Albedo_Normal_Physical_5.gts`)
+/// (`Generated/Public/VirtualTextures/Albedo_Normal_Physical_5_<hash>.gtp` →
+/// `Generated/Public/VirtualTextures/Albedo_Normal_Physical_5.gts`)
 fn derive_gts_path(gtp_path: &str) -> String {
-    let stem = gtp_path
-        .rsplit_once('/')
-        .map(|(_, name)| name)
-        .unwrap_or(gtp_path);
-    let stem = stem.strip_suffix(".gtp").unwrap_or(stem);
+    // The directory is split off first and put back at the end: only the file name loses its hash
+    // suffix, while the directory has to survive into the result (a GTS sits beside its page file)
+    let (dir, name) = gtp_path.rsplit_once('/').unwrap_or(("", gtp_path));
+    let stem = name
+        .strip_suffix(".gtp")
+        .or_else(|| name.strip_suffix(".GTP"))
+        .unwrap_or(name);
 
-    if let Some(pos) = stem.rfind('_') {
+    let stripped = stem.rfind('_').filter(|pos| {
         let suffix = &stem[pos + 1..];
-        if suffix.len() == 32 && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
-            let head = &gtp_path[..gtp_path.len() - stem.len()];
-            return format!("{head}{}.gts", &stem[..pos]);
-        }
-    }
+        suffix.len() == 32 && suffix.chars().all(|c| c.is_ascii_hexdigit())
+    });
+    let stem = stripped.map_or(stem, |pos| &stem[..pos]);
 
-    format!("{}.gts", gtp_path.trim_end_matches(".gtp"))
+    if dir.is_empty() {
+        format!("{stem}.gts")
+    } else {
+        format!("{dir}/{stem}.gts")
+    }
 }
 
 /// Normalize a path: unify on `/` separators and lowercase for comparison
@@ -411,7 +380,7 @@ pub fn run_export(
     pool: &Arc<Mutex<Package>>,
     dest_root: &Path,
     options: &ExportOptions,
-    gtp_index: &[String],
+    vt_matches: &[GtpMatch],
     on_progress: &dyn Fn(ExportProgress),
 ) -> Result<ExportResult, String> {
     let mut files: Vec<ExportedFile> = Vec::new();
@@ -563,8 +532,8 @@ pub fn run_export(
     }
 
     // ---- 3. Virtual textures: GTP + GTS → three layer DDS files ----
-    // BG3 places virtual textures in `VirtualTextures*.pak` and also inside other PAKs such as
-    // `Shared.pak` under `Generated/.../VirtualTextures/`, so the lookup is global.
+    // Every hash was resolved to a `GtpMatch` up front, which is where both the page file and the
+    // archive holding it come from.
     if !vt_targets.is_empty() {
         let vt_dir = out_dir.join("virtual_textures");
         fs::create_dir_all(&vt_dir)
@@ -582,7 +551,7 @@ pub fn run_export(
             for (seq, vt) in vt_targets.iter().enumerate() {
                 emit(PHASE_VIRTUAL, Some(vt.name.clone()));
 
-                let Some(gtp_rel) = find_gtp_by_hash(gtp_index, &vt.gtex_hash) else {
+                let Some(matched) = match_for_hash(vt_matches, &vt.gtex_hash) else {
                     push_warning(&mut warnings, "vtGtpNotFound", vt.gtex_hash.clone());
                     continue;
                 };
@@ -591,7 +560,7 @@ pub fn run_export(
                 let mut archive = lock_pool(pool)?;
                 if let Err(err) = export_virtual_texture(
                     &mut archive,
-                    gtp_rel,
+                    matched,
                     &vt.name,
                     &vt_dir,
                     &shared,
@@ -626,7 +595,7 @@ pub fn run_export(
         virtual_textures: asset
             .virtual_textures
             .iter()
-            .map(VirtualTextureSummary::from)
+            .map(|vt| VirtualTextureSummary::new(vt, match_for_hash(vt_matches, &vt.gtex_hash)))
             .collect(),
         files: files.clone(),
         exported_at_unix: std::time::SystemTime::now()
@@ -664,12 +633,12 @@ fn next_temp_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-/// Extract a single virtual texture: pull GTP/GTS from any PAK archive, resolve the three layer
-/// DDS files, and write them to the export dir.
+/// Extract a single virtual texture: pull the page file `matched` names (plus the GTS beside it),
+/// resolve the three layer DDS files, and write them to the export dir.
 #[allow(clippy::too_many_arguments)]
 fn export_virtual_texture(
     pak: &mut Package,
-    gtp_rel: &str,
+    matched: &GtpMatch,
     vt_name: &str,
     vt_dir: &Path,
     shared: &Path,
@@ -680,6 +649,7 @@ fn export_virtual_texture(
 ) -> Result<(), String> {
     fs::create_dir_all(stage).map_err(|e| format!("Failed to create staging directory: {e}"))?;
 
+    let gtp_rel = matched.gtp_path.as_str();
     let gtp_name = Path::new(gtp_rel)
         .file_name()
         .and_then(|n| n.to_str())
@@ -687,12 +657,14 @@ fn export_virtual_texture(
 
     let gtp_path = shared.join(gtp_name);
     if !gtp_path.exists() {
-        let bytes = pak.read(gtp_rel, None)?;
+        // The match names the archive that holds this page file, so it is read straight out of it
+        // instead of scanning every archive for a path the lookup already resolved
+        let bytes = read_from_match(pak, matched, gtp_rel)?;
         fs::write(&gtp_path, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
     }
 
     // GTS naming does not always match the GTP: try each candidate until a GTS resolves this hash
-    let candidates = gts_candidates(pak, gtp_rel, shared)?;
+    let candidates = gts_candidates(pak, matched, shared)?;
     let mut last_err = "no GTS candidate available".to_string();
     let mut extracted = false;
     for gts_path in candidates {
@@ -768,18 +740,28 @@ fn export_virtual_texture(
     Ok(())
 }
 
+/// Read a file through the archive a match names. `GtpMatch::pak_path` is the archive its page file
+/// was listed from, so reading there is a table lookup rather than a scan; the pool-wide read stays
+/// as the fallback for names the match does not pin down (`GtpMatch` covers the GTP only — the GTS
+/// beside it is derived from the page file name).
+fn read_from_match(pak: &mut Package, matched: &GtpMatch, target: &str) -> Result<Vec<u8>, String> {
+    pak.read_in(matched.pak_path.as_path(), target)
+        .or_else(|_| pak.read(target, None))
+}
+
 /// Resolve GTS candidates and stage them into the `shared` directory, ordered by likelihood:
 /// 1. `<GTP with the `_<hash>` suffix stripped>.gts` (maclarian's standard derivation)
 /// 2. `.gts` files in the same directory whose name is a prefix of the GTP file name (fallback for
 ///    mismatched GTS/GTP naming); the longer the GTS name, the higher the priority
 ///
-/// A GTS may be shared by several GTPs, so staged files are reused by file name.
-/// Searches across all PAK archives.
+/// A GTS may be shared by several GTPs, so staged files are reused by file name. `matched` gives
+/// the archive to try first; the pool-wide scan remains for the derived names it does not cover.
 fn gts_candidates(
     pak: &mut Package,
-    gtp_rel: &str,
+    matched: &GtpMatch,
     shared: &Path,
 ) -> Result<Vec<PathBuf>, String> {
+    let gtp_rel = matched.gtp_path.as_str();
     let gts_rel = derive_gts_path(gtp_rel);
 
     let gtp_stem = Path::new(gtp_rel)
@@ -796,7 +778,7 @@ fn gts_candidates(
     let mut staged: Vec<PathBuf> = Vec::new();
 
     // 1. Standard derived name
-    if stage_gts_file(pak, &gts_rel, shared, &mut staged) {
+    if stage_gts_file(pak, matched, &gts_rel, shared, &mut staged) {
         return Ok(staged);
     }
 
@@ -829,7 +811,7 @@ fn gts_candidates(
     fallbacks_sorted.sort_by_key(|p| std::cmp::Reverse(p.len()));
 
     for rel in fallbacks_sorted {
-        stage_gts_file(pak, &rel, shared, &mut staged);
+        stage_gts_file(pak, matched, &rel, shared, &mut staged);
     }
 
     if staged.is_empty() {
@@ -838,10 +820,10 @@ fn gts_candidates(
     Ok(staged)
 }
 
-/// Stage one GTS from any PAK to disk; reuse it directly when already staged
-/// (shared with another GTP)
+/// Stage one GTS to disk; reuse it directly when already staged (shared with another GTP)
 fn stage_gts_file(
     pak: &mut Package,
+    matched: &GtpMatch,
     rel: &str,
     shared: &Path,
     staged: &mut Vec<PathBuf>,
@@ -854,7 +836,7 @@ fn stage_gts_file(
         staged.push(path);
         return true;
     }
-    match pak.read(rel, None) {
+    match read_from_match(pak, matched, rel) {
         Ok(bytes) => match fs::write(&path, &bytes) {
             Ok(()) => {
                 staged.push(path);

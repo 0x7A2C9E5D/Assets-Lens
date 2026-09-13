@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use base64::Engine;
 use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
-use maclarian::merged::{GameDataResolver, MergedDatabase};
+use maclarian::merged::{GameDataResolver, MergedDatabase, VisualAsset};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
@@ -32,6 +32,19 @@ fn parse_fraction(current: usize, total: usize) -> f32 {
     } else {
         current as f32 / total as f32
     }
+}
+
+/// GTex hashes worth looking up among a visual's virtual textures. Blank hashes are dropped: they
+/// cannot match a page file, and looking them up would only re-list the archive. Hashing is
+/// lowercased because maclarian matches it against the page file name case-sensitively, while the
+/// database does not promise a case.
+fn vt_hashes(asset: &VisualAsset) -> Vec<String> {
+    asset
+        .virtual_textures
+        .iter()
+        .map(|vt| vt.gtex_hash.trim().to_lowercase())
+        .filter(|hash| !hash.is_empty())
+        .collect()
 }
 
 /// Every visual GUID in both ascending orders the list can be sorted by: by (name, id) — the
@@ -289,7 +302,9 @@ pub fn list_visuals(
 ///
 /// The archives holding the mesh and each texture are resolved here rather than at build time:
 /// which PAK contains a file can only be answered by consulting the archives, and that scan is
-/// heavy enough to belong off the main thread (see `Package::locate_many`).
+/// heavy enough to belong off the main thread (see `Package::locate_many`). Virtual textures take
+/// the other route: maclarian reports page files as `GtpMatch` values that carry their own path
+/// and archive, so nothing has to be scanned for them.
 #[tauri::command]
 pub async fn get_visual(
     app: AppHandle,
@@ -300,14 +315,25 @@ pub async fn get_visual(
     tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, String> {
         let (mut detail, pool) = {
             let mut st = lock(&state)?;
-            let detail = match st
+            // Owned rather than borrowed: the GTex lookup below needs `&mut` state (it hands the
+            // database to a resolver and takes it back), which no borrow of the database outlives.
+            let asset = match st
                 .merged_db
                 .as_ref()
                 .and_then(|db| db.visuals_by_id.get(&id))
             {
-                Some(asset) => VisualAssetDetail::from(asset),
+                Some(asset) => asset.clone(),
                 None => return Ok(None),
             };
+
+            let hashes = vt_hashes(&asset);
+            let matches = if hashes.is_empty() {
+                Vec::new()
+            } else {
+                st.vt_matches(&hashes)
+            };
+            let detail = VisualAssetDetail::new(&asset, &matches);
+
             // `pool()` takes `&mut`, so it runs after the detail is owned; the lock is dropped with
             // this block, leaving the archives to be scanned without holding the state
             (detail, st.pool().ok())
@@ -408,7 +434,7 @@ pub async fn export_visual_asset(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, String> {
-        let (pool, asset, gtp_index) = {
+        let (pool, asset, vt_matches) = {
             let mut st = lock(&state)?;
             let asset = st
                 .merged_db
@@ -416,14 +442,15 @@ pub async fn export_visual_asset(
                 .and_then(|db| db.visuals_by_id.get(&id))
                 .cloned()
                 .ok_or_else(|| NOT_BUILT.to_string())?;
-            // The GTP index is only needed when virtual textures are exported separately
-            let gtp_index = if options.texture_format.is_export() {
-                st.gtp_index()
+            // Page files are looked up only when virtual textures are part of the export; with an
+            // empty list the manifest rows simply carry no path and no archive
+            let vt_matches = if options.texture_format.is_export() {
+                st.vt_matches(&vt_hashes(&asset))
             } else {
                 Vec::new()
             };
             // Shared with the previews: the archives this export needs are usually open already
-            (st.pool()?, asset, gtp_index)
+            (st.pool()?, asset, vt_matches)
         };
 
         run_export(
@@ -431,7 +458,7 @@ pub async fn export_visual_asset(
             &pool,
             &dest_root,
             &options,
-            &gtp_index,
+            &vt_matches,
             &|progress| {
                 let _ = on_progress.send(progress);
             },

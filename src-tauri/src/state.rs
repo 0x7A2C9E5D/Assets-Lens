@@ -1,12 +1,17 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use maclarian::merged::{GameDataResolver, MergedDatabase};
+use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
 
-use crate::export::{build_gtp_index, lock_pool, Package};
+use crate::export::Package;
 
 /// Read preference for the shared PAK pool. Callers name the archive they expect (meshes from
 /// `Models.pak`, a texture from its own archive), so this order only decides the fallback scan.
 const PAK_PREFERENCE: &[&str] = &["Models.pak", "Textures.pak"];
+
+/// Archive holding the virtual texture page files. It is the one name the GTex lookup cannot get
+/// from a match (the match is what it produces), so it is spelled out here.
+const VIRTUAL_TEXTURES_PAK: &str = "VirtualTextures.pak";
 
 /// Global application state: BG3 data directory, resource resolver, the built database,
 /// and a stable name cache for consistent pagination order.
@@ -27,9 +32,6 @@ pub struct AppState {
     /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
     /// picks a sequence instead of re-sorting every id on each page request.
     pub visual_ids_by_id: Vec<String>,
-    /// Index of `.gtp` paths across all PAK archives, looked up by GTex hash;
-    /// built lazily on the first export that needs virtual textures
-    pub texture_index: Option<Vec<String>>,
     /// PAK read pool shared by every command: opening an archive parses its whole file table, so the
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
     /// reading an archive needs `&mut` on its reader.
@@ -44,7 +46,6 @@ impl AppState {
             merged_db: None,
             visual_ids: Vec::new(),
             visual_ids_by_id: Vec::new(),
-            texture_index: None,
             packages: None,
         }
     }
@@ -54,7 +55,6 @@ impl AppState {
         self.merged_db = None;
         self.visual_ids.clear();
         self.visual_ids_by_id.clear();
-        self.texture_index = None;
         // The archives still open belong to the previous directory
         self.packages = None;
     }
@@ -76,27 +76,56 @@ impl AppState {
         Ok(pool)
     }
 
-    /// Return the virtual texture index. The first call scans the file tables of every PAK under
-    /// the data directory and caches the result; the archives are huge and listing them repeatedly
-    /// is expensive, so the index is built only once per session.
-    pub fn gtp_index(&mut self) -> Vec<String> {
-        if let Some(index) = &self.texture_index {
-            return index.clone();
+    /// The archive that holds the virtual texture page files. maclarian's lookup needs one archive
+    /// to list; which one that is cannot come from a page file (finding it is the lookup's job), so
+    /// it is the single name this module spells out.
+    pub fn vt_pak(&self) -> Result<PathBuf, String> {
+        let game_path = self
+            .game_path
+            .as_ref()
+            .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
+        let vt_pak = game_path.join(VIRTUAL_TEXTURES_PAK);
+        if !vt_pak.is_file() {
+            return Err(format!(
+                "{VIRTUAL_TEXTURES_PAK} not found in {}",
+                game_path.display()
+            ));
         }
+        Ok(vt_pak)
+    }
 
-        // A missing pool and a poisoned lock degrade the same way: the export simply runs without
-        // virtual textures instead of failing, so both paths log and fall back to an empty index.
-        let skipped = |err: String| {
-            eprintln!("[maclarian] build GTP index failed: {err}");
-            Vec::new()
+    /// Resolve GTex hashes to their page files through maclarian's own lookup. Each `GtpMatch`
+    /// carries the path inside the archive *and* the archive itself, so neither has to be guessed
+    /// downstream — and unlike a hash-to-path index, a match can only exist for a hash that is
+    /// actually present. A missing archive or a failed lookup degrades to "no virtual textures":
+    /// they are optional, and must not abort a detail view or an export.
+    ///
+    /// `MergedResolver` owns the database it is built from, so the database moves out and back in
+    /// (pointers move, nothing is copied); the state is left exactly as it was found.
+    pub fn vt_matches(&mut self, hashes: &[String]) -> Vec<GtpMatch> {
+        let Some(db) = self.merged_db.take() else {
+            return Vec::new();
         };
-        let built = match self.pool() {
-            Ok(pool) => lock_pool(&pool)
-                .map(|mut pool| build_gtp_index(&mut pool))
-                .unwrap_or_else(skipped),
-            Err(err) => skipped(err),
+        let pak = self.vt_pak();
+        let resolver = MergedResolver::from_database(db);
+
+        let matches = match pak {
+            Ok(pak) => {
+                let hashes: Vec<&str> = hashes.iter().map(String::as_str).collect();
+                resolver
+                    .find_gtp_by_hashes_in_pak(&hashes, &pak)
+                    .unwrap_or_else(|err| {
+                        eprintln!("[maclarian] virtual texture lookup failed: {err}");
+                        Vec::new()
+                    })
+            }
+            Err(err) => {
+                eprintln!("[maclarian] {err}");
+                Vec::new()
+            }
         };
-        self.texture_index = Some(built.clone());
-        built
+
+        self.merged_db = Some(resolver.into_database());
+        matches
     }
 }
