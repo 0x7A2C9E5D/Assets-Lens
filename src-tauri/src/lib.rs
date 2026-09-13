@@ -1,4 +1,3 @@
-mod archives;
 mod commands;
 pub mod export;
 mod models;
