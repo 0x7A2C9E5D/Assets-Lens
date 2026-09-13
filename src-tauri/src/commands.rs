@@ -335,7 +335,7 @@ pub async fn get_visual_preview(
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ModelPreview, String> {
         // The archive list and its table cache are shared with every other command, so a preview
-        // never re-parses an index. Only the handles are taken here: the state lock is released
+        // never reparses an index. Only the handles are taken here: the state lock is released
         // before anything is read, and the cache lock is held for that one read.
         let (cache, paks) = {
             let mut st = lock(&state)?;

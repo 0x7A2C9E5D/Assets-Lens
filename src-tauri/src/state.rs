@@ -65,7 +65,7 @@ impl AppState {
     ///
     /// Deliberately not maclarian's `virtual_textures_pak_path()`: that one rebuilds the path from
     /// `bg3_data_path()`'s auto-detection, which comes back empty whenever the data directory was
-    /// pointed at by hand. The archive only has to exist for the search — every read afterwards takes
+    /// pointed at by hand. The archive only has to exist for the search — every read afterward takes
     /// its path out of the produced `GtpMatch` (`GtpMatch::pak_path`).
     pub fn vt_pak(&self) -> Option<PathBuf> {
         let path = self.game_path.as_ref()?.join("VirtualTextures.pak");
