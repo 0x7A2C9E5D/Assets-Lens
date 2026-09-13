@@ -104,7 +104,7 @@ pub fn main_paks(game_path: &Path) -> Result<Vec<PathBuf>, String> {
 ///
 /// Filling the database's `source_pak` fields is all this is for, so it is built after a database
 /// build and dropped right after (`AppState::fill_source_paks`) — holding ~40 MB for the whole
-/// session to answer lookups that the filled fields already answer would be waste. A full installation
+/// session to answer lookups that the filled fields already answer would be waste. A full install
 /// holds 224560 meshes and textures out of 567681 entries; indexing the rest (sound banks, layouts,
 /// virtual texture pages) would triple the peak for paths nobody asks about, and storing the archive
 /// name per entry instead of an index into `names` would double it again.
@@ -147,7 +147,7 @@ pub fn build_pak_index(paks: &[PathBuf]) -> PakIndex {
         .collect();
 
     let mut by_path: HashMap<Box<str>, u16> = HashMap::new();
-    // A full installation has a couple of dozen archives, so the index fits in a `u16` with room to spare
+    // A full install has a couple of dozen archives, so the index fits in a `u16` with room to spare
     for (slot, pak) in paks.iter().enumerate() {
         match PakOperations::list(pak) {
             Ok(entries) => {
