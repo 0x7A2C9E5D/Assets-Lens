@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
 
-use crate::export::Package;
+use crate::archives::Archives;
 
 /// Read preference for the shared PAK pool. Callers name the archive they expect (meshes from
 /// `Models.pak`, a texture from its own archive), so this order only decides the fallback scan.
@@ -35,7 +35,7 @@ pub struct AppState {
     /// PAK read pool shared by every command: opening an archive parses its whole file table, so the
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
     /// reading an archive needs `&mut` on its reader.
-    pub packages: Option<Arc<Mutex<Package>>>,
+    pub archives: Option<Arc<Mutex<Archives>>>,
 }
 
 impl AppState {
@@ -46,7 +46,7 @@ impl AppState {
             merged_db: None,
             visual_ids: Vec::new(),
             visual_ids_by_id: Vec::new(),
-            packages: None,
+            archives: None,
         }
     }
 
@@ -56,14 +56,14 @@ impl AppState {
         self.visual_ids.clear();
         self.visual_ids_by_id.clear();
         // The archives still open belong to the previous directory
-        self.packages = None;
+        self.archives = None;
     }
 
     /// The shared PAK pool, created on the first command that needs an archive. Callers clone the
     /// `Arc` back out and lock it only around a single read, so the state lock and the pool never
     /// have to be held at the same time.
-    pub fn pool(&mut self) -> Result<Arc<Mutex<Package>>, String> {
-        if let Some(pool) = &self.packages {
+    pub fn pool(&mut self) -> Result<Arc<Mutex<Archives>>, String> {
+        if let Some(pool) = &self.archives {
             return Ok(pool.clone());
         }
 
@@ -71,8 +71,8 @@ impl AppState {
             .game_path
             .as_ref()
             .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
-        let pool = Arc::new(Mutex::new(Package::new(game_path, PAK_PREFERENCE)?));
-        self.packages = Some(pool.clone());
+        let pool = Arc::new(Mutex::new(Archives::new(game_path, PAK_PREFERENCE)?));
+        self.archives = Some(pool.clone());
         Ok(pool)
     }
 

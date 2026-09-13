@@ -8,7 +8,8 @@ use maclarian::merged::{GameDataResolver, MergedDatabase, VisualAsset};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
-use crate::export::{lock_pool, run_export};
+use crate::export::run_export;
+use crate::archives::lock_pool;
 use crate::models::{
     AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult, ModelPreview,
     Page, VisualAssetDetail, VisualSummary,
@@ -302,7 +303,7 @@ pub fn list_visuals(
 ///
 /// The archives holding the mesh and each texture are resolved here rather than at build time:
 /// which PAK contains a file can only be answered by consulting the archives, and that scan is
-/// heavy enough to belong off the main thread (see `Package::locate_many`). Virtual textures take
+/// heavy enough to belong off the main thread (see `Archives::locate_many`). Virtual textures take
 /// the other route: maclarian reports page files as `GtpMatch` values that carry their own path
 /// and archive, so nothing has to be scanned for them.
 #[tauri::command]
@@ -350,7 +351,7 @@ pub async fn get_visual(
                 targets.push(detail.path.clone());
                 targets.extend(detail.textures.iter().map(|tex| tex.path.clone()));
                 lock_pool(&pool)
-                    .map(|mut package| package.locate_many(&targets))
+                    .map(|mut archives| archives.locate_many(&targets))
                     .unwrap_or_default()
             }
             None => HashMap::new(),
@@ -389,7 +390,8 @@ pub async fn get_visual_preview(
         };
 
         // maclarian's own reader compares PAK entries with an exact `==` on the raw path, which
-        // never matches on Windows (`\` vs `/`); PakPool normalizes separators and casing instead.
+        // never matches on Windows (`\` vs `/`); the `Archives` pool normalizes separators and casing
+        // instead.
         let gr2_bytes = lock_pool(&pool)?
             .read(&path, Some("Models.pak"))
             .map_err(|err| {

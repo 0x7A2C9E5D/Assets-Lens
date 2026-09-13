@@ -72,7 +72,9 @@ tauri-app/
    ├─ src/models.rs            serde DTOs (uniform `camelCase` JSON contract)
    ├─ src/state.rs             AppState: resolver / database / sort cache / PAK pool / GTex lookup
    ├─ src/commands.rs          `#[tauri::command]` implementations
-   ├─ src/export.rs            Export pipeline + `Package` (PAK pool) + GTP/GTS handling
+   ├─ src/export.rs            Export pipeline (mesh / textures / virtual textures / manifest)
+   ├─ src/archives.rs          `Archives`: PAK read pool (file tables, batch archive lookup)
+   ├─ src/virtual_textures.rs  GTP/GTS page file lookup and staging for the extractor
    ├─ capabilities/default.json Per-window permissions (dialog, opener, window controls)
    ├─ tauri.conf.json          Window and bundling configuration
    └─ Cargo.toml               Dependency manifest
@@ -98,7 +100,7 @@ tauri-app/
 
 - The game directory is **never persisted on disk**: the frontend stores it in localStorage and hands it back through `set_game_path` on startup, so backend state only lives for the current session
 - `visual_names()` / `gr2_files()` come from HashMap iteration and are not order-stable; after a build they are sorted and cached in `AppState`, and paging only slices — otherwise pages would shuffle
-- `packages` (a `Package`) is a PAK read pool shared across commands: opening an archive parses its whole file table, so it is created once per game directory, capped by `MAX_CACHED_PAKS = 6`. `Package::locate_many` is what names an archive: one pass over the already-parsed tables, decompressing nothing, answers `get_visual` for a mesh and all of its textures at once — a visual easily references a dozen DDS files, and rescanning a table of hundreds of thousands of entries per texture would be far too slow
+- `archives` (the `Archives` pool from `archives.rs`) is a PAK read pool shared across commands: opening an archive parses its whole file table, so it is created once per game directory, capped by `MAX_CACHED_PAKS = 6`. `Archives::locate_many` is what names an archive: one pass over the already-parsed tables, decompressing nothing, answers `get_visual` for a mesh and all of its textures at once — a visual easily references a dozen DDS files, and rescanning a table of hundreds of thousands of entries per texture would be far too slow
 - `vt_matches()` resolves a visual's GTex hashes with maclarian's own lookup (`MergedResolver::find_gtp_by_hashes_in_pak`), which reports `GtpMatch` values carrying both the `.gtp` path and the archive holding it. Only the archive to list is supplied (`VirtualTextures.pak`); a hash that matches nothing renders without a page file instead of falling back to a guess. The resolver owns the database it is built from, so the database is moved out and back per call
 
 **Release check** (`src/utils/release.ts` + `src/api/nexus.ts`)
@@ -145,7 +147,7 @@ cargo tauri build    # Bundle (NSIS target on Windows)
 - **The IPC contract only depends on field names**: the backend emits `#[serde(rename_all = "camelCase")]`, so type names need not match across the boundary (e.g. Rust's `VisualAssetDetail` ↔ TS's `VisualAsset`)
 - **GLB is Base64, not `Vec<u8>`**: a byte vector serializes through serde as one JSON number per byte, inflating a multi-MB model to tens of MB; Base64 grows by only ~33% and keeps everything in memory with no temp files
 - **Previews and exports run inside `spawn_blocking`**: GR2 decompression/BitKnit decoding and PAK reads take seconds; this keeps the UI responsive and avoids holding the state lock for long
-- **Path normalization**: maclarian compares archive entries with `==` on the raw path, which never matches on Windows (`\` vs `/`), so `Package` normalizes separators and casing before comparing
+- **Path normalization**: maclarian compares archive entries with `==` on the raw path, which never matches on Windows (`\` vs `/`), so `Archives` normalizes separators and casing before comparing
 - **`<Name>_<n>.pak` data partitions are excluded**: they carry no LSPK header of their own, cannot be opened standalone, and are reachable through their main archive
 - **WebView2 compatibility**: `RouterView` is not wrapped in `<Transition>` (an `out-in` transition gets stuck between leave/enter in WebView2 and renders a blank screen); it renders directly with a bound `:key`
 - **three.js context release**: besides `dispose()`, unmounting calls `forceContextLoss()`; otherwise WebView2 discards the oldest context after ~16, which shows up as a black preview
@@ -231,7 +233,9 @@ tauri-app/
    ├─ src/models.rs            serde DTO（统一 `camelCase` JSON 契约）
    ├─ src/state.rs             AppState：resolver / 合并数据库 / 排序缓存 / PAK 池 / GTex 查找
    ├─ src/commands.rs          `#[tauri::command]` 命令实现
-   ├─ src/export.rs            导出流水线 + `Package`（PAK 复用池）+ GTP/GTS 解析
+   ├─ src/export.rs            导出流水线（网格 / 纹理 / 虚拟纹理 / 清单）
+   ├─ src/archives.rs          `Archives`：PAK 读取池（文件表、批量归档定位）
+   ├─ src/virtual_textures.rs  GTP/GTS 页文件查找与为提取器暂存
    ├─ capabilities/default.json 按窗口授予的权限（dialog、opener、窗口控制）
    ├─ tauri.conf.json          窗口与打包配置
    └─ Cargo.toml               依赖清单
@@ -257,7 +261,7 @@ tauri-app/
 
 - 游戏目录**不落盘**：前端存在 localStorage，启动时经 `set_game_path` 交回后端校验，后端状态仅存活于当前会话
 - `visual_names()` / `gr2_files()` 来自 HashMap 迭代、顺序不稳定，构建后统一排序缓存到 `AppState`，分页只做切片，否则翻页会乱序
-- `packages`（`Package`）是跨命令复用的 PAK 读池：打开一个归档要解析整张文件表，因此每个游戏目录只建一次，并设 `MAX_CACHED_PAKS = 6` 上限；给文件标注归档名的是 `Package::locate_many`——对已解析的表只走一遍、不解压任何文件，一次就回答 `get_visual` 的「网格 + 其全部纹理」；一个视觉资源动辄引用十几张 DDS，若每条纹理都把几十万条的表重扫一遍就太慢了
+- `archives`（`archives.rs` 里的 `Archives`）是跨命令复用的 PAK 读池：打开一个归档要解析整张文件表，因此每个游戏目录只建一次，并设 `MAX_CACHED_PAKS = 6` 上限；给文件标注归档名的是 `Archives::locate_many`——对已解析的表只走一遍、不解压任何文件，一次就回答 `get_visual` 的「网格 + 全部纹理」；一个视觉资源动辄引用十几张 DDS，若每条纹理都把几十万条的表重扫一遍就太慢了
 - `vt_matches()` 用 maclarian 自带查找（`MergedResolver::find_gtp_by_hashes_in_pak`）解析视觉资源的 GTex 哈希，返回的 `GtpMatch` 同时携带 `.gtp` 路径与持有它的归档。需要提供的只有「列哪一个归档」（`VirtualTextures.pak`）；匹配不到的哈希不显示页文件，而不是退化成猜测。resolver 持有构建它的那份数据库，因此每次调用都把数据库移出再放回
 
 **版本检查**（`src/utils/release.ts` + `src/api/nexus.ts`）
@@ -304,7 +308,7 @@ cargo tauri build    # 打包（Windows 目标为 NSIS）
 - **IPC 契约只依赖字段名**：后端 `models.rs` 用 `#[serde(rename_all = "camelCase")]` 输出，类型名前后端不必一致（如 Rust 的 `VisualAssetDetail` ↔ TS 的 `VisualAsset`）
 - **GLB 用 Base64 而非 `Vec<u8>`**：字节数组经 serde 会序列化成「每字节一个数字」的 JSON，几 MB 模型会膨胀到几十 MB；Base64 只增约 33%，且全程内存操作、无临时文件
 - **预览与导出都在 `spawn_blocking` 内执行**：GR2 解压/BitKnit 解码与 PAK 读取耗时数秒，避免阻塞 UI；耗时期间不长时间持有状态锁
-- **路径归一化**：maclarian 的归档查找对原始路径做 `==` 比较，Windows 下 `\` 与 `/` 永不匹配，故 `Package` 统一分隔符与大小写后再比对
+- **路径归一化**：maclarian 的归档查找对原始路径做 `==` 比较，Windows 下 `\` 与 `/` 永不匹配，故 `Archives` 统一分隔符与大小写后再比对
 - **`<Name>_<n>.pak` 数据分片被排除**：它们没有独立 LSPK 头、无法单独打开，且已能通过主归档访问
 - **WebView2 兼容**：`RouterView` 不包 `<Transition>`（`out-in` 过渡在 WebView2 上会卡在 leave/enter 之间导致白屏），改为直接渲染并绑定 `:key`
 - **three.js 上下文释放**：卸载时除 `dispose()` 外还需 `forceContextLoss()`，否则 WebView2 约 16 个上下文后丢弃最旧的，表现为预览变黑

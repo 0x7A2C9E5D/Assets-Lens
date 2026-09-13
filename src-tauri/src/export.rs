@@ -5,27 +5,26 @@
 //! - `convert_gr2_bytes_to_glb`: GR2 → GLB (mesh only, no embedded textures)
 //! - `dds_bytes_to_png_bytes`: DDS → PNG (direct in-memory conversion, no intermediate files)
 //! - `VirtualTextureExtractor`: GTP + GTS → three layer DDS files (BaseMap / NormalMap / PhysicalMap)
-//! - `LspkReader`: decompresses the needed files directly from the PAK archives
-//!   (GR2 / DDS / GTP / GTS) without a full temporary extraction
+//!
+//! Reaching into the archives is not this module's job: `crate::archives` owns the PAK read pool and
+//! `crate::virtual_textures` stages the page files the extractor consumes.
 
-use std::collections::HashMap;
 use std::fs;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use maclarian::converter::dds_bytes_to_png_bytes;
 use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
 use maclarian::merged::{GtpMatch, VirtualTextureRef, VisualAsset};
-use maclarian::pak::lspk::{FileTableEntry, LspkReader};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::models::{
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
     MeshFormat, TextureSummary, VirtualTextureSummary, match_for_hash,
 };
+use crate::archives::{Archives, lock_pool};
+use crate::virtual_textures::{self, StagedSources};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
 const PHASE_PREPARE: &str = "prepare";
@@ -48,266 +47,6 @@ fn push_warning(warnings: &mut Vec<ExportWarning>, code: &str, detail: impl Into
         code: code.to_string(),
         detail: detail.into(),
     });
-}
-
-/// How many archives the pool keeps open at most. A cached archive pins a file handle plus its whole
-/// file table, and a fallback scan touches every PAK in the game directory, so the cache is capped
-/// and dropped wholesale once it is full.
-const MAX_CACHED_PAKS: usize = 6;
-
-/// PAK read pool: each PAK is opened once and its file table and reader stay resident, so indexes
-/// are never reparsed per file.
-pub struct Package {
-    /// Game archives, sorted by read priority (earlier entries are tried first)
-    paks: Vec<PathBuf>,
-    readers: HashMap<PathBuf, LspkReader<BufReader<File>>>,
-    tables: HashMap<PathBuf, Vec<FileTableEntry>>,
-}
-
-/// True when `file_name` is a LSPK data-partition archive (`<Name>_<n>.pak`, e.g.
-/// `VirtualTextures_12.pak`). BG3 splits large resources over numbered archives that only hold
-/// raw data blocks — they carry no LSPK header of their own, cannot be opened standalone, and are
-/// already reachable through their main (`<Name>.pak`) archive, so they are excluded up front.
-fn is_data_partition(file_name: &str) -> bool {
-    let lower = file_name.to_lowercase();
-    let stem = lower.strip_suffix(".pak").unwrap_or(&lower);
-    match stem.rsplit_once('_') {
-        Some((_, tail)) => !tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit()),
-        None => false,
-    }
-}
-
-impl Package {
-    /// List every main `.pak` under the data directory, hoisting the names in `prefer` to the front
-    /// (e.g. `Models.pak` / `Textures.pak`). Numbered data partitions (`<Name>_<n>.pak`) are
-    /// excluded — see `is_data_partition`.
-    pub fn new(game_path: &Path, prefer: &[&str]) -> Result<Self, String> {
-        let mut paks: Vec<PathBuf> = fs::read_dir(game_path)
-            .map_err(|e| format!("Failed to list BG3 data directory: {e}"))?
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| {
-                p.is_file()
-                    && p.extension().and_then(|s| s.to_str()) == Some("pak")
-                    && !p
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(is_data_partition)
-            })
-            .collect();
-
-        paks.sort_by_key(|p| {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            prefer
-                .iter()
-                .position(|want| name.eq_ignore_ascii_case(want))
-                .unwrap_or(prefer.len())
-        });
-
-        Ok(Self {
-            paks,
-            readers: HashMap::new(),
-            tables: HashMap::new(),
-        })
-    }
-
-    /// Open a PAK and cache its file table; no-op when already cached
-    fn ensure(&mut self, pak: &Path) -> Result<(), String> {
-        if self.tables.contains_key(pak) {
-            return Ok(());
-        }
-
-        if self.readers.len() >= MAX_CACHED_PAKS {
-            // Over the cap: drop the cache rather than grow it, so one full scan cannot pin every
-            // archive in the game directory. The hot ones are re-opened on the next read.
-            self.readers.clear();
-            self.tables.clear();
-        }
-
-        let file = File::open(pak).map_err(|e| format!("Failed to open {}: {e}", pak.display()))?;
-        let mut reader = LspkReader::with_path(BufReader::new(file), pak);
-        let entries = reader
-            .list_files()
-            .map_err(|e| format!("Failed to read file table of {}: {e}", pak.display()))?;
-
-        self.readers.insert(pak.to_path_buf(), reader);
-        self.tables.insert(pak.to_path_buf(), entries);
-        Ok(())
-    }
-
-    /// List all file paths inside a PAK (`/`-separated)
-    pub fn list(&mut self, pak: &Path) -> Result<Vec<String>, String> {
-        self.ensure(pak)?;
-        Ok(self
-            .tables
-            .get(pak)
-            .map(|entries| {
-                entries
-                    .iter()
-                    .map(|e| normalize_path(&e.path.to_string_lossy()))
-                    .collect()
-            })
-            .unwrap_or_default())
-    }
-
-    /// Read file bytes from a specific PAK
-    pub fn read_in(&mut self, pak: &Path, target: &str) -> Result<Vec<u8>, String> {
-        self.ensure(pak)?;
-
-        let want = normalize_path(target);
-        let index = self
-            .tables
-            .get(pak)
-            .and_then(|entries| {
-                entries
-                    .iter()
-                    .position(|e| normalize_path(&e.path.to_string_lossy()) == want)
-            })
-            .ok_or_else(|| format!("{target} not found in {}", pak.display()))?;
-
-        let entry = self
-            .tables
-            .get(pak)
-            .and_then(|entries| entries.get(index).cloned())
-            .ok_or_else(|| format!("{target} not found in {}", pak.display()))?;
-        let reader = self
-            .readers
-            .get_mut(pak)
-            .ok_or_else(|| format!("Reader unavailable for {}", pak.display()))?;
-
-        reader
-            .decompress_file(&entry)
-            .map_err(|e| format!("Failed to decompress {target}: {e}"))
-    }
-
-    /// Read a file from any PAK under the data directory, honoring priority.
-    /// When `prefer` is given, that PAK is tried first (e.g. GR2 in `Models.pak`,
-    /// DDS in `Textures.pak`); otherwise every PAK is scanned in order.
-    pub fn read(&mut self, target: &str, prefer: Option<&str>) -> Result<Vec<u8>, String> {
-        if let Some(want) = prefer {
-            let preferred = self.paks.iter().find(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.eq_ignore_ascii_case(want))
-            });
-            if let Some(pak) = preferred.cloned() {
-                if let Ok(bytes) = self.read_in(&pak, target) {
-                    return Ok(bytes);
-                }
-            }
-        }
-
-        for pak in self.paks.clone() {
-            if let Ok(bytes) = self.read_in(&pak, target) {
-                return Ok(bytes);
-            }
-        }
-
-        Err(format!("{target} not found in BG3 archives"))
-    }
-
-    /// List file paths across *all* main PAKs in the data directory, deduplicated.
-    /// Numbered data partitions were already excluded in `new` (see `is_data_partition`); the
-    /// `skipping unreadable` branch below only fires for genuinely broken or foreign archives.
-    pub fn list_all(&mut self) -> Result<Vec<String>, String> {
-        let mut seen = std::collections::HashSet::new();
-        let mut out = Vec::new();
-        for pak in self.paks.clone() {
-            if let Ok(entries) = self.list(&pak) {
-                for entry in entries {
-                    if seen.insert(entry.clone()) {
-                        out.push(entry);
-                    }
-                }
-            } else {
-                eprintln!(
-                    "[maclarian] skipping unreadable / non-LSPK archive: {}",
-                    pak.display()
-                );
-            }
-        }
-        Ok(out)
-    }
-
-    /// Resolve which archive actually holds each of `targets`, as `target -> archive file name`.
-    ///
-    /// The whole batch is answered by a single pass over the cached file tables: a visual easily
-    /// references a dozen textures, and rescanning a table with hundreds of thousands of entries per
-    /// texture would be far too slow. Priority follows the pool's own order — the same rule `read`
-    /// applies, so the first archive containing a path wins. Nothing is decompressed.
-    pub fn locate_many(&mut self, targets: &[String]) -> HashMap<String, String> {
-        // Normalized path -> target exactly as the caller spelled it, so the result can be keyed by
-        // the original string
-        let mut pending: HashMap<String, String> = targets
-            .iter()
-            .filter(|target| !target.is_empty())
-            .map(|target| (normalize_path(target), target.clone()))
-            .collect();
-        let mut located = HashMap::new();
-
-        for pak in self.paks.clone() {
-            if pending.is_empty() {
-                break;
-            }
-            if self.ensure(&pak).is_err() {
-                continue;
-            }
-            let name = match pak.file_name().and_then(|n| n.to_str()) {
-                Some(name) => name.to_string(),
-                None => continue,
-            };
-
-            if let Some(entries) = self.tables.get(&pak) {
-                for entry in entries {
-                    let path = normalize_path(&entry.path.to_string_lossy());
-                    if let Some(target) = pending.remove(&path) {
-                        located.insert(target, name.clone());
-                    }
-                    if pending.is_empty() {
-                        break;
-                    }
-                }
-            }
-        }
-
-        located
-    }
-}
-
-/// Lock the shared PAK pool for a single read
-pub fn lock_pool(pool: &Arc<Mutex<Package>>) -> Result<MutexGuard<'_, Package>, String> {
-    pool.lock().map_err(|e| format!("PAK pool lock unavailable: {e}"))
-}
-
-/// GTP path → GTS path: strip the trailing `_<32 hex digits>` and swap the extension
-/// (`Generated/Public/VirtualTextures/Albedo_Normal_Physical_5_<hash>.gtp` →
-/// `Generated/Public/VirtualTextures/Albedo_Normal_Physical_5.gts`)
-fn derive_gts_path(gtp_path: &str) -> String {
-    // The directory is split off first and put back at the end: only the file name loses its hash
-    // suffix, while the directory has to survive into the result (a GTS sits beside its page file)
-    let (dir, name) = gtp_path.rsplit_once('/').unwrap_or(("", gtp_path));
-    let stem = name
-        .strip_suffix(".gtp")
-        .or_else(|| name.strip_suffix(".GTP"))
-        .unwrap_or(name);
-
-    let stripped = stem.rfind('_').filter(|pos| {
-        let suffix = &stem[pos + 1..];
-        suffix.len() == 32 && suffix.chars().all(|c| c.is_ascii_hexdigit())
-    });
-    let stem = stripped.map_or(stem, |pos| &stem[..pos]);
-
-    if dir.is_empty() {
-        format!("{stem}.gts")
-    } else {
-        format!("{dir}/{stem}.gts")
-    }
-}
-
-/// Normalize a path: unify on `/` separators and lowercase for comparison
-/// (separators inside PAK archives are inconsistent on Windows)
-pub(crate) fn normalize_path(path: &str) -> String {
-    path.replace('\\', "/").to_lowercase()
 }
 
 /// Sanitize a file/directory name: strip Windows-forbidden and control characters, cap the length
@@ -377,7 +116,7 @@ fn try_write_png_and_record(
 /// export, while a single texture / virtual texture failure only records a warning.
 pub fn run_export(
     asset: &VisualAsset,
-    pool: &Arc<Mutex<Package>>,
+    pool: &Arc<Mutex<Archives>>,
     dest_root: &Path,
     options: &ExportOptions,
     vt_matches: &[GtpMatch],
@@ -637,7 +376,7 @@ fn next_temp_id() -> u64 {
 /// resolve the three layer DDS files, and write them to the export dir.
 #[allow(clippy::too_many_arguments)]
 fn export_virtual_texture(
-    pak: &mut Package,
+    pak: &mut Archives,
     matched: &GtpMatch,
     vt_name: &str,
     vt_dir: &Path,
@@ -649,26 +388,15 @@ fn export_virtual_texture(
 ) -> Result<(), String> {
     fs::create_dir_all(stage).map_err(|e| format!("Failed to create staging directory: {e}"))?;
 
-    let gtp_rel = matched.gtp_path.as_str();
-    let gtp_name = Path::new(gtp_rel)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| format!("Invalid GTP path: {gtp_rel}"))?;
-
-    let gtp_path = shared.join(gtp_name);
-    if !gtp_path.exists() {
-        // The match names the archive that holds this page file, so it is read straight out of it
-        // instead of scanning every archive for a path the lookup already resolved
-        let bytes = read_from_match(pak, matched, gtp_rel)?;
-        fs::write(&gtp_path, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
-    }
+    // Which files the archives hold for this page file is `virtual_textures`' question; the export
+    // only consumes the staged paths
+    let StagedSources { gtp, gts } = virtual_textures::stage_sources(pak, matched, shared)?;
 
     // GTS naming does not always match the GTP: try each candidate until a GTS resolves this hash
-    let candidates = gts_candidates(pak, matched, shared)?;
     let mut last_err = "no GTS candidate available".to_string();
     let mut extracted = false;
-    for gts_path in candidates {
-        match VirtualTextureExtractor::extract_with_gts(&gtp_path, &gts_path, stage) {
+    for gts_path in gts {
+        match VirtualTextureExtractor::extract_with_gts(&gtp, &gts_path, stage) {
             Ok(()) => {
                 extracted = true;
                 break;
@@ -738,112 +466,4 @@ fn export_virtual_texture(
     }
 
     Ok(())
-}
-
-/// Read a file through the archive a match names. `GtpMatch::pak_path` is the archive its page file
-/// was listed from, so reading there is a table lookup rather than a scan; the pool-wide read stays
-/// as the fallback for names the match does not pin down (`GtpMatch` covers the GTP only — the GTS
-/// beside it is derived from the page file name).
-fn read_from_match(pak: &mut Package, matched: &GtpMatch, target: &str) -> Result<Vec<u8>, String> {
-    pak.read_in(matched.pak_path.as_path(), target)
-        .or_else(|_| pak.read(target, None))
-}
-
-/// Resolve GTS candidates and stage them into the `shared` directory, ordered by likelihood:
-/// 1. `<GTP with the `_<hash>` suffix stripped>.gts` (maclarian's standard derivation)
-/// 2. `.gts` files in the same directory whose name is a prefix of the GTP file name (fallback for
-///    mismatched GTS/GTP naming); the longer the GTS name, the higher the priority
-///
-/// A GTS may be shared by several GTPs, so staged files are reused by file name. `matched` gives
-/// the archive to try first; the pool-wide scan remains for the derived names it does not cover.
-fn gts_candidates(
-    pak: &mut Package,
-    matched: &GtpMatch,
-    shared: &Path,
-) -> Result<Vec<PathBuf>, String> {
-    let gtp_rel = matched.gtp_path.as_str();
-    let gts_rel = derive_gts_path(gtp_rel);
-
-    let gtp_stem = Path::new(gtp_rel)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let gtp_dir = Path::new(gtp_rel)
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let mut staged: Vec<PathBuf> = Vec::new();
-
-    // 1. Standard derived name
-    if stage_gts_file(pak, matched, &gts_rel, shared, &mut staged) {
-        return Ok(staged);
-    }
-
-    // 2. Same-directory prefix fallback: filter GTS files sharing the directory and a name prefix
-    //    across all PAKs
-    let fallbacks: Vec<String> = pak
-        .list_all()?
-        .into_iter()
-        .filter(|p| {
-            p.to_lowercase().ends_with(".gts")
-                && Path::new(p)
-                .parent()
-                .and_then(|p| p.to_str())
-                .unwrap_or("")
-                .to_lowercase()
-                == gtp_dir
-        })
-        .filter(|p| {
-            let stem = Path::new(p)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            !stem.is_empty() && gtp_stem.starts_with(&stem)
-        })
-        .collect();
-    // The closer the GTS name is to the GTP name, the more likely it hits; try in descending
-    // file-name length
-    let mut fallbacks_sorted = fallbacks;
-    fallbacks_sorted.sort_by_key(|p| std::cmp::Reverse(p.len()));
-
-    for rel in fallbacks_sorted {
-        stage_gts_file(pak, matched, &rel, shared, &mut staged);
-    }
-
-    if staged.is_empty() {
-        return Err(format!("{gts_rel} not found in any PAK"));
-    }
-    Ok(staged)
-}
-
-/// Stage one GTS to disk; reuse it directly when already staged (shared with another GTP)
-fn stage_gts_file(
-    pak: &mut Package,
-    matched: &GtpMatch,
-    rel: &str,
-    shared: &Path,
-    staged: &mut Vec<PathBuf>,
-) -> bool {
-    let Some(name) = Path::new(rel).file_name().and_then(|n| n.to_str()) else {
-        return false;
-    };
-    let path = shared.join(name);
-    if path.exists() {
-        staged.push(path);
-        return true;
-    }
-    match read_from_match(pak, matched, rel) {
-        Ok(bytes) => match fs::write(&path, &bytes) {
-            Ok(()) => {
-                staged.push(path);
-                true
-            }
-            Err(_) => false,
-        },
-        Err(_) => false,
-    }
 }

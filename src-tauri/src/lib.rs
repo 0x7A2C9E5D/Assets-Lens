@@ -1,7 +1,9 @@
 mod commands;
 pub mod export;
 mod models;
+pub mod archives;
 mod state;
+mod virtual_textures;
 
 use std::sync::{Arc, Mutex};
 
