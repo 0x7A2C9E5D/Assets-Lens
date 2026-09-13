@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use maclarian::merged::{GameDataResolver, MergedDatabase};
 use maclarian::pak::PakReaderCache;
 
-use crate::export::{build_gtp_index, build_pak_index, main_paks};
+use crate::export::{build_gtp_index, build_pak_index, main_paks, PakIndex};
 
 /// How many archives maclarian's table cache keeps parsed: enough for every main archive of a full
 /// install (~26), so a sweep leaves all the tables it walked resident instead of evicting them.
@@ -38,6 +38,10 @@ pub struct AppState {
     /// table, so the cache is created once per game directory instead of once per preview / export.
     /// `Mutex` because reading an archive needs `&mut`.
     pub cache: Option<Arc<Mutex<PakReaderCache>>>,
+    /// Which archive holds each mesh and texture. Building it costs one pass over the file tables
+    /// (~0.7s and ~40 MB for a full install), far too much for a single selected row but nothing
+    /// once per session.
+    pub pak_index: Option<PakIndex>,
 }
 
 impl AppState {
@@ -51,6 +55,7 @@ impl AppState {
             texture_index: None,
             paks: Vec::new(),
             cache: None,
+            pak_index: None,
         }
     }
 
@@ -63,6 +68,7 @@ impl AppState {
         // The cached tables and the archive list still describe the previous directory
         self.paks.clear();
         self.cache = None;
+        self.pak_index = None;
     }
 
     /// `VirtualTextures.pak` — the one archive that holds virtual textures
@@ -90,40 +96,37 @@ impl AppState {
         Ok((cache, paks))
     }
 
-    /// Name the archive every mesh and texture of the built database came from, by filling
-    /// maclarian's own `source_pak` fields (`VisualAsset::source_pak`, `TextureRef::source_pak`).
-    ///
-    /// Those fields are declared but never written by maclarian's parser, so the values come from
-    /// listing the archive file tables (`build_pak_index`, ~0.7s for a full install) — a fraction of
-    /// the minutes just spent parsing. Filling them once here is what makes the archive name free
-    /// everywhere it is shown: the detail panel and `asset.json` both read the fields, and no click
-    /// or export ever consults a file table for it. The index itself goes out of scope again, since
-    /// it costs an order of magnitude more than the strings it hands out (`PakIndex`).
-    ///
-    /// Called with the database already stored, and only from `build_database`: without a database
-    /// there is nothing to fill.
-    pub fn fill_source_paks(&mut self) {
-        // No archive list means no answers; leaving the fields empty is the honest outcome
+    /// Build the archive lookup index unless it is already there (see `pak_of`). Also called once
+    /// when a database build finishes, so the first detail click does not have to pay for it.
+    pub fn ensure_pak_index(&mut self) {
+        if self.pak_index.is_some() {
+            return;
+        }
+
+        // Without the archive list there is nothing to index; leave it unbuilt so a later call can
+        // retry once a game directory is set
         let Ok((_, paks)) = self.archives() else {
             return;
         };
-        let index = build_pak_index(&paks);
-        let Some(db) = self.merged_db.as_mut() else {
-            return;
-        };
+        self.pak_index = Some(build_pak_index(&paks));
+    }
 
-        for visual in db.visuals_by_id.values_mut() {
-            visual.source_pak = index.name_of(&visual.gr2_path).unwrap_or_default().to_string();
-            // Each visual carries its own clone of the texture references it uses, so filling them
-            // here covers every consumer; the texture bank itself (`db.textures`) is only consulted
-            // while resolving, which is already done
-            for texture in &mut visual.textures {
-                texture.source_pak = index
-                    .name_of(&texture.dds_path)
-                    .unwrap_or_default()
-                    .to_string();
-            }
-        }
+    /// Archive that holds `target` (file name only, empty when no archive lists it). The index is
+    /// built on first use, so this is a map lookup on every later call: a row can be picked with the
+    /// arrow keys without re-reading a single file table. A record spelled with `\` separators is
+    /// retried once, since the tables always use `/`.
+    pub fn pak_of(&mut self, target: &str) -> String {
+        self.ensure_pak_index();
+
+        let slashed = target.replace('\\', "/");
+        let Some(index) = &self.pak_index else {
+            return String::new();
+        };
+        index
+            .name_of(target)
+            .or_else(|| index.name_of(&slashed))
+            .unwrap_or_default()
+            .to_string()
     }
 
     /// Return the virtual texture index. The first call reads the file table of

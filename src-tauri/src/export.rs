@@ -90,44 +90,36 @@ pub fn main_paks(game_path: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(paks)
 }
 
-/// Which archive holds a mesh or a texture: the only two file kinds whose archive is ever named (the
-/// detail panel and `asset.json`), and therefore the only two that are indexed.
+/// Which archive holds a mesh or a texture: the only two file kinds the detail panel names the
+/// archive of, and therefore the only two that are indexed.
 ///
 /// Built with maclarian's own API: its `extract_dds_textures` answers the same question the same
 /// way, by listing every archive with `PakOperations::list` and testing containment. The crate has
-/// no cheaper reverse lookup — `PakReaderCache` keeps its tables private, and its parser never fills
-/// the `source_pak` fields — and listing an archive costs a full table read.
+/// no cheaper reverse lookup — `PakReaderCache` keeps its tables private, and the parser never
+/// fills `source_pak` — and listing an archive costs a full table read, so this is built once per
+/// session and then only read.
 ///
-/// The tables' own spelling is the key, which is exactly how the database spells its paths. The
+/// Keys are the file tables' own spelling, which is exactly how the database spells its paths. The
 /// first archive to list a path wins, i.e. the order `read_file` sweeps in, so a label can never
 /// contradict where the bytes actually come from.
 ///
-/// Filling the database's `source_pak` fields is all this is for, so it is built after a database
-/// build and dropped right after (`AppState::fill_source_paks`) — holding ~40 MB for the whole
-/// session to answer lookups that the filled fields already answer would be waste. A full install
-/// holds 224560 meshes and textures out of 567681 entries; indexing the rest (sound banks, layouts,
-/// virtual texture pages) would triple the peak for paths nobody asks about, and storing the archive
-/// name per entry instead of an index into `names` would double it again.
+/// A full install holds 224560 meshes and textures out of 567681 entries; indexing the rest (sound
+/// banks, layouts, virtual texture pages) would triple this for paths nobody asks about, and
+/// storing the archive name per entry instead of an index into `names` would double it again.
 pub struct PakIndex {
     names: Vec<String>,
     by_path: HashMap<Box<str>, u16>,
 }
 
 impl PakIndex {
-    /// Archive file name holding `target`, spelled the way the file tables spell it: `/` separators,
-    /// original casing. A record spelled with `\` separators is retried once.
+    /// Archive file name holding `target`, spelled the way this index was built (`/` separators)
     pub fn name_of(&self, target: &str) -> Option<&str> {
-        self.lookup(target)
-            .or_else(|| self.lookup(&target.replace('\\', "/")))
-    }
-
-    fn lookup(&self, target: &str) -> Option<&str> {
         let slot = *self.by_path.get(target)?;
         self.names.get(slot as usize).map(String::as_str)
     }
 }
 
-/// Whether `path` names a mesh or a texture, i.e. something whose archive is named (see `PakIndex`)
+/// Whether `path` names a mesh or a texture, i.e. something the detail panel labels (see `PakIndex`)
 fn is_mesh_or_texture(path: &str) -> bool {
     path.get(path.len().saturating_sub(4)..).is_some_and(|ext| {
         ext.eq_ignore_ascii_case(".gr2") || ext.eq_ignore_ascii_case(".dds")
