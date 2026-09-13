@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
 
 use crate::archives::Archives;
+use crate::virtual_textures::PageFileSizes;
 
 /// Read preference for the shared PAK pool. Callers name the archive they expect (meshes from
 /// `Models.pak`, a texture from its own archive), so this order only decides the fallback scan.
@@ -36,6 +38,11 @@ pub struct AppState {
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
     /// reading an archive needs `&mut` on its reader.
     pub archives: Option<Arc<Mutex<Archives>>>,
+    /// Page file sizes by GTS path, filled by `virtual_textures::page_file_size`. Reading a GTS
+    /// costs a full extraction while one GTS serves every page file of its tile set, so browsing a
+    /// model whose virtual textures share a tile set would otherwise read the same file repeatedly.
+    /// An empty list is a cached "no sizes here" answer, not a missing entry.
+    pub page_file_sizes: HashMap<String, PageFileSizes>,
 }
 
 impl AppState {
@@ -47,6 +54,7 @@ impl AppState {
             visual_ids: Vec::new(),
             visual_ids_by_id: Vec::new(),
             archives: None,
+            page_file_sizes: HashMap::new(),
         }
     }
 
@@ -57,6 +65,8 @@ impl AppState {
         self.visual_ids_by_id.clear();
         // The archives still open belong to the previous directory
         self.archives = None;
+        // Page file sizes were read from those archives
+        self.page_file_sizes.clear();
     }
 
     /// The shared PAK pool, created on the first command that needs an archive. Callers clone the

@@ -33,6 +33,10 @@ export interface VirtualTextureRef {
     path: string
     /** Archive holding that page file (e.g. `VirtualTextures.pak`), taken from the resolved match */
     source: string
+    /** Pixel size of this page file, the same box the extractor writes as its DDS; null while its
+     *  GTS could not be read */
+    width: number | null
+    height: number | null
 }
 
 export interface VisualAsset {

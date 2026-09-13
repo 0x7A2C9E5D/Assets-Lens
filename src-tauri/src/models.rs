@@ -51,6 +51,12 @@ pub struct VirtualTextureSummary {
     /// than rebuilt from a configured archive name — unresolved hashes stay empty instead of
     /// claiming a plausible-but-unverified archive
     pub source: String,
+    /// Pixel size of this page file, read out of its tile set's GTS on demand by `get_visual` — the
+    /// same box the extractor writes as its DDS. `None` when the hash resolved to no page file or
+    /// that GTS could not be parsed (the row then renders without a size); the export manifest
+    /// leaves it `None` because it never reads the GTS
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 impl VirtualTextureSummary {
@@ -67,6 +73,18 @@ impl VirtualTextureSummary {
                 .and_then(|name| name.to_str())
                 .unwrap_or_default()
                 .to_string(),
+            // Settled later: reading the size needs the archives, which this constructor is not given
+            width: None,
+            height: None,
+        }
+    }
+
+    /// Fill in the page file size. A failed lookup leaves both fields unset: the size is
+    /// decoration like the archive name, and must not take a detail view or an export down with it.
+    pub fn set_size(&mut self, size: Option<(u32, u32)>) {
+        if let Some((width, height)) = size {
+            self.width = Some(width);
+            self.height = Some(height);
         }
     }
 }

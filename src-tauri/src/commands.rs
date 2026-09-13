@@ -11,10 +11,11 @@ use tauri::{AppHandle, Manager, State};
 use crate::archives::lock_pool;
 use crate::export::run_export;
 use crate::models::{
-    AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult, ModelPreview,
-    Page, VisualAssetDetail, VisualSummary,
+    match_for_hash, AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult,
+    ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
 use crate::state::AppState;
+use crate::virtual_textures;
 
 pub type SharedState = Arc<Mutex<AppState>>;
 
@@ -314,7 +315,7 @@ pub async fn get_visual(
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, String> {
-        let (mut detail, pool) = {
+        let (mut detail, matches, pool, mut page_file_sizes) = {
             let mut st = lock(&state)?;
             // Owned rather than borrowed: the GTex lookup below needs `&mut` state (it hands the
             // database to a resolver and takes it back), which no borrow of the database outlives.
@@ -335,9 +336,11 @@ pub async fn get_visual(
             };
             let detail = VisualAssetDetail::new(&asset, &matches);
 
-            // `pool()` takes `&mut`, so it runs after the detail is owned; the lock is dropped with
-            // this block, leaving the archives to be scanned without holding the state
-            (detail, st.pool().ok())
+            // The size cache travels with the detail and is put back at the end: it is only ever
+            // touched here, and holding the state lock while the archives are read is what the
+            // block below exists to avoid. `pool()` takes `&mut` as well, so it runs first
+            let page_file_sizes = std::mem::take(&mut st.page_file_sizes);
+            (detail, matches, st.pool().ok(), page_file_sizes)
         };
 
         // The mesh and every DDS go into one batch: `locate_many` walks the cached file tables a
@@ -346,14 +349,32 @@ pub async fn get_visual(
         // `Gustav_Textures.pak`, `LowTex.pak`, `Icons.pak`), which is why each one is located instead
         // of assumed
         let located = match pool {
-            Some(pool) => {
-                let mut targets = Vec::with_capacity(detail.textures.len() + 1);
-                targets.push(detail.path.clone());
-                targets.extend(detail.textures.iter().map(|tex| tex.path.clone()));
-                lock_pool(&pool)
-                    .map(|mut archives| archives.locate_many(&targets))
-                    .unwrap_or_default()
-            }
+            Some(pool) => match lock_pool(&pool) {
+                Ok(mut archives) => {
+                    let mut targets = Vec::with_capacity(detail.textures.len() + 1);
+                    targets.push(detail.path.clone());
+                    targets.extend(detail.textures.iter().map(|tex| tex.path.clone()));
+                    let located = archives.locate_many(&targets);
+
+                    // Page file sizes come out of the same lock: a GTS is one file read from the
+                    // archive the match names (no scan), and each of them serves every page file of
+                    // its tile set — `page_file_size` sees to reading one only once
+                    for vt in &mut detail.virtual_textures {
+                        let size = match_for_hash(&matches, &vt.hash).and_then(|matched| {
+                            virtual_textures::page_file_size(
+                                &mut archives,
+                                &mut page_file_sizes,
+                                matched,
+                                &vt.hash,
+                            )
+                        });
+                        vt.set_size(size);
+                    }
+
+                    located
+                }
+                Err(_) => HashMap::new(),
+            },
             None => HashMap::new(),
         };
 
@@ -362,6 +383,9 @@ pub async fn get_visual(
         for tex in &mut detail.textures {
             tex.source = located.get(&tex.path).cloned().unwrap_or_default();
         }
+
+        // Back into the state, for the next detail view of this game directory
+        lock(&state)?.page_file_sizes = page_file_sizes;
 
         Ok(Some(detail))
     })

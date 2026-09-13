@@ -137,6 +137,7 @@ const exportOpen = ref(false)
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ vt.path || vt.hash }}</p>
                 <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span class="break-all font-mono">{{ vt.name }}</span>
+                  <span v-if="vt.width">{{ vt.width }} × {{ vt.height }}</span>
                   <span
                       v-if="vt.source"
                       :title="$t('detail.pakLabel')"
