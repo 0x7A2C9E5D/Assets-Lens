@@ -2,7 +2,7 @@
 import {computed, defineAsyncComponent, ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {ChevronDown, Download, FileArchive, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
-import type {TextureRef, VisualAsset} from '../api/tauri'
+import type {VisualAsset} from '../api/tauri'
 import ExportDialog from './ExportDialog.vue'
 
 /**
@@ -19,31 +19,59 @@ useI18n()
 const exportOpen = ref(false)
 
 /**
- * Material → textures. The payload only carries the relation one way round: every texture row
- * lists the material names that bind it, so the material section has to invert it. A name is the
- * only key available (that is what the backend fills in), which also means an unnamed material
- * shows no textures. Built once per asset instead of rescanning the texture list for every row.
+ * One resource a material binds. Regular and virtual textures arrive in separate lists while a
+ * material row shows them as one run of chips, so the kind is carried along: it picks the icon.
  */
-const texturesByMaterial = computed(() => {
-  const byMaterial = new Map<string, TextureRef[]>()
-  for (const texture of props.asset?.textures ?? []) {
-    for (const name of texture.materialNames ?? []) {
+interface MaterialBinding {
+  kind: 'texture' | 'virtual'
+  id: string
+  name: string
+  parameterName?: string | null
+}
+
+/**
+ * Material → bindings. The payload only carries the relation one way round: every texture row
+ * lists the material names that bind it, regular and virtual alike, so the material section has to
+ * invert both. A name is the only key available (that is what the backend fills in), which also
+ * means an unnamed material shows no bindings. Both lists are walked once per asset instead of
+ * rescanning them for every material.
+ */
+const bindingsByMaterial = computed(() => {
+  const byMaterial = new Map<string, MaterialBinding[]>()
+  const bind = (materialNames: string[] | undefined, binding: MaterialBinding) => {
+    for (const name of materialNames ?? []) {
       const bound = byMaterial.get(name)
       if (bound) {
-        bound.push(texture)
+        bound.push(binding)
       } else {
-        byMaterial.set(name, [texture])
+        byMaterial.set(name, [binding])
       }
     }
+  }
+
+  for (const texture of props.asset?.textures ?? []) {
+    bind(texture.materialNames, {
+      kind: 'texture',
+      id: texture.id,
+      name: texture.name || texture.id,
+      parameterName: texture.parameterName,
+    })
+  }
+  for (const virtualTexture of props.asset?.virtualTextures ?? []) {
+    bind(virtualTexture.materialNames, {
+      kind: 'virtual',
+      id: virtualTexture.id,
+      name: virtualTexture.name || virtualTexture.id,
+    })
   }
   return byMaterial
 })
 
-/** Material rows, each paired with the textures it binds (empty when none are named) */
-const materialsWithTextures = computed(() =>
+/** Material rows, each paired with the bindings it has (empty when none are named) */
+const materialsWithBindings = computed(() =>
   (props.asset?.materials ?? []).map((material) => ({
     ...material,
-    textures: texturesByMaterial.value.get(material.name) ?? [],
+    bindings: bindingsByMaterial.value.get(material.name) ?? [],
   })),
 )
 
@@ -149,7 +177,7 @@ function toggle(section: SectionKey) {
           </button>
           <div v-show="!collapsed.materials" class="mt-2 space-y-2">
             <div
-                v-for="material in materialsWithTextures"
+                v-for="material in materialsWithBindings"
                 :key="material.id"
                 :title="material.id"
                 class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
@@ -161,20 +189,22 @@ function toggle(section: SectionKey) {
                 {{ material.name || material.id }}
               </p>
               <ul
-                  v-if="material.textures.length"
+                  v-if="material.bindings.length"
                   class="mt-2.5 flex flex-wrap gap-1.5 border-t border-white/5 pt-2"
               >
                 <li
-                    v-for="texture in material.textures"
-                    :key="texture.id"
+                    v-for="binding in material.bindings"
+                    :key="binding.kind + binding.id"
                     class="flex max-w-full items-center gap-1.5 rounded-md bg-white/[0.04] px-1.5 py-1"
                 >
-                  <ImageIcon class="h-3 w-3 shrink-0 text-cyan-300/70"/>
-                  <span class="break-all font-mono text-[11px] text-muted">
-                    {{ texture.name || texture.id }}
-                  </span>
-                  <span v-if="texture.parameterName" class="shrink-0 text-[10px] text-muted/50">
-                    {{ texture.parameterName }}
+                  <ImageIcon
+                      v-if="binding.kind === 'texture'"
+                      class="h-3 w-3 shrink-0 text-cyan-300/70"
+                  />
+                  <Grid2x2 v-else class="h-3 w-3 shrink-0 text-cyan-300/70"/>
+                  <span class="break-all font-mono text-[11px] text-muted">{{ binding.name }}</span>
+                  <span v-if="binding.parameterName" class="shrink-0 text-[10px] text-muted/50">
+                    {{ binding.parameterName }}
                   </span>
                 </li>
               </ul>
@@ -211,9 +241,10 @@ function toggle(section: SectionKey) {
                   class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
               >
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
-                <!-- The name and the material slot are material-side facts: the material section already
-                     lists them, so a texture row keeps only what belongs to the file itself. -->
+                <!-- The material slot stays out: the material section already lists it beside the
+                     same texture. The name does belong here — the row reads as it. -->
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+                  <span v-if="tex.name" class="break-all font-mono">{{ tex.name }}</span>
                   <span>{{ tex.width }} × {{ tex.height }}</span>
                   <span
                       v-if="tex.source"

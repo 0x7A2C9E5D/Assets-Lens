@@ -49,6 +49,10 @@ export interface VirtualTextureRef {
      *  GTS could not be read */
     width: number | null
     height: number | null
+    /** Names of this asset's materials that bind this virtual texture; absent when there are none
+     *  to name. Inverted the same way as `TextureRef.materialNames`, so the material section can
+     *  list a material's virtual textures alongside its regular ones */
+    materialNames?: string[]
 }
 
 export interface VisualAsset {

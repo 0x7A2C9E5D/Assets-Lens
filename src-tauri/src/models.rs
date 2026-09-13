@@ -76,19 +76,28 @@ impl MaterialSummary {
     }
 }
 
-/// Names of the materials of one asset that bind `texture`. More than one is possible (two
+/// Names of the materials of one asset that bind the resource `id`. More than one is possible (two
 /// materials of the same mesh may share a mask), so this is a list; a material with no name
 /// contributes nothing, because a bare GUID would only repeat what the material section already
 /// shows.
+///
+/// `bound_ids` picks which of a material's binding lists to search — a regular texture is one of
+/// its `texture_ids`, a virtual texture one of its `virtual_texture_ids`, and both are matched the
+/// same way.
 fn material_names_for(
-    texture: &TextureRef,
+    id: &str,
+    bound_ids: impl Fn(&MaterialInfo) -> &[String],
     material_ids: &[String],
     materials: &HashMap<String, MaterialInfo>,
 ) -> Vec<String> {
     material_ids
         .iter()
-        .filter_map(|id| materials.get(id))
-        .filter(|material| material.texture_ids.iter().any(|id| id == &texture.id))
+        .filter_map(|material_id| materials.get(material_id))
+        .filter(|material| {
+            bound_ids(material)
+                .iter()
+                .any(|bound| bound.as_str() == id)
+        })
         .map(|material| material.name.clone())
         .filter(|name| !name.is_empty())
         .collect()
@@ -113,6 +122,12 @@ pub struct VirtualTextureSummary {
     /// leaves it `None` because it never reads the GTS
     pub width: Option<u32>,
     pub height: Option<u32>,
+    /// Names of this asset's materials that bind this virtual texture, in the asset's own material
+    /// order. Filled by `get_visual` only, and left out of the JSON while empty (the export
+    /// manifest resolves no names). The material section inverts this to list a material's virtual
+    /// textures; the rows here carry no material reference.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub material_names: Vec<String>,
 }
 
 impl VirtualTextureSummary {
@@ -132,6 +147,8 @@ impl VirtualTextureSummary {
             // Settled later: reading the size needs the archives, which this constructor is not given
             width: None,
             height: None,
+            // Settled by the caller, which is the only place holding the material cache
+            material_names: Vec::new(),
         }
     }
 
@@ -195,15 +212,29 @@ impl VisualAssetDetail {
                 .iter()
                 .map(|texture| {
                     let mut summary = TextureSummary::from(texture);
-                    summary.material_names =
-                        material_names_for(texture, &value.material_ids, materials);
+                    summary.material_names = material_names_for(
+                        &texture.id,
+                        |material| material.texture_ids.as_slice(),
+                        &value.material_ids,
+                        materials,
+                    );
                     summary
                 })
                 .collect(),
             virtual_textures: value
                 .virtual_textures
                 .iter()
-                .map(|vt| VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash)))
+                .map(|vt| {
+                    let mut summary =
+                        VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash));
+                    summary.material_names = material_names_for(
+                        &vt.id,
+                        |material| material.virtual_texture_ids.as_slice(),
+                        &value.material_ids,
+                        materials,
+                    );
+                    summary
+                })
                 .collect(),
         }
     }

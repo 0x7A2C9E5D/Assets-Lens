@@ -16,8 +16,8 @@ const PAK_PREFERENCE: &[&str] = &["Models.pak", "Textures.pak"];
 /// from a match (the match is what it produces), so it is spelled out here.
 const VIRTUAL_TEXTURES_PAK: &str = "VirtualTextures.pak";
 
-/// One material of the built database: the name that makes its GUID readable, plus the textures it
-/// binds (texture GUIDs, in parameter order).
+/// One material of the built database: the name that makes its GUID readable, plus the resources it
+/// binds (GUIDs, in parameter order).
 pub struct MaterialInfo {
     /// Human-readable name from `MaterialBank` (e.g. `BEAR_Body_A`); empty when the resource has none
     pub name: String,
@@ -25,6 +25,10 @@ pub struct MaterialInfo {
     pub source_file: String,
     /// GUIDs of the textures this material binds
     pub texture_ids: Vec<String>,
+    /// GUIDs of the virtual textures this material binds. An asset's virtual texture list is the
+    /// union over its materials, so this is what tells those rows which material they came from:
+    /// a virtual texture is only ever reachable through the material that parameterizes it.
+    pub virtual_texture_ids: Vec<String>,
 }
 
 /// One material as it appears in the serialized database, carrying only what the panel needs.
@@ -40,6 +44,10 @@ struct RawMaterial {
     source_file: String,
     #[serde(default)]
     texture_ids: Vec<RawTextureParam>,
+    /// Bare GUIDs, unlike `texture_ids`: a virtual texture parameter carries no name of its own.
+    /// Absent — not empty — for the materials that bind no virtual texture, hence the default.
+    #[serde(default)]
+    virtual_texture_ids: Vec<String>,
 }
 
 /// A texture binding inside a material; the parameter name it also carries is already on the
@@ -91,6 +99,7 @@ pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
                         .into_iter()
                         .map(|param| param.texture_id)
                         .collect(),
+                    virtual_texture_ids: material.virtual_texture_ids,
                 },
             )
         })
