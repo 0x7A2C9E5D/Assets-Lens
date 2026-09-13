@@ -33,12 +33,6 @@ fn parse_fraction(current: usize, total: usize) -> f32 {
     }
 }
 
-/// How much of the build's progress bar the `Shared.pak` parse owns; the archive index pass that
-/// follows owns the rest. The split follows cost rather than file count: listing the 54 file tables
-/// of a full installation measures ~1.8s unoptimized (`tauri dev`) against ~0.3s for the parse, so a
-/// bar tied to the parse alone would sit at 100% for the whole index pass.
-const PARSE_SHARE: f32 = 0.5;
-
 /// Every visual GUID in both ascending orders the list can be sorted by: by (name, id) — the
 /// default — and by id. Names are only a sort key: they are not unique, so using them as the
 /// identity would collapse same-named visuals into one list row. Sorting by name first keeps those
@@ -149,7 +143,7 @@ pub async fn build_database(
         let mut db = MergedDatabase::new(game_path.display().to_string());
         let parsed = resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, _| {
             let _ = channel.send(BuildProgress {
-                percent: parse_fraction(current, total) * PARSE_SHARE,
+                percent: parse_fraction(current, total),
             });
         });
 
@@ -183,17 +177,10 @@ pub async fn build_database(
             st.visual_ids = visual_ids;
             st.visual_ids_by_id = visual_ids_by_id;
             st.merged_db = Some(db);
-            // One pass over the archive file tables (~1.8s unoptimized, longer than the parse
-            // itself), so that naming the archive of a mesh or a texture never makes a row click —
-            // or an export — wait for it. It reports per archive: the bar has to keep moving here,
-            // or the build looks hung at 100% for as long as this takes
-            let index_progress = on_progress.clone();
-            st.fill_source_paks(&|listed, total| {
-                let share = listed as f32 / total.max(1) as f32;
-                let _ = index_progress.send(BuildProgress {
-                    percent: PARSE_SHARE + share * (1.0 - PARSE_SHARE),
-                });
-            });
+            // One pass over the archive file tables, a fraction of a second next to the minutes just
+            // spent parsing, so that naming the archive of a mesh or a texture never makes a row
+            // click — or an export — wait for it
+            st.fill_source_paks();
         }
 
         on_progress.send(BuildProgress { percent: 1.0 }).ok();
