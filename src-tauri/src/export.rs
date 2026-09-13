@@ -52,10 +52,9 @@ fn push_warning(warnings: &mut Vec<ExportWarning>, code: &str, detail: impl Into
 }
 
 /// How many archives the pool keeps open at most. A cached archive pins a file handle plus its whole
-/// file table, so a full install (~26 main PAKs) cannot stay resident; eviction is least-recently
-/// used, because a full scan walks every PAK and dropping the whole cache would make the next file
-/// reparse the tables the scan just read.
-const MAX_CACHED_PAKS: usize = 12;
+/// file table, and a full scan (the GTP index) touches every PAK in the game directory, so the cache
+/// is capped and dropped wholesale once it is full.
+const MAX_CACHED_PAKS: usize = 6;
 
 /// PAK read pool: each PAK is opened once and its file table and reader stay resident, so indexes
 /// are never reparsed per file.
@@ -65,12 +64,6 @@ pub struct Package {
     paks: Vec<PathBuf>,
     readers: HashMap<PathBuf, LspkReader<BufReader<File>>>,
     tables: HashMap<PathBuf, Vec<FileTableEntry>>,
-    /// Normalized file path -> archive holding it, as found by an earlier `read` or `locate_many`.
-    /// Only a hint: a miss (or an archive that no longer answers) simply falls back to a full scan.
-    located: HashMap<String, PathBuf>,
-    /// Cached archives, oldest first. `ensure` moves its archive to the back, so the front is the
-    /// least recently used one and the first to be evicted.
-    lru: Vec<PathBuf>,
 }
 
 /// True when `file_name` is a LSPK data-partition archive (`<Name>_<n>.pak`, e.g.
@@ -116,32 +109,20 @@ impl Package {
             paks,
             readers: HashMap::new(),
             tables: HashMap::new(),
-            located: HashMap::new(),
-            lru: Vec::new(),
         })
     }
 
-    /// Open a PAK and cache its file table; no-op when already cached.
-    /// A cached archive counts as used, so a scan keeps the archives it just walked resident.
+    /// Open a PAK and cache its file table; no-op when already cached
     fn ensure(&mut self, pak: &Path) -> Result<(), String> {
         if self.tables.contains_key(pak) {
-            self.touch(pak);
             return Ok(());
         }
 
-        // One eviction per open, not a wholesale drop: a full scan walks every PAK, so emptying the
-        // cache would make the file after it reparse all the tables the scan just read.
-        while self.readers.len() >= MAX_CACHED_PAKS {
-            match self.lru.first().cloned() {
-                Some(oldest) => self.evict(&oldest),
-                // Unreachable while every cached table also holds an LRU slot; clearing keeps the
-                // loop from spinning if that invariant ever breaks
-                None => {
-                    self.readers.clear();
-                    self.tables.clear();
-                    break;
-                }
-            }
+        if self.readers.len() >= MAX_CACHED_PAKS {
+            // Over the cap: drop the cache rather than grow it, so one full scan cannot pin every
+            // archive in the game directory. The hot ones are re-opened on the next read.
+            self.readers.clear();
+            self.tables.clear();
         }
 
         let file = File::open(pak).map_err(|e| format!("Failed to open {}: {e}", pak.display()))?;
@@ -150,27 +131,9 @@ impl Package {
             .list_files()
             .map_err(|e| format!("Failed to read file table of {}: {e}", pak.display()))?;
 
-        let pak = pak.to_path_buf();
-        self.readers.insert(pak.clone(), reader);
-        self.tables.insert(pak.clone(), entries);
-        self.lru.push(pak);
+        self.readers.insert(pak.to_path_buf(), reader);
+        self.tables.insert(pak.to_path_buf(), entries);
         Ok(())
-    }
-
-    /// Mark a cached archive as most recently used
-    fn touch(&mut self, pak: &Path) {
-        if let Some(pos) = self.lru.iter().position(|cached| cached == pak) {
-            let pak = self.lru.remove(pos);
-            self.lru.push(pak);
-        }
-    }
-
-    /// Drop one archive from the cache (its file handle and its file table).
-    /// The `located` hint is kept: it only names an archive, and a cache miss just re-opens it.
-    fn evict(&mut self, pak: &Path) {
-        self.lru.retain(|cached| cached != pak);
-        self.readers.remove(pak);
-        self.tables.remove(pak);
     }
 
     /// List all file paths inside a PAK (`/`-separated)
@@ -223,26 +186,9 @@ impl Package {
     /// Deliberately unprioritized: a GR2, a DDS and a GTP can each live in several archives
     /// (`Textures.pak`, `Gustav_Textures.pak`, `Shared.pak`, ...) and the actual holder is not
     /// knowable up front, so every archive is scanned in the pool's order and the first hit wins.
-    ///
-    /// An archive remembered by an earlier lookup (this call or `locate_many`) is tried first, which
-    /// is what turns a batch of textures into one archive open per file instead of a walk from the
-    /// head of the pool each time. The remembered archive stays a hint: when it no longer answers
-    /// the full scan below still runs, so the "first hit wins" rule and the tolerance for an archive
-    /// whose entry cannot be decompressed are both unchanged.
     pub fn read(&mut self, target: &str) -> Result<Vec<u8>, String> {
-        let key = normalize_path(target);
-
-        if let Some(pak) = self.located.get(&key).cloned() {
-            if let Ok(bytes) = self.read_in(&pak, target) {
-                return Ok(bytes);
-            }
-            // Stale hint (entry gone or corrupted): forget it and fall back to the scan
-            self.located.remove(&key);
-        }
-
         for pak in self.paks.clone() {
             if let Ok(bytes) = self.read_in(&pak, target) {
-                self.located.insert(key, pak);
                 return Ok(bytes);
             }
         }
@@ -280,9 +226,6 @@ impl Package {
     /// texture would be far too slow. The pool's own order decides the winner, exactly as it does
     /// in `read`, so the reported source always matches the archive extraction would use. Nothing
     /// is decompressed.
-    ///
-    /// Every hit is also remembered in `located`, so reads that follow (an export of the same asset)
-    /// skip the scan and open only the archive that owns each path.
     pub fn locate_many(&mut self, targets: &[String]) -> HashMap<String, String> {
         // Normalized path -> target exactly as the caller spelled it, so the result can be keyed by
         // the original string
@@ -292,9 +235,6 @@ impl Package {
             .map(|target| (normalize_path(target), target.clone()))
             .collect();
         let mut located = HashMap::new();
-        // Collected instead of written straight into `self.located`: the tables are borrowed below,
-        // so the memo is updated after the scan has finished
-        let mut resolved: Vec<(String, PathBuf)> = Vec::new();
 
         for pak in self.paks.clone() {
             if pending.is_empty() {
@@ -313,17 +253,12 @@ impl Package {
                     let path = normalize_path(&entry.path.to_string_lossy());
                     if let Some(target) = pending.remove(&path) {
                         located.insert(target, name.clone());
-                        resolved.push((path, pak.clone()));
                     }
                     if pending.is_empty() {
                         break;
                     }
                 }
             }
-        }
-
-        for (path, pak) in resolved {
-            self.located.insert(path, pak);
         }
 
         located
@@ -518,17 +453,6 @@ pub fn run_export(
         current_file: None,
         percent: 0.0,
     });
-
-    // Resolve the mesh and every texture in one scan before reading anything: `locate_many` leaves
-    // the answers inside the pool, so the reads below go straight to the owning archive instead of
-    // walking the pool from the head for each file — a texture then costs one table lookup rather
-    // than an open of every archive sorted before its own (~25 of them on a full install).
-    let mut targets = Vec::with_capacity(asset.textures.len() + 1);
-    targets.push(asset.gr2_path.clone());
-    if extract_textures {
-        targets.extend(asset.textures.iter().map(|tex| tex.dds_path.clone()));
-    }
-    lock_pool(pool)?.locate_many(&targets);
 
     // ---- 1. Mesh: raw GR2 straight out of the PAK, or a plain GR2 → GLB conversion ----
     let mesh_format = options.mesh_format;
