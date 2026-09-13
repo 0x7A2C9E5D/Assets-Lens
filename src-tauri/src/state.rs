@@ -101,21 +101,25 @@ impl AppState {
 
     /// Fill `VisualAsset::source_pak` and each `TextureRef::source_pak` with the archive that holds
     /// it. maclarian declares the fields but never writes them (deserialization is their only
-    /// writer), so the values come from listing the archive file tables (`build_pak_index`, ~0.7s for
-    /// a full install) — a fraction of the minutes just spent parsing. Filling them once here is what
-    /// makes the archive name free everywhere it is shown: the detail panel and `asset.json` both read
-    /// the fields, and no click or export ever consults a file table for it. The index itself goes out
-    /// of scope again, since it costs an order of magnitude more than the strings it hands out
-    /// (`PakIndex`).
+    /// writer), so the values come from listing the archive file tables (`build_pak_index`). Filling
+    /// them once here is what makes the archive name free everywhere it is shown: the detail panel
+    /// and `asset.json` both read the fields, and no click or export ever consults a file table for
+    /// it. The index itself goes out of scope again, since it costs an order of magnitude more than
+    /// the strings it hands out (`PakIndex`).
+    ///
+    /// This pass is not cheap and not quick: a full installation's 54 archives hold ~1.0M table
+    /// entries, which measures ~1.8s unoptimized (the `tauri dev` build) against ~0.7s optimized.
+    /// `on_pak` reports each archive as it is listed, because a caller that shows progress must not
+    /// leave the bar sitting at 100% through it.
     ///
     /// Called with the database already stored, and only from `build_database`: without a database
     /// there is nothing to fill.
-    pub fn fill_source_paks(&mut self) {
+    pub fn fill_source_paks(&mut self, on_pak: &dyn Fn(usize, usize)) {
         // No archive list means no answers; leaving the fields empty is the honest outcome
         let Ok((_, paks)) = self.archives() else {
             return;
         };
-        let index = build_pak_index(&paks);
+        let index = build_pak_index(&paks, on_pak);
         let Some(db) = self.merged_db.as_mut() else {
             return;
         };

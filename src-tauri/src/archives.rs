@@ -58,8 +58,11 @@ impl PakIndex {
     }
 }
 
-/// List every archive and record which one holds which mesh / texture path
-pub fn build_pak_index(paks: &[PathBuf]) -> PakIndex {
+/// List every archive and record which one holds which mesh / texture path.
+///
+/// `on_pak` is called after each archive with `(listed, total)`: this pass is longer than the parse
+/// that precedes a build, so a caller that shows progress has to be able to report it.
+pub fn build_pak_index(paks: &[PathBuf], on_pak: &dyn Fn(usize, usize)) -> PakIndex {
     let names: Vec<String> = paks
         .iter()
         .map(|pak| {
@@ -82,6 +85,7 @@ pub fn build_pak_index(paks: &[PathBuf]) -> PakIndex {
                 }
             }
         }
+        on_pak(slot + 1, paks.len());
     }
 
     PakIndex { names, by_path }
