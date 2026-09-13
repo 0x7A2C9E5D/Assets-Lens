@@ -31,15 +31,10 @@ const exportOpen = ref(false)
     </div>
 
     <div v-else class="flex min-h-0 flex-1 flex-col gap-5 animate-fade-in">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <p class="text-xs uppercase tracking-[0.18em] text-muted">
-            {{ $t('detail.visualAsset') }}
-          </p>
-          <h3 class="mt-1 break-all font-mono text-base font-semibold text-[#E6EDF7]">
-            {{ asset.name }}
-          </h3>
-        </div>
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-xs uppercase tracking-[0.18em] text-muted">
+          {{ $t('detail.visualAsset') }}
+        </p>
         <button
             class="btn-ghost shrink-0 !px-3 !py-1.5 !text-xs"
             type="button"
@@ -61,14 +56,17 @@ const exportOpen = ref(false)
           <div
               class="mt-2 rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25">
             <p class="break-all font-mono text-[12px] text-glow-cyan">{{ asset.path }}</p>
-            <p
-                v-if="asset.meshPak"
-                :title="$t('detail.pakLabel')"
-                class="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted"
-            >
-              <FileArchive class="h-3 w-3 shrink-0"/>
-              <span class="truncate font-mono">{{ asset.meshPak }}</span>
-            </p>
+            <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+              <span class="break-all font-mono">{{ asset.name }}</span>
+              <span
+                  v-if="asset.meshPak"
+                  :title="$t('detail.pakLabel')"
+                  class="flex min-w-0 items-center gap-1.5"
+              >
+                <FileArchive class="h-3 w-3 shrink-0"/>
+                <span class="truncate font-mono">{{ asset.meshPak }}</span>
+              </span>
+            </div>
           </div>
         </div>
 
