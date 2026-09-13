@@ -2,7 +2,14 @@
 import {onMounted, onUnmounted, ref} from 'vue'
 import {Minus, Square, X} from 'lucide-vue-next'
 import LocaleSwitcher from './LocaleSwitcher.vue'
-import {closeWindow, isWindowMaximized, minimizeWindow, onWindowResized, startWindowDrag, toggleMaximizeWindow,} from '../api/tauri'
+import {
+  closeWindow,
+  isWindowMaximized,
+  minimizeWindow,
+  onWindowResized,
+  startWindowDrag,
+  toggleMaximizeWindow,
+} from '../api/tauri'
 
 const isMaximized = ref(false)
 let unlistenResize: (() => void) | null = null

@@ -26,32 +26,33 @@ let autoCheckSpent = false
  * because neither answer can change while the app is open.
  */
 let localVersionRequest: Promise<string> | null = null
+
 function resolveLocalVersion(): Promise<string> {
-  localVersionRequest ??= getAppInfo()
-      .then((info) => info.version)
-      .catch(() => APP_VERSION)
-  return localVersionRequest
+    localVersionRequest ??= getAppInfo()
+        .then((info) => info.version)
+        .catch(() => APP_VERSION)
+    return localVersionRequest
 }
 
 /** The single automatic check of this launch; every later call does nothing */
 export function startReleaseCheck(): void {
-  if (autoCheckSpent) return
-  autoCheckSpent = true
+    if (autoCheckSpent) return
+    autoCheckSpent = true
 
-  releaseState.value = 'checking'
-  void resolveLocalVersion()
-      .then(async (current) => {
-        // Published before the request: the badge is local information and must not wait on the network
-        localVersion.value = current
-        const release = await fetchLatestRelease()
-        remoteVersion.value = release.version
-        releaseState.value = isNewerVersion(release.version, current) ? 'outdated' : 'latest'
-      })
-      .catch((err) => {
-        // The page renders nothing for a failed check, so the console is where it surfaces
-        console.error('[nexus_release]', err)
-        releaseState.value = 'failed'
-      })
+    releaseState.value = 'checking'
+    void resolveLocalVersion()
+        .then(async (current) => {
+            // Published before the request: the badge is local information and must not wait on the network
+            localVersion.value = current
+            const release = await fetchLatestRelease()
+            remoteVersion.value = release.version
+            releaseState.value = isNewerVersion(release.version, current) ? 'outdated' : 'latest'
+        })
+        .catch((err) => {
+            // The page renders nothing for a failed check, so the console is where it surfaces
+            console.error('[nexus_release]', err)
+            releaseState.value = 'failed'
+        })
 }
 
 /**
@@ -59,5 +60,5 @@ export function startReleaseCheck(): void {
  * A failure reason is not exposed — the page either shows the update arrow or stays empty.
  */
 export function useReleaseCheck() {
-  return {localVersion, remoteVersion, releaseState}
+    return {localVersion, remoteVersion, releaseState}
 }

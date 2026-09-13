@@ -32,8 +32,8 @@ function parseCulture(raw: string): LocaleInfo {
         return {
             maximized: maximized.baseName.toLowerCase(),
             neutral: (maximized.script
-                ? `${maximized.language}-${maximized.script}`
-                : maximized.language
+                    ? `${maximized.language}-${maximized.script}`
+                    : maximized.language
             ).toLowerCase(),
             language: maximized.language.toLowerCase(),
         }
@@ -99,7 +99,7 @@ function nativeLanguageName(code: LocaleCode): string {
     }
 }
 
-export const SUPPORTED_LOCALES: readonly {code: LocaleCode; label: string}[] = CODES.map((code) => ({
+export const SUPPORTED_LOCALES: readonly { code: LocaleCode; label: string }[] = CODES.map((code) => ({
     code,
     label: nativeLanguageName(code),
 }))

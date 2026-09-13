@@ -8,8 +8,8 @@ use maclarian::merged::{GameDataResolver, MergedDatabase, VisualAsset};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
-use crate::export::run_export;
 use crate::archives::lock_pool;
+use crate::export::run_export;
 use crate::models::{
     AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult, ModelPreview,
     Page, VisualAssetDetail, VisualSummary,
@@ -270,9 +270,9 @@ pub fn list_visuals(
                 // DB. GUIDs are ASCII, so folding them stays a cheap ASCII-lowercase compare.
                 id.as_str().to_ascii_lowercase().contains(kw)
                     || db
-                        .visuals_by_id
-                        .get(*id)
-                        .is_some_and(|visual| visual.name.to_lowercase().contains(kw))
+                    .visuals_by_id
+                    .get(*id)
+                    .is_some_and(|visual| visual.name.to_lowercase().contains(kw))
             }
         })
         .collect();

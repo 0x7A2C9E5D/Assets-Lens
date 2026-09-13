@@ -31,29 +31,29 @@ const {localVersion, remoteVersion, releaseState} = useReleaseCheck()
  * projects, so its two names are independent links), while the role text stays untranslated-free
  */
 const stack = computed(() => [
-    {
-        icon: Monitor,
-        parts: [{label: 'Tauri', href: 'https://tauri.app/'}],
-        role: t('about.stack.desktop'),
-    },
-    {
-        icon: Code,
-        parts: [
-            {label: 'Vue.js', href: 'https://vuejs.org/'},
-            {label: 'Tailwind CSS', href: 'https://tailwindcss.com/'},
-        ],
-        role: t('about.stack.ui'),
-    },
-    {
-        icon: PackageSearch,
-        parts: [{label: 'maclarian', href: 'https://crates.io/crates/maclarian'}],
-        role: t('about.stack.parsing'),
-    },
-    {
-        icon: Box,
-        parts: [{label: 'three.js', href: 'https://threejs.org/'}],
-        role: t('about.stack.preview'),
-    },
+  {
+    icon: Monitor,
+    parts: [{label: 'Tauri', href: 'https://tauri.app/'}],
+    role: t('about.stack.desktop'),
+  },
+  {
+    icon: Code,
+    parts: [
+      {label: 'Vue.js', href: 'https://vuejs.org/'},
+      {label: 'Tailwind CSS', href: 'https://tailwindcss.com/'},
+    ],
+    role: t('about.stack.ui'),
+  },
+  {
+    icon: PackageSearch,
+    parts: [{label: 'maclarian', href: 'https://crates.io/crates/maclarian'}],
+    role: t('about.stack.parsing'),
+  },
+  {
+    icon: Box,
+    parts: [{label: 'three.js', href: 'https://threejs.org/'}],
+    role: t('about.stack.preview'),
+  },
 ])
 
 /** Nexus Mods mark (Simple Icons, 24x24 viewBox) — no Lucide equivalent exists for this brand */
@@ -117,10 +117,10 @@ function openLink(url: string) {
               v{{ localVersion || '—' }}
               <button
                   v-if="releaseState === 'outdated'"
-                  type="button"
-                  :title="$t('about.updateAvailable', {version: remoteVersion})"
                   :aria-label="$t('about.updateAvailable', {version: remoteVersion})"
+                  :title="$t('about.updateAvailable', {version: remoteVersion})"
                   class="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] text-amber-300 transition-colors duration-200 hover:bg-amber-400/20 hover:text-amber-200"
+                  type="button"
                   @click="openLink(NEXUS_MODS_URL)"
               >
                 <ArrowUpRight class="h-3 w-3"/>
@@ -139,13 +139,13 @@ function openLink(url: string) {
           <button
               v-for="link in links"
               :key="link.href"
-              type="button"
-              :title="link.name"
               :aria-label="link.name"
+              :title="link.name"
               class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-glow-cyan ring-1 ring-cyan-300/15 transition-all duration-200 hover:bg-white/10 hover:ring-cyan-300/35"
+              type="button"
               @click="openLink(link.href)"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <svg aria-hidden="true" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
               <path :d="link.path"/>
             </svg>
           </button>
@@ -179,10 +179,10 @@ function openLink(url: string) {
                        rendered (dimmed) instead of appearing on hover: reserving its width keeps the
                        text from shifting when the pointer arrives -->
                   <button
-                      type="button"
-                      :title="part.href"
                       :aria-label="part.href"
+                      :title="part.href"
                       class="group/link inline-flex items-center gap-1 text-left transition-colors duration-200 hover:text-glow-cyan"
+                      type="button"
                       @click="openLink(part.href)"
                   >
                     {{ part.label }}

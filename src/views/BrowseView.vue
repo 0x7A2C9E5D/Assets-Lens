@@ -8,10 +8,10 @@ import AssetTable from '../components/AssetTable.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import {
+  type DatabaseStats,
   dbStats,
   getVisual,
   listVisuals,
-  type DatabaseStats,
   type VisualAsset,
   type VisualSort,
   type VisualSummary,

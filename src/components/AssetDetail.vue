@@ -1,15 +1,7 @@
 <script lang="ts" setup>
 import {defineAsyncComponent, ref} from 'vue'
 import {useI18n} from 'vue-i18n'
-import {
-  Download,
-  FileArchive,
-  FileBox,
-  Grid2x2,
-  Image as ImageIcon,
-  MousePointerClick,
-  Palette,
-} from 'lucide-vue-next'
+import {Download, FileArchive, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
 import type {VisualAsset} from '../api/tauri'
 import ExportDialog from './ExportDialog.vue'
 
@@ -66,7 +58,8 @@ const exportOpen = ref(false)
             <FileBox class="h-3.5 w-3.5"/>
             {{ $t('detail.mesh') }}
           </p>
-          <div class="mt-2 rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25">
+          <div
+              class="mt-2 rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25">
             <p class="break-all font-mono text-[12px] text-glow-cyan">{{ asset.path }}</p>
             <p
                 v-if="asset.meshPak"

@@ -19,11 +19,12 @@ use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
 use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
+use crate::archives::{lock_pool, Archives};
 use crate::models::{
+    match_for_hash,
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
-    MeshFormat, TextureSummary, VirtualTextureSummary, match_for_hash,
+    MeshFormat, TextureSummary, VirtualTextureSummary,
 };
-use crate::archives::{Archives, lock_pool};
 use crate::virtual_textures::{self, StagedSources};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
