@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import {defineAsyncComponent, ref} from 'vue'
 import {useI18n} from 'vue-i18n'
-import {Download, FileArchive, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
+import {ChevronDown, Download, FileArchive, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
 import type {VisualAsset} from '../api/tauri'
 import ExportDialog from './ExportDialog.vue'
 
@@ -17,6 +17,27 @@ defineProps<{ asset: VisualAsset | null; loading: boolean }>()
 useI18n()
 
 const exportOpen = ref(false)
+
+/**
+ * Section collapsing: every section starts folded, so the panel opens as a compact summary — the
+ * count in each title row is what tells the user whether a section is worth opening — and the rows
+ * are pulled in on demand. A plain `ref` is enough: the state lives as long as the panel does (the
+ * whole session) and deliberately survives switching assets, so a section the user opened stays
+ * open. Content is toggled with `v-show`, not `v-if`: the rows are cheap to keep, and keeping them
+ * avoids rebuilding dozens of cards on every expand.
+ */
+type SectionKey = 'mesh' | 'materials' | 'textures' | 'virtualTextures'
+
+const collapsed = ref<Record<SectionKey, boolean>>({
+  mesh: true,
+  materials: true,
+  textures: true,
+  virtualTextures: true,
+})
+
+function toggle(section: SectionKey) {
+  collapsed.value[section] = !collapsed.value[section]
+}
 </script>
 
 <template>
@@ -49,11 +70,21 @@ const exportOpen = ref(false)
         <ModelPreview :path="asset.path"/>
 
         <div>
-          <p class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted">
-            <FileBox class="h-3.5 w-3.5"/>
-            {{ $t('detail.mesh') }}
-          </p>
+          <button
+              class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-[#E6EDF7]"
+              type="button"
+              :aria-expanded="!collapsed.mesh"
+              @click="toggle('mesh')"
+          >
+            <FileBox class="h-3.5 w-3.5 shrink-0"/>
+            <span>{{ $t('detail.mesh') }}</span>
+            <ChevronDown
+                class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
+                :class="collapsed.mesh ? '-rotate-90' : ''"
+            />
+          </button>
           <div
+              v-show="!collapsed.mesh"
               class="mt-2 rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25">
             <p class="break-all font-mono text-[12px] text-glow-cyan">{{ asset.path }}</p>
             <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
@@ -71,11 +102,23 @@ const exportOpen = ref(false)
         </div>
 
         <div>
-          <p class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted">
-            <Palette class="h-3.5 w-3.5"/>
-            {{ $t('detail.materialLabel') }}
-          </p>
-          <div class="mt-2 flex flex-wrap gap-1.5">
+          <button
+              class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-[#E6EDF7] disabled:cursor-default disabled:hover:text-muted"
+              type="button"
+              :aria-expanded="!collapsed.materials"
+              :disabled="!asset.materials.length"
+              @click="toggle('materials')"
+          >
+            <Palette class="h-3.5 w-3.5 shrink-0"/>
+            <span>{{ $t('detail.materialLabel') }}</span>
+            <span class="tabular-nums text-muted/60">{{ asset.materials.length }}</span>
+            <ChevronDown
+                v-if="asset.materials.length"
+                class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
+                :class="collapsed.materials ? '-rotate-90' : ''"
+            />
+          </button>
+          <div v-show="!collapsed.materials" class="mt-2 flex flex-wrap gap-1.5">
             <span
                 v-for="material in asset.materials"
                 :key="material.id"
@@ -92,12 +135,24 @@ const exportOpen = ref(false)
 
         <div class="space-y-5">
           <div>
-            <p class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted">
-              <ImageIcon class="h-3.5 w-3.5"/>
-              {{ $t('detail.textureLabel') }}
-            </p>
+            <button
+                class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-[#E6EDF7] disabled:cursor-default disabled:hover:text-muted"
+                type="button"
+                :aria-expanded="!collapsed.textures"
+                :disabled="!asset.textures.length"
+                @click="toggle('textures')"
+            >
+              <ImageIcon class="h-3.5 w-3.5 shrink-0"/>
+              <span>{{ $t('detail.textureLabel') }}</span>
+              <span class="tabular-nums text-muted/60">{{ asset.textures.length }}</span>
+              <ChevronDown
+                  v-if="asset.textures.length"
+                  class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
+                  :class="collapsed.textures ? '-rotate-90' : ''"
+              />
+            </button>
 
-            <div class="mt-2 space-y-2">
+            <div v-show="!collapsed.textures" class="mt-2 space-y-2">
               <div
                   v-for="tex in asset.textures"
                   :key="tex.id"
@@ -125,12 +180,24 @@ const exportOpen = ref(false)
           </div>
 
           <div>
-            <p class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted">
-              <Grid2x2 class="h-3.5 w-3.5"/>
-              {{ $t('detail.virtualTextureLabel') }}
-            </p>
+            <button
+                class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-[#E6EDF7] disabled:cursor-default disabled:hover:text-muted"
+                type="button"
+                :aria-expanded="!collapsed.virtualTextures"
+                :disabled="!asset.virtualTextures.length"
+                @click="toggle('virtualTextures')"
+            >
+              <Grid2x2 class="h-3.5 w-3.5 shrink-0"/>
+              <span>{{ $t('detail.virtualTextureLabel') }}</span>
+              <span class="tabular-nums text-muted/60">{{ asset.virtualTextures.length }}</span>
+              <ChevronDown
+                  v-if="asset.virtualTextures.length"
+                  class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
+                  :class="collapsed.virtualTextures ? '-rotate-90' : ''"
+              />
+            </button>
 
-            <div class="mt-2 space-y-2">
+            <div v-show="!collapsed.virtualTextures" class="mt-2 space-y-2">
               <div
                   v-for="vt in asset.virtualTextures"
                   :key="vt.id"
