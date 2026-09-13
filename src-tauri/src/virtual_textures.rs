@@ -64,8 +64,8 @@ pub type PageFileSizes = Vec<(String, Option<(u32, u32)>)>;
 /// Pixel size of the page file `hash` names, in the resolution that page file really stores.
 ///
 /// A GTS header carries the tile geometry (`tile_width` / `tile_height` / `tile_border`) and, per
-/// mip level, that level's tile grid — but level 0's grid describes the whole *tile set*, not one
-/// page file: `Albedo_Normal_Physical_2` claims 512 x 512 tiles = 65536 px, far beyond anything the
+/// mip level, that level's tile grid — but level 0's grid describes the whole *tile set*, not one-page file:
+/// `Albedo_Normal_Physical_2` claims 512 x 512 tiles = 65536 px, far beyond anything the
 /// game ever stores, because a set is sparse. What a single page file holds is the bounding box of
 /// its own tiles, and that box times a tile's content area is exactly the DDS size the extractor
 /// writes out (`export.rs` sizes it the same way), so that is what is reported here.
@@ -120,7 +120,7 @@ fn parse_page_file_sizes(data: &[u8]) -> Option<PageFileSizes> {
     let num_page_files = u32::from_le_bytes(read_le(data, 132)?) as usize;
     let page_files_offset = u64::from_le_bytes(read_le(data, 136)?) as usize;
 
-    // A tile carries its neighbouring pixels in the border on each side; the texture itself is the
+    // A tile carries its neighboring pixels in the border on each side; the texture itself is the
     // content area only, which is what the extractor writes out
     let content_width = (tile_width - tile_border * 2) as u32;
     let content_height = (tile_height - tile_border * 2) as u32;
@@ -189,8 +189,10 @@ fn parse_page_file_sizes(data: &[u8]) -> Option<PageFileSizes> {
 fn read_page_file_name(data: &[u8], offset: usize) -> Option<String> {
     let raw = data.get(offset..offset.checked_add(PAGE_FILE_NAME_SIZE)?)?;
     let units: Vec<u16> = raw
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
         .take_while(|unit| *unit != 0)
         .collect();
     Some(String::from_utf16_lossy(&units))
@@ -199,7 +201,7 @@ fn read_page_file_name(data: &[u8], offset: usize) -> Option<String> {
 /// Flat tile info record: `page_file_index` first, `packed_tile_id_index` at byte 8
 const FLAT_TILE_INFO_SIZE: usize = 12;
 
-/// Page file record: a 256-character UTF-16LE name, then page count, guid and one more word
+/// Page file record: a 256-character UTF-16LE name, then page count, GUID and one more word
 const PAGE_FILE_RECORD_SIZE: usize = 536;
 const PAGE_FILE_NAME_SIZE: usize = 512;
 
