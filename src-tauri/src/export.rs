@@ -5,11 +5,13 @@
 //! - `convert_gr2_bytes_to_glb`: GR2 → GLB (mesh only, no embedded textures)
 //! - `dds_bytes_to_png_bytes`: DDS → PNG (direct in-memory conversion, no intermediate files)
 //! - `VirtualTextureExtractor`: GTP + GTS → three layer DDS files (BaseMap / NormalMap / PhysicalMap)
-//! - `PakReaderCache` / `PakOperations`: maclarian's own readers pull GR2 / DDS / GTP / GTS straight
-//!   out of the archives (no full temporary extraction), and its table cache keeps the parsed file
-//!   indexes resident, so a lookup costs a table scan instead of reparsing an index per file
+//! - `LspkReader`: decompresses the needed files directly from the PAK archives
+//!   (GR2 / DDS / GTP / GTS) without a full temporary extraction
 
+use std::collections::HashMap;
 use std::fs;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -17,7 +19,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use maclarian::converter::dds_bytes_to_png_bytes;
 use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
 use maclarian::merged::{VirtualTextureRef, VisualAsset};
-use maclarian::pak::{PakOperations, PakReaderCache};
+use maclarian::pak::lspk::{FileTableEntry, LspkReader};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::models::{
@@ -49,6 +51,28 @@ fn push_warning(warnings: &mut Vec<ExportWarning>, code: &str, detail: impl Into
     });
 }
 
+/// How many archives the pool keeps open at most. A cached archive pins a file handle plus its whole
+/// file table, so a full install (~26 main PAKs) cannot stay resident; eviction is least-recently
+/// used, because a full scan walks every PAK and dropping the whole cache would make the next file
+/// reparse the tables the scan just read.
+const MAX_CACHED_PAKS: usize = 12;
+
+/// PAK read pool: each PAK is opened once and its file table and reader stay resident, so indexes
+/// are never reparsed per file.
+pub struct Package {
+    /// Game archives in file-name order. The order only makes scans reproducible — it carries no
+    /// priority, because nothing is known about which archive holds a given file (see `read`).
+    paks: Vec<PathBuf>,
+    readers: HashMap<PathBuf, LspkReader<BufReader<File>>>,
+    tables: HashMap<PathBuf, Vec<FileTableEntry>>,
+    /// Normalized file path -> archive holding it, as found by an earlier `read` or `locate_many`.
+    /// Only a hint: a miss (or an archive that no longer answers) simply falls back to a full scan.
+    located: HashMap<String, PathBuf>,
+    /// Cached archives, oldest first. `ensure` moves its archive to the back, so the front is the
+    /// least recently used one and the first to be evicted.
+    lru: Vec<PathBuf>,
+}
+
 /// True when `file_name` is a LSPK data-partition archive (`<Name>_<n>.pak`, e.g.
 /// `VirtualTextures_12.pak`). BG3 splits large resources over numbered archives that only hold
 /// raw data blocks — they carry no LSPK header of their own, cannot be opened standalone, and are
@@ -62,122 +86,268 @@ fn is_data_partition(file_name: &str) -> bool {
     }
 }
 
-/// List every main `.pak` under the data directory in file-name order. Numbered data partitions
-/// (`<Name>_<n>.pak`) are excluded — see `is_data_partition`.
-///
-/// No archive is promoted: meshes, textures and virtual textures are all looked up the same way,
-/// so a "preferred" archive would only decide which copy wins when a path exists in several
-/// archives, and never which archives get searched.
-pub fn main_paks(game_path: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut paks: Vec<PathBuf> = fs::read_dir(game_path)
-        .map_err(|e| format!("Failed to list BG3 data directory: {e}"))?
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| {
-            p.is_file()
-                && p.extension().and_then(|s| s.to_str()) == Some("pak")
-                && !p
+impl Package {
+    /// List every main `.pak` under the data directory in file-name order. Numbered data partitions
+    /// (`<Name>_<n>.pak`) are excluded — see `is_data_partition`.
+    ///
+    /// No archive is promoted: meshes, textures and virtual textures are all looked up by the same
+    /// global scan, so a "preferred" archive would only decide which copy wins when a path exists
+    /// in several archives, and never which archives get searched.
+    pub fn new(game_path: &Path) -> Result<Self, String> {
+        let mut paks: Vec<PathBuf> = fs::read_dir(game_path)
+            .map_err(|e| format!("Failed to list BG3 data directory: {e}"))?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| {
+                p.is_file()
+                    && p.extension().and_then(|s| s.to_str()) == Some("pak")
+                    && !p
                     .file_name()
                     .and_then(|n| n.to_str())
                     .is_some_and(is_data_partition)
+            })
+            .collect();
+
+        // Deterministic order only: `read_dir` order is arbitrary, and the scan result (which
+        // archive is reported as the source) has to stay stable between runs.
+        paks.sort();
+
+        Ok(Self {
+            paks,
+            readers: HashMap::new(),
+            tables: HashMap::new(),
+            located: HashMap::new(),
+            lru: Vec::new(),
         })
-        .collect();
-
-    // Deterministic order only: `read_dir` order is arbitrary, and which archive answers a lookup
-    // has to stay stable between runs.
-    paks.sort();
-    Ok(paks)
-}
-
-/// Lock maclarian's shared PAK table cache for a single read
-pub fn lock_cache(
-    cache: &Arc<Mutex<PakReaderCache>>,
-) -> Result<MutexGuard<'_, PakReaderCache>, String> {
-    cache
-        .lock()
-        .map_err(|e| format!("PAK cache lock unavailable: {e}"))
-}
-
-/// Read a file from whichever main archive holds it.
-///
-/// maclarian's own `read_files_bulk` does the work instead of a hand-rolled table walk: the database
-/// hands out exactly the spelling the archives use (`Generated/Public/...`, `/`-separated, original
-/// casing — verified against a full install), which is what that reader compares against. Its table
-/// cache turns the sweep into a sequence of table scans rather than reparsing an index per file, and
-/// the first archive that answers wins, exactly as before.
-pub fn read_file(
-    cache: &mut PakReaderCache,
-    paks: &[PathBuf],
-    target: &str,
-) -> Result<Vec<u8>, String> {
-    if let Some(bytes) = scan_for(cache, paks, target) {
-        return Ok(bytes);
     }
 
-    // Fallback for a record that spells separators the Windows way; the archives always use `/`
-    let slashed = target.replace('\\', "/");
-    if slashed != target {
-        if let Some(bytes) = scan_for(cache, paks, &slashed) {
-            return Ok(bytes);
+    /// Open a PAK and cache its file table; no-op when already cached.
+    /// A cached archive counts as used, so a scan keeps the archives it just walked resident.
+    fn ensure(&mut self, pak: &Path) -> Result<(), String> {
+        if self.tables.contains_key(pak) {
+            self.touch(pak);
+            return Ok(());
         }
-    }
 
-    // Last resort: the name differs only in casing. The file tables are authoritative for spelling,
-    // so match them case-insensitively and read back with the table's own spelling
-    let want = normalize_path(target);
-    for pak in paks {
-        if let Ok(entries) = PakOperations::list(pak) {
-            if let Some(exact) = entries.iter().find(|path| normalize_path(path) == want) {
-                return read_from(cache, pak, exact);
+        // One eviction per open, not a wholesale drop: a full scan walks every PAK, so emptying the
+        // cache would make the file after it reparse all the tables the scan just read.
+        while self.readers.len() >= MAX_CACHED_PAKS {
+            match self.lru.first().cloned() {
+                Some(oldest) => self.evict(&oldest),
+                // Unreachable while every cached table also holds an LRU slot; clearing keeps the
+                // loop from spinning if that invariant ever breaks
+                None => {
+                    self.readers.clear();
+                    self.tables.clear();
+                    break;
+                }
             }
         }
+
+        let file = File::open(pak).map_err(|e| format!("Failed to open {}: {e}", pak.display()))?;
+        let mut reader = LspkReader::with_path(BufReader::new(file), pak);
+        let entries = reader
+            .list_files()
+            .map_err(|e| format!("Failed to read file table of {}: {e}", pak.display()))?;
+
+        let pak = pak.to_path_buf();
+        self.readers.insert(pak.clone(), reader);
+        self.tables.insert(pak.clone(), entries);
+        self.lru.push(pak);
+        Ok(())
     }
 
-    Err(format!("{target} not found in BG3 archives"))
-}
-
-/// Sweep the archives for one exact path spelling. Archives that do not hold the file answer with an
-/// empty map, and archives that cannot be read are skipped the same way.
-fn scan_for(cache: &mut PakReaderCache, paks: &[PathBuf], target: &str) -> Option<Vec<u8>> {
-    for pak in paks {
-        if let Ok(mut found) = cache.read_files_bulk(pak, &[target]) {
-            if let Some(bytes) = found.remove(target) {
-                return Some(bytes);
-            }
+    /// Mark a cached archive as most recently used
+    fn touch(&mut self, pak: &Path) {
+        if let Some(pos) = self.lru.iter().position(|cached| cached == pak) {
+            let pak = self.lru.remove(pos);
+            self.lru.push(pak);
         }
     }
-    None
+
+    /// Drop one archive from the cache (its file handle and its file table).
+    /// The `located` hint is kept: it only names an archive, and a cache miss just re-opens it.
+    fn evict(&mut self, pak: &Path) {
+        self.lru.retain(|cached| cached != pak);
+        self.readers.remove(pak);
+        self.tables.remove(pak);
+    }
+
+    /// List all file paths inside a PAK (`/`-separated)
+    pub fn list(&mut self, pak: &Path) -> Result<Vec<String>, String> {
+        self.ensure(pak)?;
+        Ok(self
+            .tables
+            .get(pak)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|e| normalize_path(&e.path.to_string_lossy()))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// Read file bytes from a specific PAK
+    pub fn read_in(&mut self, pak: &Path, target: &str) -> Result<Vec<u8>, String> {
+        self.ensure(pak)?;
+
+        let want = normalize_path(target);
+        let index = self
+            .tables
+            .get(pak)
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .position(|e| normalize_path(&e.path.to_string_lossy()) == want)
+            })
+            .ok_or_else(|| format!("{target} not found in {}", pak.display()))?;
+
+        let entry = self
+            .tables
+            .get(pak)
+            .and_then(|entries| entries.get(index).cloned())
+            .ok_or_else(|| format!("{target} not found in {}", pak.display()))?;
+        let reader = self
+            .readers
+            .get_mut(pak)
+            .ok_or_else(|| format!("Reader unavailable for {}", pak.display()))?;
+
+        reader
+            .decompress_file(&entry)
+            .map_err(|e| format!("Failed to decompress {target}: {e}"))
+    }
+
+    /// Read a file from any PAK under the data directory.
+    ///
+    /// Deliberately unprioritized: a GR2, a DDS and a GTP can each live in several archives
+    /// (`Textures.pak`, `Gustav_Textures.pak`, `Shared.pak`, ...) and the actual holder is not
+    /// knowable up front, so every archive is scanned in the pool's order and the first hit wins.
+    ///
+    /// An archive remembered by an earlier lookup (this call or `locate_many`) is tried first, which
+    /// is what turns a batch of textures into one archive open per file instead of a walk from the
+    /// head of the pool each time. The remembered archive stays a hint: when it no longer answers
+    /// the full scan below still runs, so the "first hit wins" rule and the tolerance for an archive
+    /// whose entry cannot be decompressed are both unchanged.
+    pub fn read(&mut self, target: &str) -> Result<Vec<u8>, String> {
+        let key = normalize_path(target);
+
+        if let Some(pak) = self.located.get(&key).cloned() {
+            if let Ok(bytes) = self.read_in(&pak, target) {
+                return Ok(bytes);
+            }
+            // Stale hint (entry gone or corrupted): forget it and fall back to the scan
+            self.located.remove(&key);
+        }
+
+        for pak in self.paks.clone() {
+            if let Ok(bytes) = self.read_in(&pak, target) {
+                self.located.insert(key, pak);
+                return Ok(bytes);
+            }
+        }
+
+        Err(format!("{target} not found in BG3 archives"))
+    }
+
+    /// List file paths across *all* main PAKs in the data directory, deduplicated.
+    /// Numbered data partitions were already excluded in `new` (see `is_data_partition`); the
+    /// `skipping unreadable` branch below only fires for genuinely broken or foreign archives.
+    pub fn list_all(&mut self) -> Result<Vec<String>, String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for pak in self.paks.clone() {
+            if let Ok(entries) = self.list(&pak) {
+                for entry in entries {
+                    if seen.insert(entry.clone()) {
+                        out.push(entry);
+                    }
+                }
+            } else {
+                eprintln!(
+                    "[maclarian] skipping unreadable / non-LSPK archive: {}",
+                    pak.display()
+                );
+            }
+        }
+        Ok(out)
+    }
+
+    /// Resolve which archive actually holds each of `targets`, as `target -> archive file name`.
+    ///
+    /// The whole batch is answered by a single pass over the cached file tables: a visual easily
+    /// references a dozen textures, and rescanning a table with hundreds of thousands of entries per
+    /// texture would be far too slow. The pool's own order decides the winner, exactly as it does
+    /// in `read`, so the reported source always matches the archive extraction would use. Nothing
+    /// is decompressed.
+    ///
+    /// Every hit is also remembered in `located`, so reads that follow (an export of the same asset)
+    /// skip the scan and open only the archive that owns each path.
+    pub fn locate_many(&mut self, targets: &[String]) -> HashMap<String, String> {
+        // Normalized path -> target exactly as the caller spelled it, so the result can be keyed by
+        // the original string
+        let mut pending: HashMap<String, String> = targets
+            .iter()
+            .filter(|target| !target.is_empty())
+            .map(|target| (normalize_path(target), target.clone()))
+            .collect();
+        let mut located = HashMap::new();
+        // Collected instead of written straight into `self.located`: the tables are borrowed below,
+        // so the memo is updated after the scan has finished
+        let mut resolved: Vec<(String, PathBuf)> = Vec::new();
+
+        for pak in self.paks.clone() {
+            if pending.is_empty() {
+                break;
+            }
+            if self.ensure(&pak).is_err() {
+                continue;
+            }
+            let name = match pak.file_name().and_then(|n| n.to_str()) {
+                Some(name) => name.to_string(),
+                None => continue,
+            };
+
+            if let Some(entries) = self.tables.get(&pak) {
+                for entry in entries {
+                    let path = normalize_path(&entry.path.to_string_lossy());
+                    if let Some(target) = pending.remove(&path) {
+                        located.insert(target, name.clone());
+                        resolved.push((path, pak.clone()));
+                    }
+                    if pending.is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (path, pak) in resolved {
+            self.located.insert(path, pak);
+        }
+
+        located
+    }
 }
 
-/// Read a file from one specific archive.
-///
-/// Every virtual texture lives in `VirtualTextures.pak` (verified against a full install: no other
-/// archive holds a single `.gtp` or `.gts`), so that pipeline never sweeps the data directory — it
-/// goes straight to the one archive that can answer.
-pub fn read_from(cache: &mut PakReaderCache, pak: &Path, target: &str) -> Result<Vec<u8>, String> {
-    let mut found = cache
-        .read_files_bulk(pak, &[target])
-        .map_err(|e| format!("Failed to read {}: {e}", pak.display()))?;
-    found
-        .remove(target)
-        .ok_or_else(|| format!("{target} not found in {}", pak.display()))
+/// Lock the shared PAK pool for a single read
+pub fn lock_pool(pool: &Arc<Mutex<Package>>) -> Result<MutexGuard<'_, Package>, String> {
+    pool.lock().map_err(|e| format!("PAK pool lock unavailable: {e}"))
 }
 
-/// Build the virtual texture index: every `.gtp` path inside `VirtualTextures.pak`.
-///
-/// Virtual textures are not spread over the archives the way meshes and textures are — a full
-/// install keeps all 12974 pages plus their `.gts` sidecars in that single archive and nowhere else
-/// (verified), so the index costs one file-table read instead of a sweep over every archive.
-/// Returns an empty index when the archive cannot be read: virtual textures are an optional
-/// artifact and must not abort the whole export.
-pub fn build_gtp_index(vt_pak: &Path) -> Vec<String> {
-    match PakOperations::list(vt_pak) {
+/// Build the virtual texture index: scan every `.gtp` path in all PAK archives.
+/// BG3 places virtual textures in `VirtualTextures*.pak` *and* inside other PAKs such as
+/// `Shared.pak` under `Generated/.../VirtualTextures/`, so a global scan is required.
+/// Returns an empty index when no GTP can be found or the archives cannot be read — virtual
+/// textures are an optional artifact and must not abort the whole export.
+pub fn build_gtp_index(pool: &mut Package) -> Vec<String> {
+    match pool.list_all() {
         Ok(entries) => entries
             .into_iter()
-            .filter(|path| path.to_lowercase().ends_with(".gtp"))
+            .filter(|p| p.to_lowercase().ends_with(".gtp"))
             .collect(),
         Err(err) => {
-            eprintln!("[maclarian] listing VirtualTextures.pak failed: {err}");
+            eprintln!("[maclarian] list all PAK entries failed: {err}");
             Vec::new()
         }
     }
@@ -220,9 +390,9 @@ fn derive_gts_path(gtp_path: &str) -> String {
     format!("{}.gts", gtp_path.trim_end_matches(".gtp"))
 }
 
-/// Normalize a path for comparison: unify on `/` separators and lowercase.
-/// Only used to reconcile a record whose spelling differs from the archive's own (see `read_file`).
-fn normalize_path(path: &str) -> String {
+/// Normalize a path: unify on `/` separators and lowercase for comparison
+/// (separators inside PAK archives are inconsistent on Windows)
+pub(crate) fn normalize_path(path: &str) -> String {
     path.replace('\\', "/").to_lowercase()
 }
 
@@ -293,9 +463,7 @@ fn try_write_png_and_record(
 /// export, while a single texture / virtual texture failure only records a warning.
 pub fn run_export(
     asset: &VisualAsset,
-    cache: &Arc<Mutex<PakReaderCache>>,
-    paks: &[PathBuf],
-    vt_pak: Option<&Path>,
+    pool: &Arc<Mutex<Package>>,
     dest_root: &Path,
     options: &ExportOptions,
     gtp_index: &[String],
@@ -351,6 +519,17 @@ pub fn run_export(
         percent: 0.0,
     });
 
+    // Resolve the mesh and every texture in one scan before reading anything: `locate_many` leaves
+    // the answers inside the pool, so the reads below go straight to the owning archive instead of
+    // walking the pool from the head for each file — a texture then costs one table lookup rather
+    // than an open of every archive sorted before its own (~25 of them on a full install).
+    let mut targets = Vec::with_capacity(asset.textures.len() + 1);
+    targets.push(asset.gr2_path.clone());
+    if extract_textures {
+        targets.extend(asset.textures.iter().map(|tex| tex.dds_path.clone()));
+    }
+    lock_pool(pool)?.locate_many(&targets);
+
     // ---- 1. Mesh: raw GR2 straight out of the PAK, or a plain GR2 → GLB conversion ----
     let mesh_format = options.mesh_format;
     emit(
@@ -361,7 +540,8 @@ pub fn run_export(
         },
         Some(asset.gr2_path.clone()),
     );
-    let gr2_bytes = read_file(&mut *lock_cache(cache)?, paks, &asset.gr2_path)
+    let gr2_bytes = lock_pool(pool)?
+        .read(&asset.gr2_path)
         .map_err(|err| format!("Mesh data unavailable: {err}"))?;
 
     let mesh_bytes = match mesh_format {
@@ -389,9 +569,9 @@ pub fn run_export(
         for tex in &asset.textures {
             emit(PHASE_TEXTURES, Some(tex.dds_path.clone()));
 
-            // Locked per file only: decompressing one texture is quick, and it leaves the cache
+            // Locked per file only: decompressing one texture is quick, and it leaves the pool
             // available to other commands (a preview) while the export runs
-            let dds = read_file(&mut *lock_cache(cache)?, paks, &tex.dds_path);
+            let dds = lock_pool(pool)?.read(&tex.dds_path);
             match dds {
                 Ok(dds) => {
                     // Name files after the actual DDS resource in the archive (e.g. `Body_BM`),
@@ -449,8 +629,8 @@ pub fn run_export(
     }
 
     // ---- 3. Virtual textures: GTP + GTS → three layer DDS files ----
-    // Virtual textures live in `VirtualTextures.pak` and nowhere else, so without that archive there
-    // is nothing to resolve and every hash reports as not found.
+    // BG3 places virtual textures in `VirtualTextures*.pak` and also inside other PAKs such as
+    // `Shared.pak` under `Generated/.../VirtualTextures/`, so the lookup is global.
     if !vt_targets.is_empty() {
         let vt_dir = out_dir.join("virtual_textures");
         fs::create_dir_all(&vt_dir)
@@ -468,19 +648,15 @@ pub fn run_export(
             for (seq, vt) in vt_targets.iter().enumerate() {
                 emit(PHASE_VIRTUAL, Some(vt.name.clone()));
 
-                let (Some(vt_pak), Some(gtp_rel)) = (
-                    vt_pak,
-                    vt_pak.and_then(|_| find_gtp_by_hash(gtp_index, &vt.gtex_hash)),
-                ) else {
+                let Some(gtp_rel) = find_gtp_by_hash(gtp_index, &vt.gtex_hash) else {
                     push_warning(&mut warnings, "vtGtpNotFound", vt.gtex_hash.clone());
                     continue;
                 };
 
                 let stage = temp_root.join(format!("stage_{seq}"));
-                let mut guard = lock_cache(cache)?;
+                let mut archive = lock_pool(pool)?;
                 if let Err(err) = export_virtual_texture(
-                    &mut guard,
-                    vt_pak,
+                    &mut archive,
                     gtp_rel,
                     &vt.name,
                     &vt_dir,
@@ -490,10 +666,14 @@ pub fn run_export(
                     &mut files,
                     &mut warnings,
                 ) {
-                    push_warning(&mut warnings, "vtFailed", format!("{}: {err}", vt.name));
+                    push_warning(
+                        &mut warnings,
+                        "vtFailed",
+                        format!("{}: {err}", vt.name),
+                    );
                 }
                 // Released per virtual texture, so a long export keeps interleaving with previews
-                drop(guard);
+                drop(archive);
                 let _ = fs::remove_dir_all(&stage);
             }
         }
@@ -550,12 +730,11 @@ fn next_temp_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-/// Extract a single virtual texture: pull GTP/GTS out of `VirtualTextures.pak`, resolve the three
-/// layer DDS files, and write them to the export dir.
+/// Extract a single virtual texture: pull GTP/GTS from any PAK archive, resolve the three layer
+/// DDS files, and write them to the export dir.
 #[allow(clippy::too_many_arguments)]
 fn export_virtual_texture(
-    cache: &mut PakReaderCache,
-    vt_pak: &Path,
+    pak: &mut Package,
     gtp_rel: &str,
     vt_name: &str,
     vt_dir: &Path,
@@ -574,12 +753,12 @@ fn export_virtual_texture(
 
     let gtp_path = shared.join(gtp_name);
     if !gtp_path.exists() {
-        let bytes = read_from(cache, vt_pak, gtp_rel)?;
+        let bytes = pak.read(gtp_rel)?;
         fs::write(&gtp_path, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
     }
 
     // GTS naming does not always match the GTP: try each candidate until a GTS resolves this hash
-    let candidates = gts_candidates(cache, vt_pak, gtp_rel, shared)?;
+    let candidates = gts_candidates(pak, gtp_rel, shared)?;
     let mut last_err = "no GTS candidate available".to_string();
     let mut extracted = false;
     for gts_path in candidates {
@@ -661,11 +840,9 @@ fn export_virtual_texture(
 ///    mismatched GTS/GTP naming); the longer the GTS name, the higher the priority
 ///
 /// A GTS may be shared by several GTPs, so staged files are reused by file name.
-/// Both steps look inside `VirtualTextures.pak`: a full install keeps all 16 GTS sidecars there and
-/// in no other archive.
+/// Searches across all PAK archives.
 fn gts_candidates(
-    cache: &mut PakReaderCache,
-    vt_pak: &Path,
+    pak: &mut Package,
     gtp_rel: &str,
     shared: &Path,
 ) -> Result<Vec<PathBuf>, String> {
@@ -685,13 +862,14 @@ fn gts_candidates(
     let mut staged: Vec<PathBuf> = Vec::new();
 
     // 1. Standard derived name
-    if stage_gts_file(cache, vt_pak, &gts_rel, shared, &mut staged) {
+    if stage_gts_file(pak, &gts_rel, shared, &mut staged) {
         return Ok(staged);
     }
 
-    // 2. Same-directory prefix fallback: GTS files sharing the directory and a name prefix
-    let fallbacks: Vec<String> = PakOperations::list(vt_pak)
-        .map_err(|e| format!("Failed to list {}: {e}", vt_pak.display()))?
+    // 2. Same-directory prefix fallback: filter GTS files sharing the directory and a name prefix
+    //    across all PAKs
+    let fallbacks: Vec<String> = pak
+        .list_all()?
         .into_iter()
         .filter(|p| {
             p.to_lowercase().ends_with(".gts")
@@ -717,20 +895,19 @@ fn gts_candidates(
     fallbacks_sorted.sort_by_key(|p| std::cmp::Reverse(p.len()));
 
     for rel in fallbacks_sorted {
-        stage_gts_file(cache, vt_pak, &rel, shared, &mut staged);
+        stage_gts_file(pak, &rel, shared, &mut staged);
     }
 
     if staged.is_empty() {
-        return Err(format!("{gts_rel} not found in {}", vt_pak.display()));
+        return Err(format!("{gts_rel} not found in any PAK"));
     }
     Ok(staged)
 }
 
-/// Stage one GTS out of `VirtualTextures.pak` to disk; reuse it directly when already staged
+/// Stage one GTS from any PAK to disk; reuse it directly when already staged
 /// (shared with another GTP)
 fn stage_gts_file(
-    cache: &mut PakReaderCache,
-    vt_pak: &Path,
+    pak: &mut Package,
     rel: &str,
     shared: &Path,
     staged: &mut Vec<PathBuf>,
@@ -743,7 +920,7 @@ fn stage_gts_file(
         staged.push(path);
         return true;
     }
-    match read_from(cache, vt_pak, rel) {
+    match pak.read(rel) {
         Ok(bytes) => match fs::write(&path, &bytes) {
             Ok(()) => {
                 staged.push(path);

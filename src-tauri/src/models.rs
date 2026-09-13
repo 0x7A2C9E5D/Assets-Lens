@@ -15,10 +15,9 @@ pub struct TextureSummary {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Archive holding this DDS (e.g. `Textures.pak`); always empty: naming it means consulting the
-    /// archives, which is only worth doing where a file is actually read (preview / export), so the
-    /// detail panel hides the row. maclarian never fills `TextureRef::source_pak` either, so the
-    /// export manifest carries it empty as well
+    /// Archive holding this DDS (e.g. `Textures.pak`); left empty here and filled in by
+    /// `get_visual`, which is the only place with access to the PAK pool — maclarian never fills
+    /// `TextureRef::source_pak`, so the export manifest still carries it empty
     pub source: String,
     pub width: u32,
     pub height: u32,
@@ -66,8 +65,8 @@ pub struct VisualAssetDetail {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Archive holding the GR2 mesh (e.g. `Models.pak`); always empty for the same reason as
-    /// `TextureSummary::source`
+    /// Archive holding the GR2 mesh (e.g. `Models.pak`); left empty here and filled in by
+    /// `get_visual`, which is the only place with access to the PAK pool
     pub mesh_pak: String,
     pub material_ids: Vec<String>,
     pub textures: Vec<TextureSummary>,

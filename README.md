@@ -11,7 +11,7 @@ A **Tauri 2** desktop tool: it locates the local *Baldur's Gate 3* Data director
 ### Features
 
 - **Database page**: auto-detect the default Steam install path, or pick the Data directory containing `Shared.pak` through the native folder dialog; while building the merged index, per-file progress (pushed over a `Channel`) and elapsed time are shown, followed by Visual / Material / Texture / Virtual Texture stat cards
-- **Browse page**: a paginated list of visual assets, sortable by name or GUID from the column headers, with debounced keyword search that matches a name or a GUID and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D preview, GR2 mesh path, material IDs, DDS texture list and virtual texture hashes in the right-hand detail panel
+- **Browse page**: a paginated list of visual assets, sortable by name or GUID from the column headers, with debounced keyword search that matches a name or a GUID and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D preview, GR2 mesh path, source PAK, material IDs, DDS texture list and virtual texture hashes in the right-hand detail panel
 - **3D preview**: an embedded three.js viewport loaded on demand; the backend converts GR2 to GLB and ships it as Base64 — geometry only, no textures, rendered with a neutral unlit material so broken normals or missing maps can never turn the model black
 - **Asset export**: the detail panel's *Export* button opens format options and a target directory, then writes to `<target>/<asset name>/`; progress is pushed phase by phase and a single missing item only records a note instead of aborting the export
 - **About page**: the running version sits next to the app name — with a single amber arrow welded into the badge when a newer release is out, whose tooltip carries the published number — plus GitHub / Nexus Mods links, the tech stack, credits and the rights / privacy / license statements
@@ -70,9 +70,9 @@ tauri-app/
    ├─ src/main.rs              Binary entry point
    ├─ src/lib.rs               Tauri builder: plugins, AppState, command list
    ├─ src/models.rs            serde DTOs (uniform `camelCase` JSON contract)
-   ├─ src/state.rs             AppState: resolver / database / sort cache / archives + PAK cache / GTP index
+   ├─ src/state.rs             AppState: resolver / database / sort cache / PAK pool / GTP index
    ├─ src/commands.rs          `#[tauri::command]` implementations
-   ├─ src/export.rs            Export pipeline + archive reads (maclarian `PakReaderCache`) + GTP/GTS handling
+   ├─ src/export.rs            Export pipeline + `Package` (PAK pool) + GTP/GTS handling
    ├─ capabilities/default.json Per-window permissions (dialog, opener, window controls)
    ├─ tauri.conf.json          Window and bundling configuration
    └─ Cargo.toml               Dependency manifest
@@ -98,9 +98,8 @@ tauri-app/
 
 - The game directory is **never persisted on disk**: the frontend stores it in localStorage and hands it back through `set_game_path` on startup, so backend state only lives for the current session
 - `visual_names()` / `gr2_files()` come from HashMap iteration and are not order-stable; after a build they are sorted and cached in `AppState`, and paging only slices — otherwise pages would shuffle
-- `paks` (main archives, data partitions excluded) plus `cache` (maclarian's `PakReaderCache`) are created once per game directory by `archives()`: opening an archive parses its whole file table, so the cache is sized for a full install (`CACHED_PAKS = 32`) and keeps every table it walked resident. Callers clone the pair back out and lock the cache only around a single read, so the state lock and the cache are never held at the same time
-- `read_file` reads one path through maclarian's `read_files_bulk`, asking the archives in turn and taking the first answer — meshes, textures and virtual textures all go through that one path. Records arrive in the archives' own spelling (`Generated/Public/...`, `/`-separated, original casing), so the first try normally hits; a `\`-spelled record gets one retry, and a case-only difference falls back to a case-insensitive match against the file tables
-- `texture_index` is every `.gtp` path inside `VirtualTextures.pak`, built lazily. Virtual textures are not spread across the archives the way meshes and textures are: that single archive holds all 12974 pages plus their `.gts` sidecars, and no other archive holds any — so listing it replaces the previous full-install scan
+- `packages` (a `Package`) is a PAK read pool shared across commands: opening an archive parses its whole file table, so it is created once per game directory, capped by `MAX_CACHED_PAKS = 6`
+- `texture_index` is a global index of `.gtp` paths, built lazily, used to resolve GTex hashes during virtual texture export
 
 **Release check** (`src/utils/release.ts` + `src/api/nexus.ts`)
 
@@ -121,7 +120,7 @@ tauri-app/
 └─ asset.json                            Manifest (maclarian version, materials, textures, files)
 ```
 
-- Every conversion reuses maclarian (`convert_gr2_bytes_to_glb`, `dds_bytes_to_png_bytes`, `VirtualTextureExtractor`, `PakReaderCache` / `PakOperations`) instead of reimplementing anything
+- Every conversion reuses maclarian (`convert_gr2_bytes_to_glb`, `dds_bytes_to_png_bytes`, `VirtualTextureExtractor`, `LspkReader`) instead of reimplementing anything
 - The mesh is the core artifact — its failure aborts the export; a single texture / virtual texture failure only records an `ExportWarning` (`code` is localized on the frontend, `detail` keeps the raw message)
 - Virtual textures are staged to a temp directory as `GTP` / `GTS`, extracted, and the temp directory is cleaned up afterwards
 
@@ -146,8 +145,7 @@ cargo tauri build    # Bundle (NSIS target on Windows)
 - **The IPC contract only depends on field names**: the backend emits `#[serde(rename_all = "camelCase")]`, so type names need not match across the boundary (e.g. Rust's `VisualAssetDetail` ↔ TS's `VisualAsset`)
 - **GLB is Base64, not `Vec<u8>`**: a byte vector serializes through serde as one JSON number per byte, inflating a multi-MB model to tens of MB; Base64 grows by only ~33% and keeps everything in memory with no temp files
 - **Previews and exports run inside `spawn_blocking`**: GR2 decompression/BitKnit decoding and PAK reads take seconds; this keeps the UI responsive and avoids holding the state lock for long
-- **Archive lookups are maclarian's, spelling included**: `PakReaderCache` compares the raw path with `==`, so only the archives' own spelling (`/`-separated, original casing) hits on the first try; `read_file` tries the record as-is, retries once with `/` separators, and only then falls back to a case-insensitive match against the file tables — no hand-rolled table walk
-- **Virtual textures come from one archive**: meshes and textures are scattered over the archives and are swept for, but every `.gtp` / `.gts` lives in `VirtualTextures.pak`, so the index and every virtual texture read target that single file
+- **Path normalization**: maclarian compares archive entries with `==` on the raw path, which never matches on Windows (`\` vs `/`), so `Package` normalizes separators and casing before comparing
 - **`<Name>_<n>.pak` data partitions are excluded**: they carry no LSPK header of their own, cannot be opened standalone, and are reachable through their main archive
 - **WebView2 compatibility**: `RouterView` is not wrapped in `<Transition>` (an `out-in` transition gets stuck between leave/enter in WebView2 and renders a blank screen); it renders directly with a bound `:key`
 - **three.js context release**: besides `dispose()`, unmounting calls `forceContextLoss()`; otherwise WebView2 discards the oldest context after ~16, which shows up as a black preview
@@ -172,7 +170,7 @@ This tool is an independently developed, unofficial third-party application, nei
 ### 功能
 
 - **数据库页**：自动检测 Steam 默认安装路径，或用系统原生目录对话框手动选择含 `Shared.pak` 的 Data 目录；构建合并索引时通过 `Channel` 推送逐文件进度并显示耗时，完成后展示 Visual / Material / Texture / Virtual Texture 统计卡片
-- **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓` 依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径、材质 ID、DDS 纹理列表与虚拟纹理哈希
+- **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓` 依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径、来源 PAK、材质 ID、DDS 纹理列表与虚拟纹理哈希
 - **3D 预览**：详情面板内嵌 three.js 视口，按需加载；后端把 GR2 转换成 GLB 后以 Base64 传给前端，纯几何、无贴图，使用中性灰无光照材质，避免法线/贴图缺失导致模型全黑
 - **资源导出**：详情面板「导出」按钮 → 选择网格格式与纹理格式、目标目录，导出到 `<目标目录>/<资源名>/`；逐阶段推送进度，单项缺失只记「提示」不中断整个导出
 - **关于页**：应用名旁显示当前运行版本；当 Nexus Mods 上已发布更新的版本时，版本徽标内会多出一个琥珀色箭头（已发布版本号只出现在悬浮提示里），并提供 GitHub / Nexus Mods 外链、技术栈、致谢与权利 / 隐私 / 许可声明
@@ -231,9 +229,9 @@ tauri-app/
    ├─ src/main.rs              二进制入口
    ├─ src/lib.rs               Tauri Builder：插件注册、AppState 托管、命令清单
    ├─ src/models.rs            serde DTO（统一 `camelCase` JSON 契约）
-   ├─ src/state.rs             AppState：resolver / 合并数据库 / 排序缓存 / 归档列表 + PAK 缓存 / GTP 索引
+   ├─ src/state.rs             AppState：resolver / 合并数据库 / 排序缓存 / PAK 池 / GTP 索引
    ├─ src/commands.rs          `#[tauri::command]` 命令实现
-   ├─ src/export.rs            导出流水线 + 归档读取（maclarian `PakReaderCache`）+ GTP/GTS 解析
+   ├─ src/export.rs            导出流水线 + `Package`（PAK 复用池）+ GTP/GTS 解析
    ├─ capabilities/default.json 按窗口授予的权限（dialog、opener、窗口控制）
    ├─ tauri.conf.json          窗口与打包配置
    └─ Cargo.toml               依赖清单
@@ -259,9 +257,8 @@ tauri-app/
 
 - 游戏目录**不落盘**：前端存在 localStorage，启动时经 `set_game_path` 交回后端校验，后端状态仅存活于当前会话
 - `visual_names()` / `gr2_files()` 来自 HashMap 迭代、顺序不稳定，构建后统一排序缓存到 `AppState`，分页只做切片，否则翻页会乱序
-- `paks`（主归档，已排除数据分片）与 `cache`（maclarian 的 `PakReaderCache`）由 `archives()` 在每个游戏目录下只建一次：打开一个归档要解析整张文件表，因此缓存按完整安装的档案数配置（`CACHED_PAKS = 32`），使走过的表常驻；调用方克隆这对值后只在单次读取期间锁缓存，状态锁与缓存锁从不同时持有
-- `read_file` 用 maclarian 的 `read_files_bulk` 逐档询问并取首个命中——网格、纹理、虚拟纹理都走这同一条路径。数据库给出的路径就是归档自身的拼写（`Generated/Public/...`、`/` 分隔、原大小写），因此通常一次命中；遇到 `\` 拼写的记录重试一次，仅大小写不同时再回退为对文件表的大小写不敏感匹配
-- `texture_index` 是 `VirtualTextures.pak` 内全部 `.gtp` 路径（按需延迟构建）。虚拟纹理不像网格 / 纹理那样分散在各档：完整安装的 12974 个页及其 `.gts` 旁档只存在于这一档、其他档一个都没有，因此列一次它即可替代原先的全库扫描
+- `packages`（`Package`）是跨命令复用的 PAK 读池：打开一个归档要解析整张文件表，因此每个游戏目录只建一次，并设 `MAX_CACHED_PAKS = 6` 上限
+- `texture_index` 为 `.gtp` 路径的全局索引（按需延迟构建），用于虚拟纹理导出时的 GTex 哈希查找
 
 **版本检查**（`src/utils/release.ts` + `src/api/nexus.ts`）
 
@@ -282,7 +279,7 @@ tauri-app/
 └─ asset.json                       元数据清单（maclarian 版本、材质、纹理、导出文件列表）
 ```
 
-- 格式转换全部复用 maclarian（`convert_gr2_bytes_to_glb`、`dds_bytes_to_png_bytes`、`VirtualTextureExtractor`、`PakReaderCache` / `PakOperations`），不重复实现
+- 格式转换全部复用 maclarian（`convert_gr2_bytes_to_glb`、`dds_bytes_to_png_bytes`、`VirtualTextureExtractor`、`LspkReader`），不重复实现
 - GLB 网格是核心产物，其失败会中止本次导出；单个纹理 / 虚拟纹理失败只记录 `ExportWarning`（`code` 供前端 i18n 取文案，`detail` 为原始信息）
 - 虚拟纹理经临时目录暂存 `GTP` / `GTS` 后提取，结束即清理
 
@@ -307,8 +304,7 @@ cargo tauri build    # 打包（Windows 目标为 NSIS）
 - **IPC 契约只依赖字段名**：后端 `models.rs` 用 `#[serde(rename_all = "camelCase")]` 输出，类型名前后端不必一致（如 Rust 的 `VisualAssetDetail` ↔ TS 的 `VisualAsset`）
 - **GLB 用 Base64 而非 `Vec<u8>`**：字节数组经 serde 会序列化成「每字节一个数字」的 JSON，几 MB 模型会膨胀到几十 MB；Base64 只增约 33%，且全程内存操作、无临时文件
 - **预览与导出都在 `spawn_blocking` 内执行**：GR2 解压/BitKnit 解码与 PAK 读取耗时数秒，避免阻塞 UI；耗时期间不长时间持有状态锁
-- **归档查找连拼写一起交给 maclarian**：`PakReaderCache` 对原始路径做 `==` 比较，因此只有归档自身的拼写（`/` 分隔、原大小写）能一次命中；`read_file` 先按原样试一次，再把分隔符换成 `/` 重试一次，最后才回退为对文件表的大小写不敏感匹配——不再自写文件表遍历
-- **虚拟纹理只来自一个归档**：网格与纹理分散在各档、需要扫描，而所有 `.gtp` / `.gts` 都在 `VirtualTextures.pak` 里，因此索引构建与每一次虚拟纹理读取都只针对该单档
+- **路径归一化**：maclarian 的归档查找对原始路径做 `==` 比较，Windows 下 `\` 与 `/` 永不匹配，故 `Package` 统一分隔符与大小写后再比对
 - **`<Name>_<n>.pak` 数据分片被排除**：它们没有独立 LSPK 头、无法单独打开，且已能通过主归档访问
 - **WebView2 兼容**：`RouterView` 不包 `<Transition>`（`out-in` 过渡在 WebView2 上会卡在 leave/enter 之间导致白屏），改为直接渲染并绑定 `:key`
 - **three.js 上下文释放**：卸载时除 `dispose()` 外还需 `forceContextLoss()`，否则 WebView2 约 16 个上下文后丢弃最旧的，表现为预览变黑
