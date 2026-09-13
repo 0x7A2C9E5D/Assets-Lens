@@ -59,6 +59,11 @@ function load() {
 }
 
 function selectRow(id: string) {
+  // Clicking the visual that is already selected (or arrowing back onto it) is not a new request:
+  // the panel shows that asset already and a repeat fetch would only flash the loading state while
+  // re-running an expensive lookup, so it is skipped
+  if (selected.value === id) return
+
   selected.value = id
   asset.value = null
   detailLoading.value = true
