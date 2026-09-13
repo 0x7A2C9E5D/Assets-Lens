@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
 use maclarian::pak::{find_pak_files, PakReaderCache};
 
+use crate::archives::build_pak_index;
 use crate::export::find_vt_matches;
 
 /// How many archives maclarian's table cache keeps parsed: enough for the ~26 readable archives of a
@@ -96,6 +97,41 @@ impl AppState {
         self.paks = paks.clone();
         self.cache = Some(cache.clone());
         Ok((cache, paks))
+    }
+
+    /// Fill `VisualAsset::source_pak` and each `TextureRef::source_pak` with the archive that holds
+    /// it. maclarian declares the fields but never writes them (deserialization is their only
+    /// writer), so the values come from listing the archive file tables (`build_pak_index`, ~0.7s for
+    /// a full install) — a fraction of the minutes just spent parsing. Filling them once here is what
+    /// makes the archive name free everywhere it is shown: the detail panel and `asset.json` both read
+    /// the fields, and no click or export ever consults a file table for it. The index itself goes out
+    /// of scope again, since it costs an order of magnitude more than the strings it hands out
+    /// (`PakIndex`).
+    ///
+    /// Called with the database already stored, and only from `build_database`: without a database
+    /// there is nothing to fill.
+    pub fn fill_source_paks(&mut self) {
+        // No archive list means no answers; leaving the fields empty is the honest outcome
+        let Ok((_, paks)) = self.archives() else {
+            return;
+        };
+        let index = build_pak_index(&paks);
+        let Some(db) = self.merged_db.as_mut() else {
+            return;
+        };
+
+        for visual in db.visuals_by_id.values_mut() {
+            visual.source_pak = index.name_of(&visual.gr2_path).unwrap_or_default().to_string();
+            // Each visual carries its own clone of the texture references it uses, so filling them
+            // here covers every consumer; the texture bank itself (`db.textures`) is only consulted
+            // while resolving, which is already done
+            for texture in &mut visual.textures {
+                texture.source_pak = index
+                    .name_of(&texture.dds_path)
+                    .unwrap_or_default()
+                    .to_string();
+            }
+        }
     }
 
     /// Resolve the `.gtp` page file behind each virtual texture hash, with maclarian's own lookup
