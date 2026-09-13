@@ -226,9 +226,9 @@ fn scan_for(cache: &mut PakReaderCache, paks: &[PathBuf], target: &str) -> Optio
 
 /// Read a file from one specific archive.
 ///
-/// The virtual texture pipeline never sweeps the data directory: it reads the archive maclarian's
-/// lookup recorded for the match (`GtpMatch::pak_path`) — on a full install `VirtualTextures.pak`,
-/// the only archive holding a single `.gtp` or `.gts` (verified against a full install).
+/// Every virtual texture lives in `VirtualTextures.pak` (verified against a full install: no other
+/// archive holds a single `.gtp` or `.gts`), so that pipeline never sweeps the data directory — it
+/// goes straight to the one archive that can answer.
 pub fn read_from(cache: &mut PakReaderCache, pak: &Path, target: &str) -> Result<Vec<u8>, String> {
     let mut found = cache
         .read_files_bulk(pak, &[target])
@@ -243,24 +243,13 @@ pub fn read_from(cache: &mut PakReaderCache, pak: &Path, target: &str) -> Result
 /// 32-char hash against the page file names — the only way to learn where a virtual texture really
 /// lives, since `VirtualTextureRef` carries nothing but that hash.
 ///
-/// `search_pak` is the archive handed to the lookup, and every match it returns records that archive
-/// in `GtpMatch::pak_path`. From there on the archive travels inside the match — the GTP read, the GTS
-/// lookup and the manifest's archive name all take it from that field — so the archive is chosen once,
-/// here, and never rebuilt from an archive's name. maclarian's `find_gtp_by_hashes` (no pak argument)
-/// would go through `virtual_textures_pak_path()`, which rebuilds the path from `bg3_data_path()`'s
-/// auto-detection and finds nothing whenever the data directory was pointed at by hand.
-///
 /// The hashes variant rather than `find_virtual_textures_for_visual_in_pak`: that one looks the
 /// visual up by *name*, and names are not unique in this database (the GUID is the identity), so it
 /// could answer with another visual's page files. Both hand back the same `GtpMatch`.
 ///
 /// An empty result is the honest outcome for an archive that cannot be listed or holds no page file
 /// for a hash: virtual textures are an optional artifact and must not abort an export.
-pub fn find_vt_matches(
-    resolver: &MergedResolver,
-    hashes: &[&str],
-    search_pak: &Path,
-) -> Vec<GtpMatch> {
+pub fn find_vt_matches(resolver: &MergedResolver, hashes: &[&str], vt_pak: &Path) -> Vec<GtpMatch> {
     // The comparison against the file names is case-sensitive, while the database's hashes are only
     // lowercase hex by convention
     let wanted: Vec<String> = hashes
@@ -273,10 +262,10 @@ pub fn find_vt_matches(
     }
     let wanted: Vec<&str> = wanted.iter().map(String::as_str).collect();
 
-    match resolver.find_gtp_by_hashes_in_pak(&wanted, search_pak) {
+    match resolver.find_gtp_by_hashes_in_pak(&wanted, vt_pak) {
         Ok(matches) => matches,
         Err(err) => {
-            eprintln!("[maclarian] listing {} failed: {err}", search_pak.display());
+            eprintln!("[maclarian] listing {} failed: {err}", vt_pak.display());
             Vec::new()
         }
     }
@@ -534,9 +523,8 @@ pub fn run_export(
     }
 
     // ---- 3. Virtual textures: GTP + GTS → three layer DDS files ----
-    // Every virtual texture is read out of the archive its `GtpMatch` came from — nothing here
-    // rebuilds a path from an archive's name; a hash maclarian's lookup did not resolve (no archive,
-    // or no page file naming it) reports as not found.
+    // Virtual textures live in `VirtualTextures.pak` and nowhere else; a hash maclarian's lookup did
+    // not resolve (no archive, or no page file naming it) reports as not found.
     if !vt_targets.is_empty() {
         let vt_dir = out_dir.join("virtual_textures");
         fs::create_dir_all(&vt_dir)
@@ -632,8 +620,8 @@ fn next_temp_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-/// Extract a single virtual texture: pull its GTP/GTS out of the archive the match came from
-/// (`GtpMatch::pak_path`), resolve the three layer DDS files, and write them to the export dir.
+/// Extract a single virtual texture: pull its GTP/GTS out of the archive maclarian matched, resolve
+/// the three layer DDS files, and write them to the export dir.
 #[allow(clippy::too_many_arguments)]
 fn export_virtual_texture(
     cache: &mut PakReaderCache,
@@ -653,18 +641,14 @@ fn export_virtual_texture(
         .and_then(|n| n.to_str())
         .ok_or_else(|| format!("Invalid GTP path: {}", matched.gtp_path))?;
 
-    // The archive is the match's own field: GTP and GTS are read from where maclarian found the page
-    // file, not from a path derived from the archive's name
-    let match_pak = matched.pak_path.as_path();
-
     let gtp_path = shared.join(gtp_name);
     if !gtp_path.exists() {
-        let bytes = read_from(cache, match_pak, &matched.gtp_path)?;
+        let bytes = read_from(cache, &matched.pak_path, &matched.gtp_path)?;
         fs::write(&gtp_path, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
     }
 
     // GTS naming does not always match the GTP: try each candidate until a GTS resolves this hash
-    let candidates = gts_candidates(cache, match_pak, &matched.gtp_path, shared)?;
+    let candidates = gts_candidates(cache, &matched.pak_path, &matched.gtp_path, shared)?;
     let mut last_err = "no GTS candidate available".to_string();
     let mut extracted = false;
     for gts_path in candidates {
@@ -746,12 +730,11 @@ fn export_virtual_texture(
 ///    mismatched GTS/GTP naming); the longer the GTS name, the higher the priority
 ///
 /// A GTS may be shared by several GTPs, so staged files are reused by file name.
-/// `match_pak` is the archive the `GtpMatch` came from: the GTS sidecars sit next to the page files
-/// there (a full install keeps all 16 in `VirtualTextures.pak` and in no other archive), so this looks
-/// in the very archive the GTP was read from instead of in a path built from an archive's name.
+/// Both steps look inside `VirtualTextures.pak`: a full install keeps all 16 GTS sidecars there and
+/// in no other archive.
 fn gts_candidates(
     cache: &mut PakReaderCache,
-    match_pak: &Path,
+    vt_pak: &Path,
     gtp_rel: &str,
     shared: &Path,
 ) -> Result<Vec<PathBuf>, String> {
@@ -771,13 +754,13 @@ fn gts_candidates(
     let mut staged: Vec<PathBuf> = Vec::new();
 
     // 1. Standard derived name
-    if stage_gts_file(cache, match_pak, &gts_rel, shared, &mut staged) {
+    if stage_gts_file(cache, vt_pak, &gts_rel, shared, &mut staged) {
         return Ok(staged);
     }
 
     // 2. Same-directory prefix fallback: GTS files sharing the directory and a name prefix
-    let fallbacks: Vec<String> = PakOperations::list(match_pak)
-        .map_err(|e| format!("Failed to list {}: {e}", match_pak.display()))?
+    let fallbacks: Vec<String> = PakOperations::list(vt_pak)
+        .map_err(|e| format!("Failed to list {}: {e}", vt_pak.display()))?
         .into_iter()
         .filter(|p| {
             p.to_lowercase().ends_with(".gts")
@@ -803,20 +786,20 @@ fn gts_candidates(
     fallbacks_sorted.sort_by_key(|p| std::cmp::Reverse(p.len()));
 
     for rel in fallbacks_sorted {
-        stage_gts_file(cache, match_pak, &rel, shared, &mut staged);
+        stage_gts_file(cache, vt_pak, &rel, shared, &mut staged);
     }
 
     if staged.is_empty() {
-        return Err(format!("{gts_rel} not found in {}", match_pak.display()));
+        return Err(format!("{gts_rel} not found in {}", vt_pak.display()));
     }
     Ok(staged)
 }
 
-/// Stage one GTS out of the archive the match came from to disk; reuse it directly when already
-/// staged (shared with another GTP)
+/// Stage one GTS out of `VirtualTextures.pak` to disk; reuse it directly when already staged
+/// (shared with another GTP)
 fn stage_gts_file(
     cache: &mut PakReaderCache,
-    match_pak: &Path,
+    vt_pak: &Path,
     rel: &str,
     shared: &Path,
     staged: &mut Vec<PathBuf>,
@@ -829,7 +812,7 @@ fn stage_gts_file(
         staged.push(path);
         return true;
     }
-    match read_from(cache, match_pak, rel) {
+    match read_from(cache, vt_pak, rel) {
         Ok(bytes) => match fs::write(&path, &bytes) {
             Ok(()) => {
                 staged.push(path);

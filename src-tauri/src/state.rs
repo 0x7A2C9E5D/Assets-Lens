@@ -60,13 +60,7 @@ impl AppState {
         self.cache = None;
     }
 
-    /// The archive maclarian's page-file lookup is allowed to search: `VirtualTextures.pak` inside the
-    /// data directory the user configured.
-    ///
-    /// Deliberately not maclarian's `virtual_textures_pak_path()`: that one rebuilds the path from
-    /// `bg3_data_path()`'s auto-detection, which comes back empty whenever the data directory was
-    /// pointed at by hand. The archive only has to exist for the search — every read afterwards takes
-    /// its path out of the produced `GtpMatch` (`GtpMatch::pak_path`).
+    /// `VirtualTextures.pak` — the one archive that holds virtual textures
     pub fn vt_pak(&self) -> Option<PathBuf> {
         let path = self.game_path.as_ref()?.join("VirtualTextures.pak");
         path.is_file().then_some(path)
@@ -134,10 +128,6 @@ impl AppState {
     /// `MergedResolver` exists only for a database it owns, and this state holds the one database
     /// there is, so it is moved into the resolver and straight back out. That is a pointer move, not
     /// a copy, which is what keeps the official API affordable per request.
-    ///
-    /// Each match records the searched archive in `GtpMatch::pak_path`, and that field is the only
-    /// archive the extraction and the manifest ever read: the archive is picked by the match here and
-    /// nothing downstream rebuilds it from an archive's name.
     pub fn vt_matches(&mut self, hashes: &[&str]) -> Vec<GtpMatch> {
         // Without the one archive holding virtual textures there is nothing to look in, and taking
         // the database out first would only drop it on the floor
