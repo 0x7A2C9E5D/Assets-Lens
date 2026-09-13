@@ -70,7 +70,8 @@ tauri-app/
    ├─ src/main.rs              Binary entry point
    ├─ src/lib.rs               Tauri builder: plugins, AppState, command list
    ├─ src/models.rs            serde DTOs (uniform `camelCase` JSON contract)
-   ├─ src/state.rs             AppState: resolver / database / sort cache / archives + PAK cache
+   ├─ src/state.rs             AppState: resolver / database / sort cache / archive list + PAK cache
+   ├─ src/archives.rs          Data-directory inventory: the main archives, and which one holds a path
    ├─ src/commands.rs          `#[tauri::command]` implementations
    ├─ src/export.rs            Export pipeline + archive reads (maclarian `PakReaderCache`) + GTP/GTS handling
    ├─ capabilities/default.json Per-window permissions (dialog, opener, window controls)
@@ -98,7 +99,7 @@ tauri-app/
 
 - The game directory is **never persisted on disk**: the frontend stores it in localStorage and hands it back through `set_game_path` on startup, so backend state only lives for the current session
 - `visual_names()` / `gr2_files()` come from HashMap iteration and are not order-stable; after a build they are sorted and cached in `AppState`, and paging only slices — otherwise pages would shuffle
-- `paks` (main archives, data partitions excluded) plus `cache` (maclarian's `PakReaderCache`) are created once per game directory by `archives()`: opening an archive parses its whole file table, so the cache is sized for a full install (`CACHED_PAKS = 32`) and keeps every table it walked resident. Callers clone the pair back out and lock the cache only around a single read, so the state lock and the cache are never held at the same time
+- `paks` (main archives, data partitions excluded) plus `cache` (maclarian's `PakReaderCache`) are created once per game directory by `archives()`: opening an archive parses its whole file table, so the cache is sized for a full install (`CACHED_PAKS = 32`) and keeps every table it walked resident. Callers clone the pair back out and lock the cache only around a single read, so the state lock and the cache are never held at the same time. Listing the data directory and answering which archive holds a path are `archives.rs`'s job (`main_paks` / `PakIndex`): the state only remembers the list it is handed, and the export pipeline only receives it
 - `read_file` reads one path through maclarian's `read_files_bulk`, asking the archives in turn and taking the first answer — meshes and textures go through that one path; a page file is read straight out of the archive its match recorded. Records arrive in the archives' own spelling (`Generated/Public/...`, `/`-separated, original casing), so the first try normally hits; a `\`-spelled record gets one retry, and a case-only difference falls back to a case-insensitive match against the file tables
 - Virtual textures have no path in the database at all — `VirtualTextureRef` carries the 32-char `GTex` hash and nothing else — so the page file behind a hash comes from maclarian's own lookup: `MergedResolver::find_gtp_by_hashes_in_pak` — the hashes variant, because the name variant would answer with another visual's pages wherever names repeat, and the `_in_pak` form, because the pak-less one would make maclarian's `virtual_textures_pak_path()` auto-detect the data directory, which is empty for every hand-picked path. Each match records the searched archive in `GtpMatch::pak_path`, and that field is the only archive the extraction and the manifest read. One call lists the 12974 page names of `VirtualTextures.pak` and measures ~16ms, so the detail panel and the export each resolve their own hashes and nothing is kept in between. Virtual textures are not spread over the archives the way meshes and textures are: that single archive holds every page plus its `.gts` sidecars, and no other archive holds any
 - `fill_source_paks()` runs once, right after a database build: `VisualAsset::source_pak` and `TextureRef::source_pak` are declared by maclarian but never written by its parser, so the archive names are collected by listing the file tables with maclarian's own API — the way its `extract_dds_textures` resolves a texture. Filling the fields once is what makes a name free everywhere it is shown (detail panel, `asset.json`), and the `PakIndex` behind it is dropped immediately afterwards: ~40 MB held for a session to answer lookups the fields already answer would be waste
@@ -234,6 +235,7 @@ tauri-app/
    ├─ src/lib.rs               Tauri Builder：插件注册、AppState 托管、命令清单
    ├─ src/models.rs            serde DTO（统一 `camelCase` JSON 契约）
    ├─ src/state.rs             AppState：resolver / 合并数据库 / 排序缓存 / 归档列表 + PAK 缓存
+   ├─ src/archives.rs          数据目录清单：主归档列表，以及某个路径属于哪个归档
    ├─ src/commands.rs          `#[tauri::command]` 命令实现
    ├─ src/export.rs            导出流水线 + 归档读取（maclarian `PakReaderCache`）+ GTP/GTS 解析
    ├─ capabilities/default.json 按窗口授予的权限（dialog、opener、窗口控制）
@@ -261,7 +263,7 @@ tauri-app/
 
 - 游戏目录**不落盘**：前端存在 localStorage，启动时经 `set_game_path` 交回后端校验，后端状态仅存活于当前会话
 - `visual_names()` / `gr2_files()` 来自 HashMap 迭代、顺序不稳定，构建后统一排序缓存到 `AppState`，分页只做切片，否则翻页会乱序
-- `paks`（主归档，已排除数据分片）与 `cache`（maclarian 的 `PakReaderCache`）由 `archives()` 在每个游戏目录下只建一次：打开一个归档要解析整张文件表，因此缓存按完整安装的档案数配置（`CACHED_PAKS = 32`），使走过的表常驻；调用方克隆这对值后只在单次读取期间锁缓存，状态锁与缓存锁从不同时持有
+- `paks`（主归档，已排除数据分片）与 `cache`（maclarian 的 `PakReaderCache`）由 `archives()` 在每个游戏目录下只建一次：打开一个归档要解析整张文件表，因此缓存按完整安装的档案数配置（`CACHED_PAKS = 32`），使走过的表常驻；调用方克隆这对值后只在单次读取期间锁缓存，状态锁与缓存锁从不同时持有。列数据目录、以及回答「某路径属于哪个归档」是 `archives.rs` 的职责（`main_paks` / `PakIndex`）：状态只记住交回来的列表，导出流水线只接收它
 - `read_file` 用 maclarian 的 `read_files_bulk` 逐档询问并取首个命中——网格与纹理都走这同一条路径；页文件则直接读「匹配结果记录的归档」，不做扫描。数据库给出的路径就是归档自身的拼写（`Generated/Public/...`、`/` 分隔、原大小写），因此通常一次命中；遇到 `\` 拼写的记录重试一次，仅大小写不同时再回退为对文件表的大小写不敏感匹配
 - 虚拟纹理在数据库里根本没有路径——`VirtualTextureRef` 只带那个 32 位 `GTex` 哈希——因此某个哈希对应的页文件来自 maclarian 自己的查找：`MergedResolver::find_gtp_by_hashes_in_pak`——用 hashes 变体而非 name 变体（同名 visual 会拿到别人的页），并用带 pak 的形式而非不带 pak 的那个（后者会让 maclarian 的 `virtual_textures_pak_path()` 去自动探测数据目录，手工选定的路径必为空）。每个匹配结果都把自己的来源归档记在 `GtpMatch::pak_path`，抽取与 `asset.json` 只从这个字段取归档。一次调用列出 `VirtualTextures.pak` 的 12974 个页名、实测约 16ms，故详情面板与导出各自解析自己的哈希，中间不保留任何索引。虚拟纹理不像网格 / 纹理那样分散在各档：完整安装的全部页及其 `.gts` 旁档只存在于这一档，其他档一个都没有
 - `fill_source_paks()` 在数据库构建结束后只跑一次：`VisualAsset::source_pak` / `TextureRef::source_pak` 虽由 maclarian 声明、其解析器却从不写入，因此归档名来自用官方 API 列文件表——这正是其 `extract_dds_textures` 解析纹理的方式。一次填好字段，名字在展示它的每一处（详情面板、`asset.json`）都不再花代价，而背后的 `PakIndex` 随即释放：为回答已被字段回答过的查询而常驻约 40 MB 纯属浪费
