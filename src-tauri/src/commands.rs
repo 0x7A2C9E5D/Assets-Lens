@@ -181,9 +181,9 @@ pub async fn build_database(
         // not expose a material's name any other way (see `extract_materials`), and a one-off cost
         // inside a build that already runs for minutes is not something a click should pay for.
         //
-        // The parameter names of the virtual texture bindings are *not* read here: that pass walks
-        // every `_merged.lsf` of `Shared.pak` and would add seconds to every build for a label only
-        // the detail view shows (see `ensure_virtual_texture_parameters`).
+        // The parameter names of the virtual texture bindings are *not* read here either: they come
+        // from the materials' own templates and are read per detail view (see
+        // `ensure_virtual_texture_parameters`).
         let materials = extract_materials(&db);
 
         let stats = db.stats();
@@ -208,16 +208,6 @@ pub async fn build_database(
 
         on_progress.send(BuildProgress { percent: 1.0 }).ok();
 
-        // The parameter names are read on a thread of their own *after* the build is published, so
-        // the progress bar reaches 100% without waiting for them. A detail view that arrives before
-        // the pass finishes runs it itself (see `ensure_virtual_texture_parameters`).
-        let warm_state = state.clone();
-        std::thread::spawn(move || {
-            if let Err(err) = ensure_virtual_texture_parameters(&warm_state) {
-                eprintln!("[maclarian] virtual texture parameters unavailable: {err}");
-            }
-        });
-
         Ok(DatabaseStats {
             // One entry per visual GUID, so the dashboard always matches the browse list
             visual_count,
@@ -230,46 +220,69 @@ pub async fn build_database(
         .map_err(|err| format!("Build task terminated unexpectedly: {err}"))?
 }
 
-/// Serializes the one pass that reads virtual texture parameter names (see
-/// `ensure_virtual_texture_parameters`): the build's own thread and a detail view that beats it there
-/// must not walk every LSF of `Shared.pak` at the same time. The second caller waits here and then
-/// finds the names already in place, so the pass runs exactly once either way.
-static VT_PARAMETERS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Make sure every material that binds a virtual texture carries the parameter name of that binding.
+/// Make sure the materials of `visual_id` carry the parameter name of every virtual texture binding.
 ///
-/// maclarian parses a virtual texture binding down to its GUID, so the name it fills
-/// (`virtualtexture`, `overlayvirtualtexture`, …) only exists in the LSF documents and has to be read
-/// separately (`virtual_texture_params::collect`). That pass walks every `_merged.lsf` of
-/// `Shared.pak` and costs seconds, so it is kept out of the build: the database is published first
-/// and the names land right after on their own thread — while a detail view that arrives earlier
-/// runs the pass itself. Either way the pass runs once; a later call returns immediately.
-fn ensure_virtual_texture_parameters(state: &SharedState) -> Result<(), String> {
-    let _pass = VT_PARAMETERS_LOCK
-        .lock()
-        .map_err(|err| format!("Virtual texture parameter lock unavailable: {err}"))?;
-
-    let (pool, game_path) = {
+/// maclarian parses a binding down to its GUID, so the name it fills (`virtualtexture`,
+/// `overlayvirtualtexture`, …) has to be read from the LSF documents — and the document a material
+/// itself lives in cannot be derived from that material, because a merged file is always named
+/// `_merged.lsf`. The material's `SourceFile` template is a real file, and it declares the same names
+/// in the same order, so only the templates of this one asset's materials are read: a couple of
+/// archive reads instead of a walk over every `_merged.lsf` of `Shared.pak` (see
+/// `virtual_texture_params`).
+///
+/// The names stay in `materials` once read, so an already-named material is skipped and a second view
+/// of the same asset reads nothing at all.
+fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Result<(), String> {
+    let (pending, pool, game_path) = {
         let mut st = lock(state)?;
-        if st.vt_parameters_ready {
+
+        let pending: Vec<(String, String)> = st
+            .merged_db
+            .as_ref()
+            .and_then(|db| db.visuals_by_id.get(visual_id))
+            .map(|asset| {
+                asset
+                    .material_ids
+                    .iter()
+                    .filter_map(|material_id| {
+                        let material = st.materials.get(material_id)?;
+                        let unresolved = material
+                            .virtual_textures
+                            .iter()
+                            .any(|binding| binding.parameter_name.is_empty());
+                        (!material.source_file.is_empty() && unresolved)
+                            .then(|| (material_id.clone(), material.source_file.clone()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Nothing to read: every binding of this asset already carries its name
+        if pending.is_empty() {
             return Ok(());
         }
-        // No game directory means no materials to decorate
-        let Some(game_path) = st.game_path.clone() else {
-            return Ok(());
-        };
-        (st.pool()?, game_path)
+
+        let game_path = st
+            .game_path
+            .clone()
+            .ok_or_else(|| NOT_CONFIGURED.to_string())?;
+        (pending, st.pool()?, game_path)
     };
 
-    let parameters = virtual_texture_params::collect(&pool, &game_path.join("Shared.pak"));
+    // Read on its own: the templates come out of the archives, and the pool lock is not taken while
+    // the state lock is held
+    let parameters = {
+        let mut archives = lock_pool(&pool)?;
+        virtual_texture_params::read_parameters(&mut archives, &pending)
+    };
 
     let mut st = lock(state)?;
-    // A directory switch can land while the pass runs: what it read belongs to the old directory
+    // A directory switch can land while the templates are read: the names then belong to materials
+    // that are already gone
     if st.game_path.as_deref() != Some(game_path.as_path()) {
         return Ok(());
     }
     fill_virtual_texture_parameters(&mut st.materials, &parameters);
-    st.vt_parameters_ready = true;
     Ok(())
 }
 
@@ -379,10 +392,11 @@ pub async fn get_visual(
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, String> {
-        // The binding chips show the parameter each virtual texture fills, and those names are read
-        // from the LSF documents on demand (see `ensure_virtual_texture_parameters`): free once the
-        // build's own thread has finished, one extra pass when a detail view beats it there.
-        ensure_virtual_texture_parameters(&state)?;
+        // The binding chips show the parameter each virtual texture fills. Those names are not in the
+        // parsed database, so they are read off this asset's material templates first — and only
+        // while some binding of this asset has no name yet (see
+        // `ensure_virtual_texture_parameters`).
+        ensure_virtual_texture_parameters(&state, &id)?;
 
         let (mut detail, matches, pool, mut page_file_sizes) = {
             let mut st = lock(&state)?;

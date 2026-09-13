@@ -36,11 +36,9 @@ pub struct VirtualTextureBinding {
     /// GUID of the virtual texture resource (`VirtualTextureBank`)
     pub id: String,
     /// `ParameterName` of the binding node (e.g. `virtualtexture`, `overlayvirtualtexture`). Empty
-    /// until the LSF pass fills it in: maclarian keeps only the GUID of a binding (see
-    /// `virtual_texture_params`), and that pass runs outside the build — right after the database is
-    /// published, or on the first detail view that gets there first
-    /// (`commands::ensure_virtual_texture_parameters`) — so it is empty only while the app has not
-    /// read the names yet.
+    /// until a detail view resolves it: maclarian keeps only the GUID of a binding
+    /// (see `virtual_texture_params`), so the name is read off the material's template on demand
+    /// (`commands::ensure_virtual_texture_parameters`) and stays empty only until then.
     pub parameter_name: String,
 }
 
@@ -129,25 +127,24 @@ pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
         .collect()
 }
 
-/// Fill in the parameter name of every binding the LSF pass recognized, matched by material GUID.
+/// Fill in the parameter name of every virtual texture binding from the material's own template.
 ///
-/// The database and that pass are read separately — maclarian drops the name, and the pass cannot
-/// know which materials the build will keep (see `extract_materials` / `virtual_texture_params`) —
-/// so the two are joined here. A binding the pass did not see keeps its empty name, and the panel
-/// then renders the chip without one.
+/// The names are read separately from the database — maclarian drops them, and reading them is a
+/// per-detail-view job (see `virtual_texture_params`) — so the two are joined here. Bindings and
+/// names are paired by position, which holds because both come out in document order. A material the
+/// reader did not reach keeps its empty names, and the panel then renders the chip without one.
 pub fn fill_virtual_texture_parameters(
     materials: &mut HashMap<String, MaterialInfo>,
-    parameters: &HashMap<String, Vec<VirtualTextureBinding>>,
+    parameters: &HashMap<String, Vec<String>>,
 ) {
-    for (material_id, material) in materials.iter_mut() {
-        let Some(named_bindings) = parameters.get(material_id) else {
+    for (material_id, names) in parameters {
+        let Some(material) = materials.get_mut(material_id) else {
             continue;
         };
 
-        for binding in &mut material.virtual_textures {
-            // A material binds a resource once, so the first match is the only one
-            if let Some(named) = named_bindings.iter().find(|named| named.id == binding.id) {
-                binding.parameter_name.clone_from(&named.parameter_name);
+        for (binding, name) in material.virtual_textures.iter_mut().zip(names) {
+            if binding.parameter_name.is_empty() {
+                binding.parameter_name.clone_from(name);
             }
         }
     }
@@ -184,13 +181,6 @@ pub struct AppState {
     /// model whose virtual textures share a tile set would otherwise read the same file repeatedly.
     /// An empty list is a cached "no sizes here" answer, not a missing entry.
     pub page_file_sizes: HashMap<String, PageFileSizes>,
-    /// Whether the virtual texture parameter names are in `materials` yet. The pass that reads them
-    /// walks every `_merged.lsf` of `Shared.pak` and costs seconds, so it no longer runs inside the
-    /// build: it is started right after the database is published, and any detail view that arrives
-    /// before it finishes runs it itself (see `commands::ensure_virtual_texture_parameters`). A flag
-    /// rather than "are all names empty": that would be indistinguishable from a pass that ran and
-    /// genuinely found none.
-    pub vt_parameters_ready: bool,
 }
 
 impl AppState {
@@ -204,7 +194,6 @@ impl AppState {
             materials: HashMap::new(),
             archives: None,
             page_file_sizes: HashMap::new(),
-            vt_parameters_ready: false,
         }
     }
 
@@ -219,8 +208,6 @@ impl AppState {
         self.archives = None;
         // Page file sizes were read from those archives
         self.page_file_sizes.clear();
-        // The parameter names belonged to the materials that were just dropped
-        self.vt_parameters_ready = false;
     }
 
     /// The shared PAK pool, created on the first command that needs an archive. Callers clone the
