@@ -59,8 +59,7 @@ const MAX_CACHED_PAKS: usize = 6;
 /// PAK read pool: each PAK is opened once and its file table and reader stay resident, so indexes
 /// are never reparsed per file.
 pub struct Package {
-    /// Game archives in file-name order. The order only makes scans reproducible — it carries no
-    /// priority, because nothing is known about which archive holds a given file (see `read`).
+    /// Game archives, sorted by read priority (earlier entries are tried first)
     paks: Vec<PathBuf>,
     readers: HashMap<PathBuf, LspkReader<BufReader<File>>>,
     tables: HashMap<PathBuf, Vec<FileTableEntry>>,
@@ -80,13 +79,10 @@ fn is_data_partition(file_name: &str) -> bool {
 }
 
 impl Package {
-    /// List every main `.pak` under the data directory in file-name order. Numbered data partitions
-    /// (`<Name>_<n>.pak`) are excluded — see `is_data_partition`.
-    ///
-    /// No archive is promoted: meshes, textures and virtual textures are all looked up by the same
-    /// global scan, so a "preferred" archive would only decide which copy wins when a path exists
-    /// in several archives, and never which archives get searched.
-    pub fn new(game_path: &Path) -> Result<Self, String> {
+    /// List every main `.pak` under the data directory, hoisting the names in `prefer` to the front
+    /// (e.g. `Models.pak` / `Textures.pak`). Numbered data partitions (`<Name>_<n>.pak`) are
+    /// excluded — see `is_data_partition`.
+    pub fn new(game_path: &Path, prefer: &[&str]) -> Result<Self, String> {
         let mut paks: Vec<PathBuf> = fs::read_dir(game_path)
             .map_err(|e| format!("Failed to list BG3 data directory: {e}"))?
             .filter_map(Result::ok)
@@ -101,9 +97,13 @@ impl Package {
             })
             .collect();
 
-        // Deterministic order only: `read_dir` order is arbitrary, and the scan result (which
-        // archive is reported as the source) has to stay stable between runs.
-        paks.sort();
+        paks.sort_by_key(|p| {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            prefer
+                .iter()
+                .position(|want| name.eq_ignore_ascii_case(want))
+                .unwrap_or(prefer.len())
+        });
 
         Ok(Self {
             paks,
@@ -181,12 +181,23 @@ impl Package {
             .map_err(|e| format!("Failed to decompress {target}: {e}"))
     }
 
-    /// Read a file from any PAK under the data directory.
-    ///
-    /// Deliberately unprioritized: a GR2, a DDS and a GTP can each live in several archives
-    /// (`Textures.pak`, `Gustav_Textures.pak`, `Shared.pak`, ...) and the actual holder is not
-    /// knowable up front, so every archive is scanned in the pool's order and the first hit wins.
-    pub fn read(&mut self, target: &str) -> Result<Vec<u8>, String> {
+    /// Read a file from any PAK under the data directory, honoring priority.
+    /// When `prefer` is given, that PAK is tried first (e.g. GR2 in `Models.pak`,
+    /// DDS in `Textures.pak`); otherwise every PAK is scanned in order.
+    pub fn read(&mut self, target: &str, prefer: Option<&str>) -> Result<Vec<u8>, String> {
+        if let Some(want) = prefer {
+            let preferred = self.paks.iter().find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.eq_ignore_ascii_case(want))
+            });
+            if let Some(pak) = preferred.cloned() {
+                if let Ok(bytes) = self.read_in(&pak, target) {
+                    return Ok(bytes);
+                }
+            }
+        }
+
         for pak in self.paks.clone() {
             if let Ok(bytes) = self.read_in(&pak, target) {
                 return Ok(bytes);
@@ -223,9 +234,8 @@ impl Package {
     ///
     /// The whole batch is answered by a single pass over the cached file tables: a visual easily
     /// references a dozen textures, and rescanning a table with hundreds of thousands of entries per
-    /// texture would be far too slow. The pool's own order decides the winner, exactly as it does
-    /// in `read`, so the reported source always matches the archive extraction would use. Nothing
-    /// is decompressed.
+    /// texture would be far too slow. Priority follows the pool's own order — the same rule `read`
+    /// applies, so the first archive containing a path wins. Nothing is decompressed.
     pub fn locate_many(&mut self, targets: &[String]) -> HashMap<String, String> {
         // Normalized path -> target exactly as the caller spelled it, so the result can be keyed by
         // the original string
@@ -465,7 +475,7 @@ pub fn run_export(
         Some(asset.gr2_path.clone()),
     );
     let gr2_bytes = lock_pool(pool)?
-        .read(&asset.gr2_path)
+        .read(&asset.gr2_path, Some("Models.pak"))
         .map_err(|err| format!("Mesh data unavailable: {err}"))?;
 
     let mesh_bytes = match mesh_format {
@@ -495,7 +505,7 @@ pub fn run_export(
 
             // Locked per file only: decompressing one texture is quick, and it leaves the pool
             // available to other commands (a preview) while the export runs
-            let dds = lock_pool(pool)?.read(&tex.dds_path);
+            let dds = lock_pool(pool)?.read(&tex.dds_path, Some(tex.source_pak.as_str()));
             match dds {
                 Ok(dds) => {
                     // Name files after the actual DDS resource in the archive (e.g. `Body_BM`),
@@ -677,7 +687,7 @@ fn export_virtual_texture(
 
     let gtp_path = shared.join(gtp_name);
     if !gtp_path.exists() {
-        let bytes = pak.read(gtp_rel)?;
+        let bytes = pak.read(gtp_rel, None)?;
         fs::write(&gtp_path, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
     }
 
@@ -844,7 +854,7 @@ fn stage_gts_file(
         staged.push(path);
         return true;
     }
-    match pak.read(rel) {
+    match pak.read(rel, None) {
         Ok(bytes) => match fs::write(&path, &bytes) {
             Ok(()) => {
                 staged.push(path);

@@ -4,6 +4,10 @@ use maclarian::merged::{GameDataResolver, MergedDatabase};
 
 use crate::export::{build_gtp_index, lock_pool, Package};
 
+/// Read preference for the shared PAK pool. Callers name the archive they expect (meshes from
+/// `Models.pak`, a texture from its own archive), so this order only decides the fallback scan.
+const PAK_PREFERENCE: &[&str] = &["Models.pak", "Textures.pak"];
+
 /// Global application state: BG3 data directory, resource resolver, the built database,
 /// and a stable name cache for consistent pagination order.
 ///
@@ -67,7 +71,7 @@ impl AppState {
             .game_path
             .as_ref()
             .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
-        let pool = Arc::new(Mutex::new(Package::new(game_path)?));
+        let pool = Arc::new(Mutex::new(Package::new(game_path, PAK_PREFERENCE)?));
         self.packages = Some(pool.clone());
         Ok(pool)
     }

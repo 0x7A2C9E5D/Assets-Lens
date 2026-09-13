@@ -365,7 +365,7 @@ pub async fn get_visual_preview(
         // maclarian's own reader compares PAK entries with an exact `==` on the raw path, which
         // never matches on Windows (`\` vs `/`); PakPool normalizes separators and casing instead.
         let gr2_bytes = lock_pool(&pool)?
-            .read(&path)
+            .read(&path, Some("Models.pak"))
             .map_err(|err| {
                 eprintln!("[maclarian] find gr2 {path} failed: {err}");
                 err
