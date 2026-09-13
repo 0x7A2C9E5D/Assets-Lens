@@ -13,6 +13,14 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-is-maximized",
+    "core:window:allow-show",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-maximize",
+    "core:window:allow-outer-position",
+    "core:window:allow-inner-size",
+    "core:window:allow-is-minimized",
+    "core:window:allow-available-monitors",
     "dialog:default",
     "opener:default"
   ]
