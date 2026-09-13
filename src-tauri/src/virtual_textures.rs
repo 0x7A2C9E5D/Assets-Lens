@@ -1,6 +1,6 @@
 //! Virtual texture page files: stage the page file a `GtpMatch` names plus the GTS that covers it.
 //!
-//! A GTS is not the companion of one page file: it is the metadata of a whole tile set
+//! A GTS is not the companion of one-page file: it is the metadata of a whole tile set
 //! (`<Base>_<index>.gts`), listing every page file of that set, so one GTS serves many GTPs. The
 //! extractor resolves a page file by looking its hash up in the GTS metadata, which is what makes
 //! trying several candidates safe — a GTS from another tile set fails instead of exporting the
@@ -17,13 +17,13 @@ use maclarian::merged::GtpMatch;
 
 use crate::archives::Archives;
 
-/// Files staged for one page file, both already on disk
+/// Files staged for one-page file, both already on disk
 pub struct StagedSources {
     /// Page file (`.gtp`), named after its archive entry
     pub gtp: PathBuf,
-    /// GTS candidates to try, ordered by likelihood; the same GTS is shared by every page file of
-    /// its tile set
-    pub gts: Vec<PathBuf>,
+    /// Candidate GTS files, ordered by likelihood. Normally the first one hits: a page file belongs
+    /// to exactly one tile set, and every page file of that set shares its GTS.
+    pub gts_candidates: Vec<PathBuf>,
 }
 
 /// Stage the page file `matched` names plus the GTS that covers it into `shared`.
@@ -50,8 +50,8 @@ pub fn stage_sources(
         fs::write(&gtp, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
     }
 
-    let gts = gts_candidates(pak, matched, shared)?;
-    Ok(StagedSources { gtp, gts })
+    let gts_candidates = stage_gts_candidates(pak, matched, shared)?;
+    Ok(StagedSources { gtp, gts_candidates })
 }
 
 /// GTP path → GTS path: strip the trailing `_<32 hex digits>` and swap the extension
@@ -103,7 +103,7 @@ fn read_from_match(pak: &mut Archives, matched: &GtpMatch, target: &str) -> Resu
 /// until one accepts the page file. Staged files are reused by file name, so the GTS of a tile set is
 /// read once no matter how many of its page files this export touches. `matched` gives the archive to
 /// try first; the pool-wide scan remains for the derived names it does not cover.
-fn gts_candidates(
+fn stage_gts_candidates(
     pak: &mut Archives,
     matched: &GtpMatch,
     shared: &Path,

@@ -23,7 +23,7 @@ pub struct AppState {
     /// working on the resolver after the state lock has been released (see `build_database`).
     /// It is not cloned — `GameDataResolver` is not `Clone`.
     pub resolver: Option<Arc<GameDataResolver>>,
-    pub game_path: Option<std::path::PathBuf>,
+    pub game_path: Option<PathBuf>,
     pub merged_db: Option<MergedDatabase>,
     /// Sorted visual GUIDs kept after building, so pagination order stays stable
     /// (HashMap iteration order is not deterministic). Ids rather than names: a name can belong to

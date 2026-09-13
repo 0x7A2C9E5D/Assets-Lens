@@ -390,12 +390,15 @@ fn export_virtual_texture(
 
     // Which files the archives hold for this page file is `virtual_textures`' question; the export
     // only consumes the staged paths
-    let StagedSources { gtp, gts } = virtual_textures::stage_sources(pak, matched, shared)?;
+    let StagedSources {
+        gtp,
+        gts_candidates,
+    } = virtual_textures::stage_sources(pak, matched, shared)?;
 
     // GTS naming does not always match the GTP: try each candidate until a GTS resolves this hash
     let mut last_err = "no GTS candidate available".to_string();
     let mut extracted = false;
-    for gts_path in gts {
+    for gts_path in gts_candidates {
         match VirtualTextureExtractor::extract_with_gts(&gtp, &gts_path, stage) {
             Ok(()) => {
                 extracted = true;
