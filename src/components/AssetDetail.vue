@@ -105,7 +105,7 @@ const exportOpen = ref(false)
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span>{{ tex.width }} × {{ tex.height }}</span>
-                  <span v-if="tex.parameterName" class="text-glow-gold">{{ tex.parameterName }}</span>
+                  <span v-if="tex.parameterName">{{ tex.parameterName }}</span>
                   <span
                       v-if="tex.source"
                       :title="$t('detail.pakLabel')"
