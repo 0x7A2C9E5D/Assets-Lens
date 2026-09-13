@@ -115,6 +115,14 @@ const exportOpen = ref(false)
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span>{{ tex.width }} × {{ tex.height }}</span>
                   <span v-if="tex.parameterName" class="text-glow-gold">{{ tex.parameterName }}</span>
+                  <span
+                      v-if="tex.source"
+                      :title="$t('detail.pakLabel')"
+                      class="flex min-w-0 items-center gap-1.5"
+                  >
+                    <FileArchive class="h-3 w-3 shrink-0"/>
+                    <span class="truncate font-mono">{{ tex.source }}</span>
+                  </span>
                 </div>
               </div>
               <p v-if="!asset.textures.length" class="text-xs text-muted/70">
