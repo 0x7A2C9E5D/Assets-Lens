@@ -192,25 +192,6 @@ impl Archives {
         Ok(out)
     }
 
-    /// List the files of one named PAK whose path contains `needle`, both normalized.
-    ///
-    /// Nothing is decompressed and only that one archive is opened, unlike `list_all`: callers that
-    /// know which archive holds a family of files (`Shared.pak`'s `_merged.lsf`, say) should not
-    /// pay for a table of every archive in the game directory.
-    pub fn list_matching(&mut self, pak: &Path, needle: &str) -> Vec<String> {
-        let needle = normalize_path(needle);
-        match self.list(pak) {
-            Ok(paths) => paths
-                .into_iter()
-                .filter(|path| path.contains(&needle))
-                .collect(),
-            Err(err) => {
-                eprintln!("[maclarian] skipping unreadable archive: {err}");
-                Vec::new()
-            }
-        }
-    }
-
     /// Resolve which archive actually holds each of `targets`, as `target -> archive file name`.
     ///
     /// The whole batch is answered by a single pass over the cached file tables: a visual easily

@@ -2,7 +2,6 @@ mod commands;
 pub mod export;
 mod models;
 pub mod archives;
-pub mod effects_materials;
 mod state;
 mod virtual_texture_params;
 mod virtual_textures;
