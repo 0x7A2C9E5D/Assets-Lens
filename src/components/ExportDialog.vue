@@ -122,7 +122,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 <template>
   <Teleport to="body">
     <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/70 p-4 backdrop-blur-sm animate-fade-in"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/70 p-4 backdrop-blur-sm animate-fade-in"
         @click.self="requestClose"
     >
       <div
@@ -130,9 +130,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           @click.stop
       >
         <!-- Title -->
-        <header class="flex shrink-0 items-start justify-between gap-3 border-b border-white/5 px-5 py-4">
+        <header class="flex shrink-0 items-start justify-between gap-3 border-b border-hairline px-5 py-4">
           <div class="min-w-0">
-            <h2 class="flex items-center gap-2 text-base font-semibold text-[#E6EDF7]">
+            <h2 class="flex items-center gap-2 text-base font-semibold text-fg">
               <Download class="h-4 w-4 text-glow-cyan"/>
               {{ $t('export.title') }}
             </h2>
@@ -146,7 +146,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <button
               :aria-label="$t('export.close')"
               :disabled="running"
-              class="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/5 hover:text-[#E6EDF7] disabled:opacity-40"
+              class="rounded-lg p-1.5 text-muted transition-colors hover:bg-tint hover:text-fg disabled:opacity-40"
               type="button"
               @click="requestClose"
           >
@@ -156,13 +156,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
         <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <!-- Destination directory -->
-          <div class="rounded-xl border border-white/5 bg-ink-900/50 p-3">
+          <div class="rounded-xl border border-hairline bg-ink-900/50 p-3">
             <p class="text-[11px] uppercase tracking-[0.18em] text-muted">
               {{ $t('export.destLabel') }}
             </p>
             <div class="mt-2 flex items-center gap-2">
               <p
-                  :class="destDir ? 'text-[#E6EDF7]' : 'text-muted/60'"
+                  :class="destDir ? 'text-fg' : 'text-faint'"
                   :title="destDir"
                   class="min-w-0 flex-1 truncate font-mono text-[12px]"
               >
@@ -187,14 +187,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                   :aria-pressed="meshFormat === fmt"
                   :class="
                   meshFormat === fmt
-                    ? 'border-cyan-300/40 bg-cyan-300/10'
-                    : 'border-white/5 bg-ink-900/50 hover:border-cyan-300/25 hover:bg-white/5'
+                    ? 'border-edge/40 bg-glow-cyan/10'
+                    : 'border-hairline bg-ink-900/50 hover:border-edge/25 hover:bg-tint'
                 "
                   class="rounded-xl border px-3 py-2 text-left transition-colors"
                   type="button"
                   @click="meshFormat = fmt"
               >
-                <span class="block text-[13px] font-medium text-[#E6EDF7]">
+                <span class="block text-[13px] font-medium text-fg">
                   {{ $t(`export.meshFormat.${fmt}`) }}
                 </span>
                 <span class="mt-0.5 block text-[11px] leading-relaxed text-muted">
@@ -216,14 +216,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                   :aria-pressed="textureFormat === fmt"
                   :class="
                   textureFormat === fmt
-                    ? 'border-cyan-300/40 bg-cyan-300/10'
-                    : 'border-white/5 bg-ink-900/50 hover:border-cyan-300/25 hover:bg-white/5'
+                    ? 'border-edge/40 bg-glow-cyan/10'
+                    : 'border-hairline bg-ink-900/50 hover:border-edge/25 hover:bg-tint'
                 "
                   class="rounded-xl border px-3 py-2 text-left transition-colors"
                   type="button"
                   @click="textureFormat = fmt"
               >
-                <span class="block text-[13px] font-medium text-[#E6EDF7]">
+                <span class="block text-[13px] font-medium text-fg">
                   {{ $t(`export.textureFormat.${fmt}`) }}
                 </span>
                 <span class="mt-0.5 block text-[11px] leading-relaxed text-muted">
@@ -239,16 +239,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-glow-cyan"/>
               {{ phaseLabel }}
             </ProgressBar>
-            <p v-if="progress?.currentFile" class="truncate font-mono text-[11px] text-muted/70">
+            <p v-if="progress?.currentFile" class="truncate font-mono text-[11px] text-subtle">
               {{ progress.currentFile }}
             </p>
           </div>
 
           <!-- Result -->
           <div v-if="result" class="space-y-3 animate-fade-in">
-            <div class="flex items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-3 py-2.5">
-              <CheckCircle2 class="h-4 w-4 shrink-0 text-emerald-300"/>
-              <span class="text-[13px] text-emerald-100">
+            <div class="flex items-center gap-2 rounded-xl border border-ok/25 bg-ok/10 px-3 py-2.5">
+              <CheckCircle2 class="h-4 w-4 shrink-0 text-ok"/>
+              <span class="text-[13px] text-ok">
                 {{ $t('export.resultTitle', {count: result.files.length}) }}
               </span>
             </div>
@@ -281,14 +281,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                   :key="file.path"
                   class="flex items-center gap-2 rounded-lg bg-ink-900/50 px-3 py-2"
               >
-                <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-[#E6EDF7]">
+                <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-fg">
                   {{ baseName(file.path) }}
                 </span>
                 <span class="shrink-0 font-mono text-[11px] text-glow-cyan">
                   {{ formatSize(file.sizeBytes) }}
                 </span>
               </div>
-              <p :title="result.outputDir" class="break-all pt-1 font-mono text-[11px] text-muted/70">
+              <p :title="result.outputDir" class="break-all pt-1 font-mono text-[11px] text-subtle">
                 {{ result.outputDir }}
               </p>
             </div>
@@ -297,15 +297,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <!-- Error -->
           <div
               v-if="errorMsg"
-              class="flex items-start gap-2 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2.5"
+              class="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5"
           >
-            <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-300"/>
-            <span class="break-all text-[12px] leading-relaxed text-red-200">{{ errorMsg }}</span>
+            <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger"/>
+            <span class="break-all text-[12px] leading-relaxed text-danger">{{ errorMsg }}</span>
           </div>
         </div>
 
         <!-- Actions -->
-        <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-white/5 px-5 py-3">
+        <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-hairline px-5 py-3">
           <button :disabled="running" class="btn-ghost !py-1.5 !text-xs" type="button" @click="requestClose">
             {{ $t('export.close') }}
           </button>

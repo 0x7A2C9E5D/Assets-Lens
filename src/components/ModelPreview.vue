@@ -1,16 +1,41 @@
 <script lang="ts" setup>
-import {onBeforeUnmount, onMounted, ref, watch} from 'vue'
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue'
 import {Box, Loader2} from 'lucide-vue-next'
 // Type-only import: emits no runtime code. three itself is lazy-loaded below through dynamic
 // imports so the ~630 KB renderer never lands in the initial bundle.
 import type * as THREE from 'three'
 import {getVisualPreview, type ModelPreview} from '../api/tauri'
+import {theme} from '../utils/theme'
 
 type ThreeModule = typeof THREE
 type GltfCtor = typeof import('three/examples/jsm/loaders/GLTFLoader.js').GLTFLoader
 type OrbitCtor = typeof import('three/examples/jsm/controls/OrbitControls.js').OrbitControls
 
 const props = defineProps<{ path: string | null }>()
+
+/**
+ * The scene is painted in WebGL, so it needs its own palette table instead of CSS variables.
+ * The dark entry is what the preview shipped with; light darkens the grid and the fallback
+ * material, both of which would otherwise fade into a white backdrop.
+ */
+const SCENE_PALETTE = {
+    dark: {
+        backdrop: 'radial-gradient(circle at 50% 45%, #0f1724 0%, #080b12 100%)',
+        grid: 0x22d3ee,
+        gridOpacity: 0.08,
+        material: 0x9aa7b8,
+    },
+    light: {
+        backdrop: 'radial-gradient(circle at 50% 45%, #ffffff 0%, #eef2f7 100%)',
+        // The grid and the fallback material sit on a white backdrop, so both take the deeper
+        // light-theme steps (--c-edge / --c-muted) instead of their bright dark-theme values
+        grid: 0x155e75,
+        gridOpacity: 0.22,
+        material: 0x475569,
+    },
+} as const
+
+const scenePalette = computed(() => SCENE_PALETTE[theme.value])
 
 const viewport = ref<HTMLDivElement | null>(null)
 const loading = ref(false)
@@ -171,7 +196,7 @@ function renderGlb(bytes: Uint8Array) {
           // Replace the GLB's own material, then release it: GLTF materials can be shared between
           // meshes, but every mesh is re-materialized here, so nothing keeps referencing it
           const parsed = mesh.material
-          mesh.material = new core!.MeshBasicMaterial({color: 0x9aa7b8})
+          mesh.material = new core!.MeshBasicMaterial({color: scenePalette.value.material})
           disposeMaterial(parsed)
         })
 
@@ -199,10 +224,15 @@ function renderGlb(bytes: Uint8Array) {
         }
 
         // Reference grid under the model so it does not float in the void
-        const gridHelper = new core.GridHelper(maxDim * 3, 12, 0x22d3ee, 0x22d3ee)
+        const palette = scenePalette.value
+        const gridHelper = new core.GridHelper(maxDim * 3, 12, palette.grid, palette.grid)
         const gridMat = gridHelper.material as THREE.LineBasicMaterial
         gridMat.transparent = true
-        gridMat.opacity = 0.08
+        // Grid colours live in vertex colors; dropping them lets the material colour drive every
+        // line at once, which is what a palette swap needs
+        gridMat.vertexColors = false
+        gridMat.color.setHex(palette.grid)
+        gridMat.opacity = palette.gridOpacity
         gridHelper.position.y = -size.y / 2
         scene.add(gridHelper)
         grid = gridHelper
@@ -257,6 +287,24 @@ watch(
     },
 )
 
+/** A palette swap only recolours what is on screen: reloading would throw away the cached GLB and
+ *  the camera angle the user orbited to */
+watch(scenePalette, (palette) => {
+  if (model) {
+    model.traverse((obj) => {
+      const mesh = obj as THREE.Mesh
+      if (!mesh.isMesh) return
+      const mat = mesh.material as THREE.MeshBasicMaterial
+      mat.color.setHex(palette.material)
+    })
+  }
+  if (grid) {
+    const gridMat = (grid as THREE.GridHelper).material as THREE.LineBasicMaterial
+    gridMat.color.setHex(palette.grid)
+    gridMat.opacity = palette.gridOpacity
+  }
+})
+
 onMounted(() => {
   // The viewport is now attached: initialize three and load the first asset here instead of in the
   // watcher (which runs before mount, when the host element does not exist yet)
@@ -296,8 +344,8 @@ onBeforeUnmount(() => {
     <div
         ref="viewport"
         :class="loading || errorKind !== 'none' ? '' : 'cursor-grab active:cursor-grabbing'"
-        class="relative h-[220px] w-full overflow-hidden rounded-xl border border-white/5"
-        style="background: radial-gradient(circle at 50% 45%, #0f1724 0%, #080b12 100%)"
+        :style="{background: scenePalette.backdrop}"
+        class="relative h-[220px] w-full overflow-hidden rounded-xl border border-hairline"
     >
       <div
           v-if="loading"
@@ -311,7 +359,7 @@ onBeforeUnmount(() => {
           v-else-if="errorKind !== 'none'"
           class="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center animate-fade-in"
       >
-        <Box class="h-5 w-5 text-muted/60"/>
+        <Box class="h-5 w-5 text-faint"/>
         <span class="text-[11px] leading-relaxed text-muted">
           {{ errorKind === 'noMesh' ? $t('preview.noMesh') : $t('preview.failed') }}
         </span>

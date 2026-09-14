@@ -9,6 +9,8 @@ const enUS = {
         maximize: 'Maximize',
         restore: 'Restore',
         close: 'Close',
+        themeToLight: 'Switch to the light theme',
+        themeToDark: 'Switch to the dark theme',
     },
 
     nav: {

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import {onMounted, onUnmounted, ref} from 'vue'
-import {Minus, Square, X} from 'lucide-vue-next'
+import {Minus, Moon, Square, Sun, X} from 'lucide-vue-next'
 import LocaleSwitcher from './LocaleSwitcher.vue'
 import {
   closeWindow,
@@ -10,6 +10,7 @@ import {
   startWindowDrag,
   toggleMaximizeWindow,
 } from '../api/tauri'
+import {theme, toggleTheme} from '../utils/theme'
 
 const isMaximized = ref(false)
 let unlistenResize: (() => void) | null = null
@@ -65,24 +66,36 @@ onUnmounted(() => {
 
 <template>
   <header
-      class="relative z-30 flex h-[72px] shrink-0 select-none items-center justify-between bg-ink-900 pt-5 text-[#E6EDF7]"
+      class="relative z-30 flex h-[72px] shrink-0 select-none items-center justify-between bg-page pt-5 text-fg"
       @dblclick="handleHeaderDoubleClick"
       @mousedown="handleHeaderMouseDown"
   >
     <!-- Spacer: pushes the toolbar right, and doubles as the drag surface of the title bar -->
     <div class="flex h-full flex-1"/>
 
-    <!-- Right toolbar: locale switcher, divider, window controls -->
+    <!-- Right toolbar: locale switcher, palette toggle, divider, window controls -->
     <div class="flex h-full items-center gap-1 px-4">
       <LocaleSwitcher/>
 
+      <!-- Palette toggle: the icon shows what the click leads to, so a dark bar offers the sun -->
+      <button
+          :aria-label="theme === 'dark' ? $t('window.themeToLight') : $t('window.themeToDark')"
+          :title="theme === 'dark' ? $t('window.themeToLight') : $t('window.themeToDark')"
+          class="flex h-9 w-9 items-center justify-center rounded-md text-fg/70 transition-colors hover:bg-tint-strong hover:text-fg"
+          type="button"
+          @click="toggleTheme"
+      >
+        <Sun v-if="theme === 'dark'" class="h-4 w-4"/>
+        <Moon v-else class="h-4 w-4"/>
+      </button>
+
       <!-- Divider between the toolbar and the window controls -->
-      <div aria-hidden="true" class="mx-2 h-5 w-px bg-white/10"/>
+      <div aria-hidden="true" class="mx-2 h-5 w-px bg-tint-strong"/>
 
       <button
           :aria-label="$t('window.minimize')"
           :title="$t('window.minimize')"
-          class="flex h-9 w-9 items-center justify-center rounded-md text-[#E6EDF7]/70 transition-colors hover:bg-white/10 hover:text-[#E6EDF7]"
+          class="flex h-9 w-9 items-center justify-center rounded-md text-fg/70 transition-colors hover:bg-tint-strong hover:text-fg"
           type="button"
           @click="handleMinimize"
       >
@@ -91,7 +104,7 @@ onUnmounted(() => {
       <button
           :aria-label="isMaximized ? $t('window.restore') : $t('window.maximize')"
           :title="isMaximized ? $t('window.restore') : $t('window.maximize')"
-          class="flex h-9 w-9 items-center justify-center rounded-md text-[#E6EDF7]/70 transition-colors hover:bg-white/10 hover:text-[#E6EDF7]"
+          class="flex h-9 w-9 items-center justify-center rounded-md text-fg/70 transition-colors hover:bg-tint-strong hover:text-fg"
           type="button"
           @click="handleToggleMaximize"
       >
@@ -115,7 +128,7 @@ onUnmounted(() => {
       <button
           :aria-label="$t('window.close')"
           :title="$t('window.close')"
-          class="flex h-9 w-9 items-center justify-center rounded-md text-[#E6EDF7]/70 transition-colors hover:bg-red-500 hover:text-white"
+          class="flex h-9 w-9 items-center justify-center rounded-md text-fg/70 transition-colors hover:bg-red-500 hover:text-white"
           type="button"
           @click="handleClose"
       >

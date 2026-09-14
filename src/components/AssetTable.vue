@@ -25,7 +25,7 @@ function isSorted(field: VisualSort) {
 
 /** Header label colour: the active sort column stays lit, the other one only lights up on hover */
 function headerClass(field: VisualSort) {
-  return isSorted(field) ? 'text-glow-cyan' : 'hover:text-[#E6EDF7]'
+  return isSorted(field) ? 'text-glow-cyan' : 'hover:text-fg'
 }
 
 /** Five-column layout: the UUID column leads and caps at 300px (a full 36-char GUID at 12px mono +
@@ -39,14 +39,14 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
 
 <template>
   <div
-      class="relative flex w-full min-h-0 flex-1 select-none flex-col overflow-hidden rounded-2xl border border-cyan-300/10 bg-ink-700/40 backdrop-blur-xl"
+      class="relative flex w-full min-h-0 flex-1 select-none flex-col overflow-hidden rounded-2xl border border-edge/10 bg-ink-700/40 backdrop-blur-xl"
       tabindex="0"
       @keydown.up.prevent="emit('move', -1)"
       @keydown.down.prevent="emit('move', 1)"
   >
     <div
         v-if="loading"
-        class="absolute inset-0 z-20 flex items-center justify-center bg-ink-900/60 backdrop-blur-sm"
+        class="absolute inset-0 z-20 flex items-center justify-center bg-page/70 backdrop-blur-sm"
     >
       <Loader2 class="h-6 w-6 animate-spin text-glow-cyan"/>
     </div>
@@ -56,7 +56,7 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
     <div class="relative min-h-0 flex-1 overflow-y-auto">
       <div
           :style="{gridTemplateColumns: GRID_COLS}"
-          class="sticky top-0 z-10 grid w-full items-center bg-ink-800/95 text-xs uppercase tracking-wider text-muted shadow-[inset_0_-1px_0_0_rgb(255_255_255_/_0.05)]"
+          class="sticky top-0 z-10 grid w-full items-center bg-ink-800/95 text-xs uppercase tracking-wider text-muted shadow-[inset_0_-1px_0_0_rgb(var(--c-line)_/_var(--alpha-line-strong))]"
       >
         <button
             :aria-label="$t('table.sortById')"
@@ -86,19 +86,19 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
             :title="$t('table.headerMaterial')"
             class="flex items-center justify-center px-3 py-3"
         >
-          <Palette class="h-3.5 w-3.5 text-white/70"/>
+          <Palette class="h-3.5 w-3.5 text-fg/70"/>
         </div>
         <div
             :title="$t('table.headerTexture')"
             class="flex items-center justify-center px-3 py-3"
         >
-          <Image class="h-3.5 w-3.5 text-white/70"/>
+          <Image class="h-3.5 w-3.5 text-fg/70"/>
         </div>
         <div
             :title="$t('table.headerVirtual')"
             class="flex items-center justify-center px-3 py-3"
         >
-          <Grid2x2 class="h-3.5 w-3.5 text-white/70"/>
+          <Grid2x2 class="h-3.5 w-3.5 text-fg/70"/>
         </div>
       </div>
 
@@ -107,7 +107,7 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
           :key="row.id"
           :class="isActive(row.id) ? 'bg-glow-cyan/10' : ''"
           :style="{gridTemplateColumns: GRID_COLS}"
-          class="relative grid w-full cursor-pointer items-center transition-colors shadow-[inset_0_-1px_0_0_rgb(255_255_255_/_0.05)] last:shadow-none hover:bg-white/5"
+          class="relative grid w-full cursor-pointer items-center transition-colors shadow-[inset_0_-1px_0_0_rgb(var(--c-line)_/_var(--alpha-line-strong))] last:shadow-none hover:bg-tint"
           @click="emit('select', row.id)"
       >
         <!-- Selection marker on the table's left edge, mirrored (rounded-r): the row box is the
@@ -120,7 +120,7 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
           {{ row.id }}
         </div>
         <div class="truncate px-4 py-2 text-center font-mono text-[13px]">
-          <span :class="isActive(row.id) ? 'text-glow-cyan' : 'text-[#E6EDF7]'">
+          <span :class="isActive(row.id) ? 'text-glow-cyan' : 'text-fg'">
             {{ row.name }}
           </span>
         </div>
@@ -128,7 +128,7 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
             :title="$t('detail.materialIds', {count: row.materialCount})"
             class="flex items-center justify-center px-3 py-2 font-mono text-[13px] font-medium tabular-nums"
         >
-          <span :class="row.materialCount > 0 ? 'text-[#E6EDF7]/85' : 'text-white/15'">
+          <span :class="row.materialCount > 0 ? 'text-fg/85' : 'text-faint'">
             {{ row.materialCount }}
           </span>
         </div>
@@ -136,7 +136,7 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
             :title="$t('detail.textures', {count: row.textureCount})"
             class="flex items-center justify-center px-3 py-2 font-mono text-[13px] font-medium tabular-nums"
         >
-          <span :class="row.textureCount > 0 ? 'text-[#E6EDF7]/85' : 'text-white/15'">
+          <span :class="row.textureCount > 0 ? 'text-fg/85' : 'text-faint'">
             {{ row.textureCount }}
           </span>
         </div>
@@ -144,7 +144,7 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
             :title="$t('detail.virtualTextures', {count: row.virtualTextureCount})"
             class="flex items-center justify-center px-3 py-2 font-mono text-[13px] font-medium tabular-nums"
         >
-          <span :class="row.virtualTextureCount > 0 ? 'text-[#E6EDF7]/85' : 'text-white/15'">
+          <span :class="row.virtualTextureCount > 0 ? 'text-fg/85' : 'text-faint'">
             {{ row.virtualTextureCount }}
           </span>
         </div>

@@ -61,14 +61,14 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onPointerDown))
     >
       <ul
           v-if="open"
-          class="absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-cyan-300/20 bg-ink-800/95 p-1 shadow-2xl backdrop-blur-xl"
+          class="absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-edge/20 bg-ink-800/95 p-1 shadow-[var(--shadow-pop)] backdrop-blur-xl"
           role="listbox"
       >
         <li v-for="item in SUPPORTED_LOCALES" :key="item.code">
           <button
               :aria-selected="item.code === locale"
-              :class="item.code === locale ? 'text-glow-cyan' : 'text-[#E6EDF7]'"
-              class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/10"
+              :class="item.code === locale ? 'text-glow-cyan' : 'text-fg'"
+              class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-tint-strong"
               role="option"
               type="button"
               @click="select(item.code)"

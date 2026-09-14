@@ -20,9 +20,9 @@ function handleSidebarDoubleClick() {
 /** Sidebar link styling: every entry shares the same base and active appearance. The row centers its
  *  children, so the icon lines up with the middle of the two-line label / hint block */
 const NAV_LINK_CLASS =
-    'group flex items-center gap-3 rounded-xl px-3 py-3 text-muted transition-all duration-200 hover:translate-x-1 hover:bg-white/5 hover:text-[#E6EDF7]'
+    'group flex items-center gap-3 rounded-xl px-3 py-3 text-muted transition-all duration-200 hover:translate-x-1 hover:bg-tint hover:text-fg'
 const ACTIVE_CLASS =
-    '!bg-gradient-to-r !from-glow-cyan/20 !to-glow-blue/10 !text-glow-cyan shadow-[inset_0_0_0_1px_rgba(34,211,238,0.35)]'
+    '!bg-gradient-to-r !from-glow-cyan/20 !to-glow-blue/10 !text-glow-cyan shadow-[inset_0_0_0_1px_rgb(var(--c-glow-cyan)_/_0.35)]'
 
 const navItems = computed(() => [
   {to: '/database', label: t('nav.database'), hint: t('nav.databaseHint'), icon: Database},
@@ -37,9 +37,9 @@ const aboutItems = computed(() => [
 
 <template>
   <!-- Fill the whole window: 300px sidebar + adaptive main area; every window size fills completely, no central canvas and no gutters -->
-  <div class="flex h-screen w-screen overflow-hidden bg-ink-900">
+  <div class="flex h-screen w-screen overflow-hidden bg-page">
     <aside
-        class="z-20 flex h-full w-[300px] shrink-0 flex-col border-r border-cyan-300/10 bg-ink-900/80 backdrop-blur-xl"
+        class="z-20 flex h-full w-[300px] shrink-0 flex-col border-r border-edge/10 bg-ink-900/80 backdrop-blur-xl"
     >
       <!-- Sidebar top: icon (spans both rows, centered with the text block) + app name + subtitle (window drag area) -->
       <div
@@ -49,10 +49,10 @@ const aboutItems = computed(() => [
       >
         <Aperture class="h-8 w-8 shrink-0 text-glow-cyan"/>
         <div class="flex flex-col">
-          <p class="text-base font-semibold tracking-wide text-[#E6EDF7]">
+          <p class="text-base font-semibold tracking-wide text-fg">
             {{ $t('app.title') }}
           </p>
-          <p class="text-[11px] text-muted/70">{{ $t('app.subtitle') }}</p>
+          <p class="text-[11px] text-subtle">{{ $t('app.subtitle') }}</p>
         </div>
       </div>
 
@@ -67,13 +67,13 @@ const aboutItems = computed(() => [
           <component :is="item.icon" class="h-6 w-6 shrink-0"/>
           <span class="flex flex-col">
             <span class="text-sm font-medium">{{ item.label }}</span>
-            <span class="text-[11px] text-muted/70">{{ item.hint }}</span>
+            <span class="text-[11px] text-subtle">{{ item.hint }}</span>
           </span>
         </RouterLink>
       </nav>
 
       <!-- Sidebar bottom: pinned row for secondary links -->
-      <div class="flex flex-col gap-2 border-t border-cyan-300/10 px-3 pb-4 pt-3">
+      <div class="flex flex-col gap-2 border-t border-edge/10 px-3 pb-4 pt-3">
         <RouterLink
             v-for="item in aboutItems"
             :key="item.to"
@@ -84,7 +84,7 @@ const aboutItems = computed(() => [
           <component :is="item.icon" class="h-6 w-6 shrink-0"/>
           <span class="flex flex-col">
             <span class="text-sm font-medium">{{ item.label }}</span>
-            <span class="text-[11px] text-muted/70">{{ item.hint }}</span>
+            <span class="text-[11px] text-subtle">{{ item.hint }}</span>
           </span>
         </RouterLink>
       </div>
@@ -96,7 +96,7 @@ const aboutItems = computed(() => [
       <WindowTitlebar/>
 
       <!-- Main content: page-level scrolling disabled; long content (tables/details) scrolls inside its own component -->
-      <main class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-ink-900">
+      <main class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-page">
         <!-- Note: do not wrap RouterView in <Transition>. In WebView2 an out-in transition gets
              stuck between leave/enter during route changes and renders a blank screen (with no
              console error). Render directly and bind :key so every route change cleanly rebuilds

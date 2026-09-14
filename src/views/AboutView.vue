@@ -91,7 +91,7 @@ function openLink(url: string) {
   <!-- About is a plain, scrollable page: identity hero, intro, tech stack and credits -->
   <section class="flex min-h-0 w-full flex-col gap-4 overflow-y-auto px-8 pt-3 pb-8">
     <header>
-      <h1 class="text-2xl font-semibold tracking-wide text-[#E6EDF7]">{{ $t('about.title') }}</h1>
+      <h1 class="text-2xl font-semibold tracking-wide text-fg">{{ $t('about.title') }}</h1>
       <p class="mt-1 text-sm text-muted">{{ $t('about.subtitle') }}</p>
     </header>
 
@@ -103,14 +103,14 @@ function openLink(url: string) {
         <Aperture class="h-8 w-8 shrink-0 text-glow-cyan"/>
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
-            <p class="text-lg font-semibold text-[#E6EDF7]">{{ $t('app.title') }}</p>
+            <p class="text-lg font-semibold text-fg">{{ $t('app.title') }}</p>
             <!-- Version pill: the running version plus, at most, one mark that the check produced.
                  The arrow lives inside the pill so the row reads as a single unit, and its tooltip is
                  the only place the published version number ever appears. "Up to date" and a failed
                  check add nothing, so the arrow is never shown for less than a newer release -->
             <span
                 :class="[
-                  'inline-flex items-center gap-1 rounded-md border border-emerald-400/25 bg-emerald-400/10 py-0.5 pl-1.5 font-mono text-[10px] font-medium leading-none text-emerald-300',
+                  'inline-flex items-center gap-1 rounded-md border border-ok/25 bg-ok/10 py-0.5 pl-1.5 font-mono text-[10px] font-medium leading-none text-ok',
                   releaseState === 'outdated' ? 'pr-0.5' : 'pr-1.5',
                 ]"
             >
@@ -119,7 +119,7 @@ function openLink(url: string) {
                   v-if="releaseState === 'outdated'"
                   :aria-label="$t('about.updateAvailable', {version: remoteVersion})"
                   :title="$t('about.updateAvailable', {version: remoteVersion})"
-                  class="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] text-amber-300 transition-colors duration-200 hover:bg-amber-400/20 hover:text-amber-200"
+                  class="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] text-glow-gold transition-colors duration-200 hover:bg-glow-gold/20 hover:text-glow-gold"
                   type="button"
                   @click="openLink(NEXUS_MODS_URL)"
               >
@@ -141,7 +141,7 @@ function openLink(url: string) {
               :key="link.href"
               :aria-label="link.name"
               :title="link.name"
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-glow-cyan ring-1 ring-cyan-300/15 transition-all duration-200 hover:bg-white/10 hover:ring-cyan-300/35"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-tint text-glow-cyan ring-1 ring-edge/15 transition-all duration-200 hover:bg-tint-strong hover:ring-edge/35"
               type="button"
               @click="openLink(link.href)"
           >
@@ -158,7 +158,7 @@ function openLink(url: string) {
       <div class="glass-card flex flex-col gap-4 p-6">
         <div class="flex items-center gap-2.5">
           <BadgeCheck class="h-4 w-4 text-glow-cyan"/>
-          <p class="text-sm font-medium text-[#E6EDF7]">{{ $t('about.introTitle') }}</p>
+          <p class="text-sm font-medium text-fg">{{ $t('about.introTitle') }}</p>
         </div>
         <p class="text-sm leading-relaxed text-muted">{{ $t('about.intro') }}</p>
       </div>
@@ -172,9 +172,9 @@ function openLink(url: string) {
                  spacing directly — no slot sits between a glyph and its label -->
             <component :is="item.icon" class="h-6 w-6 shrink-0 text-glow-cyan"/>
             <div class="min-w-0">
-              <p class="flex flex-wrap items-center gap-x-1.5 text-sm font-medium text-[#E6EDF7]">
+              <p class="flex flex-wrap items-center gap-x-1.5 text-sm font-medium text-fg">
                 <template v-for="(part, index) in item.parts" :key="part.href">
-                  <span v-if="index" class="text-muted/40">·</span>
+                  <span v-if="index" class="text-faint">·</span>
                   <!-- Two projects share one row, so each name is its own link. The arrow is always
                        rendered (dimmed) instead of appearing on hover: reserving its width keeps the
                        text from shifting when the pointer arrives -->
@@ -187,11 +187,11 @@ function openLink(url: string) {
                   >
                     {{ part.label }}
                     <ArrowUpRight
-                        class="h-3 w-3 text-muted/40 transition-colors duration-200 group-hover/link:text-glow-cyan"/>
+                        class="h-3 w-3 text-faint transition-colors duration-200 group-hover/link:text-glow-cyan"/>
                   </button>
                 </template>
               </p>
-              <p class="text-xs text-muted/80">{{ item.role }}</p>
+              <p class="text-xs text-subtle">{{ item.role }}</p>
             </div>
           </li>
         </ul>
@@ -202,20 +202,20 @@ function openLink(url: string) {
     <div class="glass-card p-6">
       <div class="flex items-center gap-2.5">
         <ShieldCheck class="h-4 w-4 text-glow-cyan"/>
-        <p class="text-sm font-medium text-[#E6EDF7]">{{ $t('about.rightsTitle') }}</p>
+        <p class="text-sm font-medium text-fg">{{ $t('about.rightsTitle') }}</p>
       </div>
       <p class="mt-3 text-sm leading-relaxed text-muted">{{ $t('about.disclaimer') }}</p>
-      <div class="mt-5 border-t border-white/10 pt-5">
+      <div class="mt-5 border-t border-hairline-strong pt-5">
         <div class="flex items-center gap-2.5">
           <Lock class="h-4 w-4 text-glow-cyan"/>
-          <p class="text-sm font-medium text-[#E6EDF7]">{{ $t('about.privacyTitle') }}</p>
+          <p class="text-sm font-medium text-fg">{{ $t('about.privacyTitle') }}</p>
         </div>
         <p class="mt-3 text-sm leading-relaxed text-muted">{{ $t('about.privacy') }}</p>
       </div>
-      <div class="mt-5 border-t border-white/10 pt-5">
+      <div class="mt-5 border-t border-hairline-strong pt-5">
         <div class="flex items-center gap-2.5">
           <Scale class="h-4 w-4 text-glow-cyan"/>
-          <p class="text-sm font-medium text-[#E6EDF7]">{{ $t('about.licenseTitle') }}</p>
+          <p class="text-sm font-medium text-fg">{{ $t('about.licenseTitle') }}</p>
         </div>
         <p class="mt-3 text-sm leading-relaxed text-muted">{{ $t('about.license') }}</p>
       </div>

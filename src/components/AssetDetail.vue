@@ -126,7 +126,7 @@ function toggle(section: SectionKey) {
 
         <div>
           <button
-              class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-[#E6EDF7]"
+              class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg"
               type="button"
               :aria-expanded="!collapsed.mesh"
               @click="toggle('mesh')"
@@ -140,7 +140,7 @@ function toggle(section: SectionKey) {
           </button>
           <div
               v-show="!collapsed.mesh"
-              class="mt-2 rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25">
+              class="mt-2 rounded-xl border border-hairline bg-ink-900/50 p-3 transition-colors hover:border-edge/25">
             <p class="break-all font-mono text-[12px] text-glow-cyan">{{ asset.path }}</p>
             <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
               <span class="break-all font-mono">{{ asset.name }}</span>
@@ -158,7 +158,7 @@ function toggle(section: SectionKey) {
 
         <div>
           <button
-              class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-[#E6EDF7] disabled:cursor-default disabled:hover:text-muted"
+              class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg disabled:cursor-default disabled:hover:text-muted"
               type="button"
               :aria-expanded="!collapsed.materials"
               :disabled="!asset.materials.length"
@@ -166,7 +166,7 @@ function toggle(section: SectionKey) {
           >
             <Palette class="h-3.5 w-3.5 shrink-0"/>
             <span>{{ $t('detail.materialLabel') }}</span>
-            <span class="tabular-nums text-muted/60">{{ asset.materials.length }}</span>
+            <span class="tabular-nums text-faint">{{ asset.materials.length }}</span>
             <ChevronDown
                 v-if="asset.materials.length"
                 class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
@@ -177,7 +177,7 @@ function toggle(section: SectionKey) {
             <div
                 v-for="material in materialsWithBindings"
                 :key="material.id"
-                class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
+                class="rounded-xl border border-hairline bg-ink-900/50 p-3 transition-colors hover:border-edge/25"
             >
               <p v-if="material.sourceFile" class="break-all font-mono text-[12px] text-glow-cyan">
                 {{ material.sourceFile }}
@@ -189,7 +189,7 @@ function toggle(section: SectionKey) {
                    GUID, so the two would be the same string twice. -->
               <p class="mt-1.5 flex flex-wrap items-baseline gap-x-2 font-mono text-[11px] text-muted">
                 <span class="break-all">{{ material.name || material.id }}</span>
-                <span v-if="material.name" class="break-all text-[10px] text-muted/50">
+                <span v-if="material.name" class="break-all text-[10px] text-faint">
                   {{ material.id }}
                 </span>
               </p>
@@ -209,26 +209,26 @@ function toggle(section: SectionKey) {
               </p>
               <ul
                   v-if="material.bindings.length"
-                  class="mt-2.5 flex flex-wrap gap-1.5 border-t border-white/5 pt-2"
+                  class="mt-2.5 flex flex-wrap gap-1.5 border-t border-hairline pt-2"
               >
                 <li
                     v-for="binding in material.bindings"
                     :key="binding.kind + binding.id"
-                    class="flex max-w-full items-center gap-1.5 rounded-md bg-white/[0.04] px-1.5 py-1"
+                    class="flex max-w-full items-center gap-1.5 rounded-md bg-overlay/[0.04] px-1.5 py-1"
                 >
                   <ImageIcon
                       v-if="binding.kind === 'texture'"
-                      class="h-3 w-3 shrink-0 text-cyan-300/70"
+                      class="h-3 w-3 shrink-0 text-glow-cyan/70"
                   />
-                  <Grid2x2 v-else class="h-3 w-3 shrink-0 text-cyan-300/70"/>
+                  <Grid2x2 v-else class="h-3 w-3 shrink-0 text-glow-cyan/70"/>
                   <span class="break-all font-mono text-[11px] text-muted">{{ binding.name }}</span>
-                  <span v-if="binding.parameterName" class="shrink-0 text-[10px] text-muted/50">
+                  <span v-if="binding.parameterName" class="shrink-0 text-[10px] text-faint">
                     {{ binding.parameterName }}
                   </span>
                 </li>
               </ul>
             </div>
-            <p v-if="!asset.materials.length" class="text-xs text-muted/70">
+            <p v-if="!asset.materials.length" class="text-xs text-subtle">
               {{ $t('detail.none') }}
             </p>
           </div>
@@ -237,7 +237,7 @@ function toggle(section: SectionKey) {
         <div class="space-y-5">
           <div>
             <button
-                class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-[#E6EDF7] disabled:cursor-default disabled:hover:text-muted"
+                class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg disabled:cursor-default disabled:hover:text-muted"
                 type="button"
                 :aria-expanded="!collapsed.textures"
                 :disabled="!asset.textures.length"
@@ -245,7 +245,7 @@ function toggle(section: SectionKey) {
             >
               <ImageIcon class="h-3.5 w-3.5 shrink-0"/>
               <span>{{ $t('detail.textureLabel') }}</span>
-              <span class="tabular-nums text-muted/60">{{ asset.textures.length }}</span>
+              <span class="tabular-nums text-faint">{{ asset.textures.length }}</span>
               <ChevronDown
                   v-if="asset.textures.length"
                   class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
@@ -257,7 +257,7 @@ function toggle(section: SectionKey) {
               <div
                   v-for="tex in asset.textures"
                   :key="tex.id"
-                  class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
+                  class="rounded-xl border border-hairline bg-ink-900/50 p-3 transition-colors hover:border-edge/25"
               >
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
                 <!-- The parameter stays out of the card: it describes a binding, not the resource,
@@ -276,7 +276,7 @@ function toggle(section: SectionKey) {
                   </span>
                 </div>
               </div>
-              <p v-if="!asset.textures.length" class="text-xs text-muted/70">
+              <p v-if="!asset.textures.length" class="text-xs text-subtle">
                 {{ $t('detail.noTextures') }}
               </p>
             </div>
@@ -284,7 +284,7 @@ function toggle(section: SectionKey) {
 
           <div>
             <button
-                class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-[#E6EDF7] disabled:cursor-default disabled:hover:text-muted"
+                class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg disabled:cursor-default disabled:hover:text-muted"
                 type="button"
                 :aria-expanded="!collapsed.virtualTextures"
                 :disabled="!asset.virtualTextures.length"
@@ -292,7 +292,7 @@ function toggle(section: SectionKey) {
             >
               <Grid2x2 class="h-3.5 w-3.5 shrink-0"/>
               <span>{{ $t('detail.virtualTextureLabel') }}</span>
-              <span class="tabular-nums text-muted/60">{{ asset.virtualTextures.length }}</span>
+              <span class="tabular-nums text-faint">{{ asset.virtualTextures.length }}</span>
               <ChevronDown
                   v-if="asset.virtualTextures.length"
                   class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
@@ -304,7 +304,7 @@ function toggle(section: SectionKey) {
               <div
                   v-for="vt in asset.virtualTextures"
                   :key="vt.id"
-                  class="rounded-xl border border-white/5 bg-ink-900/50 p-3 transition-colors hover:border-cyan-300/25"
+                  class="rounded-xl border border-hairline bg-ink-900/50 p-3 transition-colors hover:border-edge/25"
               >
                 <p class="break-all font-mono text-[12px] text-glow-cyan">{{ vt.path || vt.hash }}</p>
                 <!-- Same as the texture card: the parameter belongs to the material's binding, so
@@ -322,7 +322,7 @@ function toggle(section: SectionKey) {
                   </span>
                 </div>
               </div>
-              <p v-if="!asset.virtualTextures.length" class="text-xs text-muted/70">
+              <p v-if="!asset.virtualTextures.length" class="text-xs text-subtle">
                 {{ $t('detail.noVirtualTextures') }}
               </p>
             </div>

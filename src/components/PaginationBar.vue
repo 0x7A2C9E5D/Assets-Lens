@@ -50,7 +50,7 @@ function jump(delta: number) {
         <ChevronLeft class="h-3.5 w-3.5"/>
       </button>
       <span
-          class="flex h-7 items-center justify-center px-3 text-sm font-medium tabular-nums text-[#E6EDF7]"
+          class="flex h-7 items-center justify-center px-3 text-sm font-medium tabular-nums text-fg"
       >
         {{ page }} / {{ pageCount }}
       </span>

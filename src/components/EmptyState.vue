@@ -16,7 +16,7 @@ const emit = defineEmits<{ action: [] }>()
     <!-- Bare glyph with no slot behind it: the container gap is all that separates the icon from the
          title, so a bigger icon does not push the text further down -->
     <component :is="icon" class="h-10 w-10 text-glow-cyan"/>
-    <h3 class="text-base font-semibold text-[#E6EDF7]">{{ title }}</h3>
+    <h3 class="text-base font-semibold text-fg">{{ title }}</h3>
     <p v-if="description" class="max-w-md text-sm leading-relaxed text-muted">{{ description }}</p>
     <button v-if="actionLabel" class="btn-primary mt-2" type="button" @click="emit('action')">
       {{ actionLabel }}

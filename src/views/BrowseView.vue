@@ -139,7 +139,7 @@ onMounted(() => {
   <section class="flex min-h-0 w-full flex-1 flex-col gap-4 px-8 pt-3 pb-4">
     <header class="flex shrink-0 flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold tracking-wide text-[#E6EDF7]">
+        <h1 class="text-2xl font-semibold tracking-wide text-fg">
           {{ $t('browse.title') }}
         </h1>
         <p class="mt-1 text-sm text-muted">{{ $t('browse.subtitle') }}</p>
@@ -150,7 +150,7 @@ onMounted(() => {
             v-model="searchTerm"
             :placeholder="$t('browse.searchPlaceholder')"
             autocomplete="off"
-            class="w-full rounded-xl border border-white/5 bg-ink-900/50 py-2 pl-9 pr-9 text-sm text-[#E6EDF7] placeholder:text-muted/60 transition-colors focus:border-cyan-300/30 focus:outline-none"
+            class="w-full rounded-xl border border-hairline-strong bg-ink-900/50 py-2 pl-9 pr-9 text-sm text-fg placeholder:text-faint transition-colors focus:border-edge/30 focus:outline-none"
             spellcheck="false"
             type="text"
         />
@@ -158,7 +158,7 @@ onMounted(() => {
             v-if="searchActive"
             :aria-label="$t('browse.searchClearAria')"
             :title="$t('browse.searchClearAria')"
-            class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted transition-colors hover:text-[#E6EDF7]"
+            class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted transition-colors hover:text-fg"
             type="button"
             @click="clearSearch"
         >
@@ -187,7 +187,7 @@ onMounted(() => {
     <template v-else>
       <div
           v-if="errorMsg"
-          class="flex items-start gap-3 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+          class="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
       >
         <Search class="mt-0.5 h-4 w-4 shrink-0"/>
         <span class="break-all">{{ errorMsg }}</span>

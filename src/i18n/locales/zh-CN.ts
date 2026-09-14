@@ -11,6 +11,8 @@ const zhCN = {
         maximize: '最大化',
         restore: '还原',
         close: '关闭',
+        themeToLight: '切换到浅色主题',
+        themeToDark: '切换到深色主题',
     },
 
     nav: {

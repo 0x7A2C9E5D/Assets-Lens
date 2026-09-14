@@ -11,6 +11,8 @@ const zhTW = {
         maximize: '最大化',
         restore: '還原',
         close: '關閉',
+        themeToLight: '切換到淺色主題',
+        themeToDark: '切換到深色主題',
     },
 
     nav: {

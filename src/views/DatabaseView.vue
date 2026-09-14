@@ -39,9 +39,9 @@ const progress = ref<BuildProgress>({percent: 0})
 
 const status = computed(() => {
   if (building.value) return {text: t('database.status.building'), class: 'border-glow-gold/40 text-glow-gold'}
-  if (stats.value) return {text: t('database.status.ready'), class: 'border-emerald-400/40 text-emerald-300'}
+  if (stats.value) return {text: t('database.status.ready'), class: 'border-ok/40 text-ok'}
   if (gamePath.value) return {text: t('database.status.pending'), class: 'border-glow-cyan/40 text-glow-cyan'}
-  return {text: t('database.status.unset'), class: 'border-white/10 text-muted'}
+  return {text: t('database.status.unset'), class: 'border-hairline-strong text-muted'}
 })
 
 /**
@@ -185,14 +185,14 @@ onMounted(() => {
   <section class="flex min-h-0 w-full flex-1 flex-col gap-4 px-8 pt-3 pb-8">
     <header class="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold tracking-wide text-[#E6EDF7]">
+        <h1 class="text-2xl font-semibold tracking-wide text-fg">
           {{ $t('database.title') }}
         </h1>
         <p class="mt-1 text-sm text-muted">{{ $t('database.subtitle') }}</p>
       </div>
       <span
           :class="status.class"
-          class="flex items-center gap-2 self-end rounded-full border bg-white/5 px-3 py-1.5 text-xs"
+          class="flex items-center gap-2 self-end rounded-full border bg-tint px-3 py-1.5 text-xs"
       >
         <Loader2 v-if="building" class="h-3.5 w-3.5 animate-spin"/>
         {{ status.text }}
@@ -201,7 +201,7 @@ onMounted(() => {
 
     <div
         v-if="errorMsg"
-        class="flex items-start gap-3 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+        class="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
     >
       <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0"/>
       <span class="break-all">{{ errorMsg }}</span>
@@ -213,7 +213,7 @@ onMounted(() => {
           <p class="text-xs uppercase tracking-[0.18em] text-muted">
             {{ $t('database.dir.label') }}
           </p>
-          <p class="mt-2 break-all font-mono text-sm text-[#E6EDF7]">
+          <p class="mt-2 break-all font-mono text-sm text-fg">
             {{ gamePath ?? $t('database.dir.empty') }}
           </p>
         </div>
@@ -228,7 +228,7 @@ onMounted(() => {
           </button>
         </div>
       </div>
-      <p class="mt-3 text-xs leading-relaxed text-muted/80">{{ $t('database.dir.tip') }}</p>
+      <p class="mt-3 text-xs leading-relaxed text-subtle">{{ $t('database.dir.tip') }}</p>
     </div>
 
     <div class="glass-card p-6">

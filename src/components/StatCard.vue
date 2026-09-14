@@ -21,7 +21,7 @@ const accentClass: Record<Accent, string> = {
   cyan: 'from-glow-cyan/25 to-transparent text-glow-cyan',
   gold: 'from-glow-gold/25 to-transparent text-glow-gold',
   blue: 'from-glow-blue/25 to-transparent text-glow-blue',
-  green: 'from-emerald-400/25 to-transparent text-emerald-300',
+  green: 'from-ok/25 to-transparent text-ok',
 }
 </script>
 
@@ -36,10 +36,10 @@ const accentClass: Record<Accent, string> = {
     <div class="relative flex items-center justify-between">
       <div>
         <p class="text-xs uppercase tracking-[0.18em] text-muted">{{ label }}</p>
-        <p class="mt-2 font-mono text-3xl font-semibold text-[#E6EDF7]">
+        <p class="mt-2 font-mono text-3xl font-semibold text-fg">
           {{ display(props.value) }}
         </p>
-        <p class="mt-1 text-xs text-muted/80">{{ hint }}</p>
+        <p class="mt-1 text-xs text-subtle">{{ hint }}</p>
       </div>
       <!-- Bare glyph at the plate's own 40px. Lucide scales its 24-unit artwork up to this size, which
            thickens the 2-unit default stroke on screen — so the stroke is dialled down to keep the

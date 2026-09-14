@@ -9,6 +9,7 @@
 
 const GAME_PATH_KEY = 'assets-lens.game-path'
 const LOCALE_KEY = 'assets-lens.locale'
+const THEME_KEY = 'assets-lens.theme'
 const WINDOW_KEY = 'assets-lens.window'
 
 /** Read the remembered game data directory; returns null when localStorage is unavailable (private mode, etc.) */
@@ -116,6 +117,27 @@ export function readWindowGeometry(): WindowGeometry | null {
 export function writeWindowGeometry(geometry: WindowGeometry): void {
     try {
         localStorage.setItem(WINDOW_KEY, JSON.stringify(geometry))
+    } catch {
+        // A failed write only costs the memory for the next launch; this session is unaffected
+    }
+}
+
+/**
+ * Stored palette choice. Dark is what the app has always shipped with, so anything missing,
+ * unreadable or unexpected falls back to it rather than to the system preference.
+ */
+export function readThemeSetting(): 'dark' | 'light' {
+    try {
+        return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'
+    } catch {
+        return 'dark'
+    }
+}
+
+/** Remember the palette choice */
+export function writeThemeSetting(theme: 'dark' | 'light'): void {
+    try {
+        localStorage.setItem(THEME_KEY, theme)
     } catch {
         // A failed write only costs the memory for the next launch; this session is unaffected
     }
