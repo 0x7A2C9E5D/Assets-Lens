@@ -66,7 +66,11 @@ export default {
                 accent: 'rgb(var(--c-accent) / <alpha-value>)',
                 brand: 'rgb(var(--c-brand) / <alpha-value>)',
                 'on-brand': 'rgb(var(--c-on-brand) / <alpha-value>)',
-                // Status: the foreground step, plus the tinted background / border a banner uses
+                // Status: the foreground step, plus the solid tint / border that a small badge (the
+                // version pill, the state chip) is built from. A full-width message bar does NOT use
+                // those two — it takes an alpha wash of the foreground (`border-danger/30
+                // bg-danger/10`), so the band sits on the page instead of punching a saturated hole
+                // in it, which is what the solid status background does in dark mode.
                 success: 'rgb(var(--c-success) / <alpha-value>)',
                 'success-bg': 'rgb(var(--c-success-bg) / <alpha-value>)',
                 'success-line': 'rgb(var(--c-success-line) / <alpha-value>)',

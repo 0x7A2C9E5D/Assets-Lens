@@ -247,7 +247,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
           <!-- Result -->
           <div v-if="result" class="space-y-3 animate-fade-in">
-            <div class="flex items-center gap-2 rounded-md border border-success-line bg-success-bg px-3 py-2.5">
+            <div class="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2.5">
               <CheckCircle2 class="h-4 w-4 shrink-0 text-success"/>
               <span class="text-[13px] text-success">
                 {{ $t('export.resultTitle', {count: result.files.length}) }}
@@ -256,7 +256,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
             <div
                 v-if="result.warnings.length"
-                class="rounded-md border border-warning-line bg-warning-bg px-3 py-2.5"
+                class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2.5"
             >
               <p class="flex items-center gap-2 text-[12px] text-warning">
                 <AlertTriangle class="h-3.5 w-3.5"/>
@@ -298,7 +298,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <!-- Error -->
           <div
               v-if="errorMsg"
-              class="flex items-start gap-2 rounded-md border border-danger-line bg-danger-bg px-3 py-2.5"
+              class="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2.5"
           >
             <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger"/>
             <span class="break-all text-[12px] leading-relaxed text-danger">{{ errorMsg }}</span>
