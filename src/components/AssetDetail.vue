@@ -216,11 +216,13 @@ function toggle(section: SectionKey) {
                     :key="binding.kind + binding.id"
                     class="flex max-w-full items-center gap-1.5 rounded-sm bg-tint px-1.5 py-1"
                 >
+                  <!-- Same grey as the archive glyph in the pak row above: both rows are chrome
+                       around a name, so they share one weight instead of grading against each other -->
                   <ImageIcon
                       v-if="binding.kind === 'texture'"
-                      class="h-3 w-3 shrink-0 text-accent/70"
+                      class="h-3 w-3 shrink-0 text-muted"
                   />
-                  <Grid2x2 v-else class="h-3 w-3 shrink-0 text-accent/70"/>
+                  <Grid2x2 v-else class="h-3 w-3 shrink-0 text-muted"/>
                   <span class="break-all font-mono text-[11px] text-muted">{{ binding.name }}</span>
                   <span v-if="binding.parameterName" class="shrink-0 text-[10px] text-faint">
                     {{ binding.parameterName }}
