@@ -14,22 +14,25 @@ type OrbitCtor = typeof import('three/examples/jsm/controls/OrbitControls.js').O
 const props = defineProps<{ path: string | null }>()
 
 /**
- * The scene is painted in WebGL, so it needs its own palette table instead of CSS variables. The
- * values are the Fluent tokens the surrounding panel uses: a flat recessed surface (no vignette —
- * Fluent surfaces are flat), brandForeground1 for the grid and neutralForeground2 for the fallback
- * material, which lightens on ink and darkens on paper so the model never fades into the backdrop.
+ * The scene is painted in WebGL, so it needs its own palette table instead of CSS variables.
+ * The viewport takes the very neutral the card's wells are painted with (`ink-800`) so it reads as
+ * one more recess on the same surface family instead of a panel of its own, and the grid is drawn
+ * in the neutral stroke ramp (stroke2 on ink, stroke1 on paper) like every hairline in the UI. The
+ * brand colour stays out of the scene: nothing here is interactive, and Fluent spends colour on
+ * things that are. The fallback material runs the other way — light on ink, dark on paper — so the
+ * model never fades into the backdrop.
  */
 const SCENE_PALETTE = {
     dark: {
-        backdrop: '#141414',
-        grid: 0x479ef5,
-        gridOpacity: 0.16,
+        backdrop: '#1f1f1f',
+        grid: 0x525252,
+        gridOpacity: 0.9,
         material: 0xd6d6d6,
     },
     light: {
         backdrop: '#fafafa',
-        grid: 0x0f6cbd,
-        gridOpacity: 0.2,
+        grid: 0xd1d1d1,
+        gridOpacity: 0.9,
         material: 0x616161,
     },
 } as const
