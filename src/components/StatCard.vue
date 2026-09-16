@@ -1,7 +1,9 @@
 <script lang="ts" setup>
 import {useI18n} from 'vue-i18n'
 
-type Accent = 'cyan' | 'gold' | 'blue' | 'green'
+/** Icon colour. Fluent keeps colour scarce: one plate stays neutral so the other three can carry
+ *  the brand / status ramps without the row turning into four competing accents. */
+type Accent = 'brand' | 'success' | 'warning' | 'neutral'
 
 const props = defineProps<{
   label: string
@@ -18,25 +20,23 @@ function display(value: number | string) {
 }
 
 const accentClass: Record<Accent, string> = {
-  cyan: 'from-glow-cyan/25 to-transparent text-glow-cyan',
-  gold: 'from-glow-gold/25 to-transparent text-glow-gold',
-  blue: 'from-glow-blue/25 to-transparent text-glow-blue',
-  green: 'from-ok/25 to-transparent text-ok',
+  brand: 'text-accent',
+  success: 'text-success',
+  warning: 'text-warning',
+  neutral: 'text-muted',
 }
 </script>
 
 <template>
-  <div class="glass-card overflow-hidden p-5">
-    <div
-        :class="accentClass[accent ?? 'cyan']"
-        class="pointer-events-none absolute inset-x-0 -top-16 h-32 bg-gradient-to-b opacity-70"
-    />
+  <div class="card p-5">
     <!-- The icon centers against the text block: it is the only thing on its side, so the row's
          cross axis puts it halfway down the label / value / hint stack -->
-    <div class="relative flex items-center justify-between">
-      <div>
-        <p class="text-xs uppercase tracking-[0.18em] text-muted">{{ label }}</p>
-        <p class="mt-2 font-mono text-3xl font-semibold text-fg">
+    <div class="flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-xs font-semibold text-muted">{{ label }}</p>
+        <!-- Display optical size, tabular figures: Fluent sets headline numbers in the same family
+             as the copy, so a counting value does not jump when its digits change -->
+        <p class="mt-1.5 font-display text-3xl font-semibold tabular-nums text-fg">
           {{ display(props.value) }}
         </p>
         <p class="mt-1 text-xs text-subtle">{{ hint }}</p>
@@ -44,7 +44,11 @@ const accentClass: Record<Accent, string> = {
       <!-- Bare glyph at the plate's own 40px. Lucide scales its 24-unit artwork up to this size, which
            thickens the 2-unit default stroke on screen — so the stroke is dialled down to keep the
            drawn weight the same as an icon at its native size -->
-      <component :is="icon" class="h-10 w-10 shrink-0 [stroke-width:1.5]"/>
+      <component
+          :class="accentClass[accent ?? 'brand']"
+          :is="icon"
+          class="h-10 w-10 shrink-0 [stroke-width:1.5]"
+      />
     </div>
   </div>
 </template>

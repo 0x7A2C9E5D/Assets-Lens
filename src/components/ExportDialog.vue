@@ -122,23 +122,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 <template>
   <Teleport to="body">
     <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/70 p-4 backdrop-blur-sm animate-fade-in"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-veil p-4 animate-fade-in"
         @click.self="requestClose"
     >
+      <!-- Fluent dialog: the card surface raised all the way to shadow64 -->
       <div
-          class="glass-card flex max-h-[86vh] w-[460px] max-w-full flex-col overflow-hidden animate-fade-in"
+          class="card flex max-h-[86vh] w-[460px] max-w-full flex-col overflow-hidden shadow-[var(--shadow-dialog)] animate-fade-in"
           @click.stop
       >
         <!-- Title -->
         <header class="flex shrink-0 items-start justify-between gap-3 border-b border-hairline px-5 py-4">
           <div class="min-w-0">
             <h2 class="flex items-center gap-2 text-base font-semibold text-fg">
-              <Download class="h-4 w-4 text-glow-cyan"/>
+              <Download class="h-4 w-4 text-accent"/>
               {{ $t('export.title') }}
             </h2>
             <p
                 :title="asset?.name"
-                class="mt-1 truncate font-mono text-[12px] text-glow-cyan"
+                class="mt-1 truncate font-mono text-[12px] text-accent"
             >
               {{ asset ? asset.name : $t('export.emptyName') }}
             </p>
@@ -146,7 +147,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <button
               :aria-label="$t('export.close')"
               :disabled="running"
-              class="rounded-lg p-1.5 text-muted transition-colors hover:bg-tint hover:text-fg disabled:opacity-40"
+              class="rounded-md p-1.5 text-muted transition-colors duration-150 ease-fluent hover:bg-tint hover:text-fg disabled:opacity-40"
               type="button"
               @click="requestClose"
           >
@@ -156,8 +157,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
         <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <!-- Destination directory -->
-          <div class="rounded-xl border border-hairline bg-ink-900/50 p-3">
-            <p class="text-[11px] uppercase tracking-[0.18em] text-muted">
+          <div class="card-well">
+            <p class="text-xs font-semibold text-muted">
               {{ $t('export.destLabel') }}
             </p>
             <div class="mt-2 flex items-center gap-2">
@@ -168,7 +169,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               >
                 {{ destDir || $t('export.destEmpty') }}
               </p>
-              <button :disabled="running" class="btn-ghost !px-3 !py-1.5 !text-xs" type="button" @click="chooseDir">
+              <button :disabled="running" class="btn-ghost !h-7 !px-3 !text-xs" type="button" @click="chooseDir">
                 <FolderOpen class="h-3.5 w-3.5"/>
                 {{ $t('export.pickDir') }}
               </button>
@@ -177,7 +178,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
           <!-- Mesh format -->
           <div v-if="!running && !result" class="space-y-2">
-            <p class="text-[11px] uppercase tracking-[0.18em] text-muted">
+            <p class="text-xs font-semibold text-muted">
               {{ $t('export.meshFormatLabel') }}
             </p>
             <div class="grid grid-cols-2 gap-2">
@@ -187,14 +188,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                   :aria-pressed="meshFormat === fmt"
                   :class="
                   meshFormat === fmt
-                    ? 'border-edge/40 bg-glow-cyan/10'
-                    : 'border-hairline bg-ink-900/50 hover:border-edge/25 hover:bg-tint'
+                    ? 'border-accent bg-accent/10 shadow-[inset_0_0_0_1px_rgb(var(--c-accent))]'
+                    : 'border-hairline-strong bg-ink-700 hover:bg-tint'
                 "
-                  class="rounded-xl border px-3 py-2 text-left transition-colors"
+                  class="rounded-md border px-3 py-2 text-left transition-colors duration-150 ease-fluent"
                   type="button"
                   @click="meshFormat = fmt"
               >
-                <span class="block text-[13px] font-medium text-fg">
+                <span class="block text-[13px] font-semibold text-fg">
                   {{ $t(`export.meshFormat.${fmt}`) }}
                 </span>
                 <span class="mt-0.5 block text-[11px] leading-relaxed text-muted">
@@ -206,7 +207,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
           <!-- Texture format: three-way choice of none / DDS / PNG -->
           <div v-if="!running && !result" class="space-y-1.5">
-            <p class="px-1 text-[11px] uppercase tracking-[0.18em] text-muted">
+            <p class="px-1 text-xs font-semibold text-muted">
               {{ $t('export.textureGroup') }}
             </p>
             <div class="grid grid-cols-3 gap-2">
@@ -216,14 +217,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                   :aria-pressed="textureFormat === fmt"
                   :class="
                   textureFormat === fmt
-                    ? 'border-edge/40 bg-glow-cyan/10'
-                    : 'border-hairline bg-ink-900/50 hover:border-edge/25 hover:bg-tint'
+                    ? 'border-accent bg-accent/10 shadow-[inset_0_0_0_1px_rgb(var(--c-accent))]'
+                    : 'border-hairline-strong bg-ink-700 hover:bg-tint'
                 "
-                  class="rounded-xl border px-3 py-2 text-left transition-colors"
+                  class="rounded-md border px-3 py-2 text-left transition-colors duration-150 ease-fluent"
                   type="button"
                   @click="textureFormat = fmt"
               >
-                <span class="block text-[13px] font-medium text-fg">
+                <span class="block text-[13px] font-semibold text-fg">
                   {{ $t(`export.textureFormat.${fmt}`) }}
                 </span>
                 <span class="mt-0.5 block text-[11px] leading-relaxed text-muted">
@@ -236,7 +237,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <!-- Progress -->
           <div v-if="running" class="space-y-2 py-2">
             <ProgressBar :percent="progress?.percent ?? 0">
-              <Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-glow-cyan"/>
+              <Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-accent"/>
               {{ phaseLabel }}
             </ProgressBar>
             <p v-if="progress?.currentFile" class="truncate font-mono text-[11px] text-subtle">
@@ -246,18 +247,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
           <!-- Result -->
           <div v-if="result" class="space-y-3 animate-fade-in">
-            <div class="flex items-center gap-2 rounded-xl border border-ok/25 bg-ok/10 px-3 py-2.5">
-              <CheckCircle2 class="h-4 w-4 shrink-0 text-ok"/>
-              <span class="text-[13px] text-ok">
+            <div class="flex items-center gap-2 rounded-md border border-success-line bg-success-bg px-3 py-2.5">
+              <CheckCircle2 class="h-4 w-4 shrink-0 text-success"/>
+              <span class="text-[13px] text-success">
                 {{ $t('export.resultTitle', {count: result.files.length}) }}
               </span>
             </div>
 
             <div
                 v-if="result.warnings.length"
-                class="rounded-xl border border-glow-gold/25 bg-glow-gold/10 px-3 py-2.5"
+                class="rounded-md border border-warning-line bg-warning-bg px-3 py-2.5"
             >
-              <p class="flex items-center gap-2 text-[12px] text-glow-gold">
+              <p class="flex items-center gap-2 text-[12px] text-warning">
                 <AlertTriangle class="h-3.5 w-3.5"/>
                 {{ $t('export.warningsTitle', {count: result.warnings.length}) }}
               </p>
@@ -273,18 +274,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             </div>
 
             <div class="space-y-1.5">
-              <p class="text-[11px] uppercase tracking-[0.18em] text-muted">
+              <p class="text-xs font-semibold text-muted">
                 {{ $t('export.filesTitle', {count: result.files.length}) }}
               </p>
               <div
                   v-for="file in result.files"
                   :key="file.path"
-                  class="flex items-center gap-2 rounded-lg bg-ink-900/50 px-3 py-2"
+                  class="flex items-center gap-2 rounded-sm bg-ink-800 px-3 py-2"
               >
                 <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-fg">
                   {{ baseName(file.path) }}
                 </span>
-                <span class="shrink-0 font-mono text-[11px] text-glow-cyan">
+                <span class="shrink-0 font-mono text-[11px] text-accent">
                   {{ formatSize(file.sizeBytes) }}
                 </span>
               </div>
@@ -297,7 +298,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <!-- Error -->
           <div
               v-if="errorMsg"
-              class="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5"
+              class="flex items-start gap-2 rounded-md border border-danger-line bg-danger-bg px-3 py-2.5"
           >
             <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger"/>
             <span class="break-all text-[12px] leading-relaxed text-danger">{{ errorMsg }}</span>
@@ -306,12 +307,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
         <!-- Actions -->
         <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-hairline px-5 py-3">
-          <button :disabled="running" class="btn-ghost !py-1.5 !text-xs" type="button" @click="requestClose">
+          <button :disabled="running" class="btn-ghost !h-7 !text-xs" type="button" @click="requestClose">
             {{ $t('export.close') }}
           </button>
           <button
               v-if="result"
-              class="btn-ghost !py-1.5 !text-xs"
+              class="btn-ghost !h-7 !text-xs"
               type="button"
               @click="restart"
           >
@@ -321,7 +322,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <button
               v-if="!result"
               :disabled="!canStart"
-              class="btn-primary !py-1.5 !text-xs"
+              class="btn-primary !h-7 !text-xs"
               type="button"
               @click="start"
           >

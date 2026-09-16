@@ -8,19 +8,18 @@ const width = computed(() => `${Math.min(100, Math.max(0, props.percent * 100)).
 
 <template>
   <div class="space-y-2">
-    <div class="flex items-center justify-between text-xs text-muted">
-      <span class="flex min-w-0 items-center gap-2 truncate font-mono">
+    <div class="flex items-center justify-between gap-3 text-xs text-muted">
+      <span class="flex min-w-0 items-center gap-2 truncate">
         <slot>{{ $t('progress.working') }}</slot>
       </span>
-      <span class="shrink-0 font-mono">{{ width }}</span>
+      <!-- Tabular figures so the percentage does not shift the row while it counts -->
+      <span class="shrink-0 tabular-nums">{{ width }}</span>
     </div>
-    <div class="relative h-2.5 w-full overflow-hidden rounded-full bg-ink-900">
+    <!-- Fluent ProgressBar: a neutral track with a solid brand fill and no shimmer ornament -->
+    <div class="h-1.5 w-full overflow-hidden rounded-full bg-ink-900">
       <div
           :style="{ width }"
-          class="h-full rounded-full bg-gradient-to-r from-glow-cyan to-glow-blue transition-[width] duration-200"
-      />
-      <div
-          class="pointer-events-none absolute inset-y-0 left-0 w-1/3 animate-shimmer bg-gradient-to-r from-transparent via-overlay/25 to-transparent"
+          class="h-full rounded-full bg-accent transition-[width] duration-200 ease-fluent"
       />
     </div>
   </div>

@@ -66,7 +66,7 @@ onUnmounted(() => {
 
 <template>
   <header
-      class="relative z-30 flex h-[72px] shrink-0 select-none items-center justify-between bg-page pt-5 text-fg"
+      class="relative z-30 flex h-12 shrink-0 select-none items-center justify-between border-b border-hairline bg-page text-fg"
       @dblclick="handleHeaderDoubleClick"
       @mousedown="handleHeaderMouseDown"
   >
@@ -81,7 +81,7 @@ onUnmounted(() => {
       <button
           :aria-label="theme === 'dark' ? $t('window.themeToLight') : $t('window.themeToDark')"
           :title="theme === 'dark' ? $t('window.themeToLight') : $t('window.themeToDark')"
-          class="flex h-9 w-9 items-center justify-center rounded-md text-fg/70 transition-colors hover:bg-tint-strong hover:text-fg"
+          class="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-fluent hover:bg-tint hover:text-fg"
           type="button"
           @click="toggleTheme"
       >
@@ -90,12 +90,12 @@ onUnmounted(() => {
       </button>
 
       <!-- Divider between the toolbar and the window controls -->
-      <div aria-hidden="true" class="mx-2 h-5 w-px bg-tint-strong"/>
+      <div aria-hidden="true" class="mx-1 h-5 w-px bg-hairline-strong"/>
 
       <button
           :aria-label="$t('window.minimize')"
           :title="$t('window.minimize')"
-          class="flex h-9 w-9 items-center justify-center rounded-md text-fg/70 transition-colors hover:bg-tint-strong hover:text-fg"
+          class="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-fluent hover:bg-tint hover:text-fg"
           type="button"
           @click="handleMinimize"
       >
@@ -104,7 +104,7 @@ onUnmounted(() => {
       <button
           :aria-label="isMaximized ? $t('window.restore') : $t('window.maximize')"
           :title="isMaximized ? $t('window.restore') : $t('window.maximize')"
-          class="flex h-9 w-9 items-center justify-center rounded-md text-fg/70 transition-colors hover:bg-tint-strong hover:text-fg"
+          class="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-fluent hover:bg-tint hover:text-fg"
           type="button"
           @click="handleToggleMaximize"
       >
@@ -128,7 +128,7 @@ onUnmounted(() => {
       <button
           :aria-label="$t('window.close')"
           :title="$t('window.close')"
-          class="flex h-9 w-9 items-center justify-center rounded-md text-fg/70 transition-colors hover:bg-red-500 hover:text-white"
+          class="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-fluent hover:bg-close hover:text-on-brand"
           type="button"
           @click="handleClose"
       >

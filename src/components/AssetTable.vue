@@ -25,7 +25,7 @@ function isSorted(field: VisualSort) {
 
 /** Header label colour: the active sort column stays lit, the other one only lights up on hover */
 function headerClass(field: VisualSort) {
-  return isSorted(field) ? 'text-glow-cyan' : 'hover:text-fg'
+  return isSorted(field) ? 'text-accent' : 'hover:text-fg'
 }
 
 /** Five-column layout: the UUID column leads and caps at 300px (a full 36-char GUID at 12px mono +
@@ -39,16 +39,16 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
 
 <template>
   <div
-      class="relative flex w-full min-h-0 flex-1 select-none flex-col overflow-hidden rounded-2xl border border-edge/10 bg-ink-700/40 backdrop-blur-xl"
+      class="relative flex w-full min-h-0 flex-1 select-none flex-col overflow-hidden rounded-xl border border-hairline-strong bg-ink-700"
       tabindex="0"
       @keydown.up.prevent="emit('move', -1)"
       @keydown.down.prevent="emit('move', 1)"
   >
     <div
         v-if="loading"
-        class="absolute inset-0 z-20 flex items-center justify-center bg-page/70 backdrop-blur-sm"
+        class="absolute inset-0 z-20 flex items-center justify-center bg-page/70"
     >
-      <Loader2 class="h-6 w-6 animate-spin text-glow-cyan"/>
+      <Loader2 class="h-6 w-6 animate-spin text-accent"/>
     </div>
 
     <!-- Single scroll surface: when the y axis overflows, only this area scrolls (the sticky header
@@ -56,13 +56,13 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
     <div class="relative min-h-0 flex-1 overflow-y-auto">
       <div
           :style="{gridTemplateColumns: GRID_COLS}"
-          class="sticky top-0 z-10 grid w-full items-center bg-ink-800/95 text-xs uppercase tracking-wider text-muted shadow-[inset_0_-1px_0_0_rgb(var(--c-line)_/_var(--alpha-line-strong))]"
+          class="sticky top-0 z-10 grid w-full items-center bg-ink-800 text-xs font-semibold text-muted shadow-[inset_0_-1px_0_0_rgb(var(--c-line)_/_var(--alpha-line))]"
       >
         <button
             :aria-label="$t('table.sortById')"
             :class="headerClass('id')"
             :title="$t('table.sortById')"
-            class="flex w-full items-center justify-center gap-1 px-4 py-3 font-medium uppercase tracking-wider transition-colors"
+            class="flex w-full items-center justify-center gap-1 px-4 py-2.5 transition-colors duration-150 ease-fluent"
             type="button"
             @click="emit('sort', 'id')"
         >
@@ -74,7 +74,7 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
             :aria-label="$t('table.sortByName')"
             :class="headerClass('name')"
             :title="$t('table.sortByName')"
-            class="flex w-full items-center justify-center gap-1 px-4 py-3 font-medium uppercase tracking-wider transition-colors"
+            class="flex w-full items-center justify-center gap-1 px-4 py-2.5 transition-colors duration-150 ease-fluent"
             type="button"
             @click="emit('sort', 'name')"
         >
@@ -105,22 +105,24 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
       <div
           v-for="row in rows"
           :key="row.id"
-          :class="isActive(row.id) ? 'bg-glow-cyan/10' : ''"
+          :class="isActive(row.id) ? 'bg-tint' : ''"
           :style="{gridTemplateColumns: GRID_COLS}"
-          class="relative grid w-full cursor-pointer items-center transition-colors shadow-[inset_0_-1px_0_0_rgb(var(--c-line)_/_var(--alpha-line-strong))] last:shadow-none hover:bg-tint"
+          class="relative grid w-full cursor-pointer items-center transition-colors duration-150 ease-fluent shadow-[inset_0_-1px_0_0_rgb(var(--c-line)_/_var(--alpha-line))] last:shadow-none hover:bg-tint"
           @click="emit('select', row.id)"
       >
-        <!-- Selection marker on the table's left edge, mirrored (rounded-r): the row box is the
-             containing block, so `left-0` hugs the table's far left edge; the rounding faces inward -->
+        <!-- Selection marker on the table's left edge: a Fluent grid marks the selected row with the
+             accent bar alone (the row's own fill stays the same subtle hover wash), so the marker is
+             what the eye follows. The row box is the containing block, so `left-0` hugs the table's
+             far left edge and the rounding faces inward -->
         <span
             v-if="isActive(row.id)"
-            class="absolute inset-y-1 left-0 w-[3px] rounded-r bg-glow-cyan"
+            class="absolute inset-y-1 left-0 w-[3px] rounded-r-sm bg-accent"
         />
         <div :title="row.id" class="truncate px-4 py-2 text-center font-mono text-[12px] text-muted">
           {{ row.id }}
         </div>
         <div class="truncate px-4 py-2 text-center font-mono text-[13px]">
-          <span :class="isActive(row.id) ? 'text-glow-cyan' : 'text-fg'">
+          <span :class="isActive(row.id) ? 'text-accent' : 'text-fg'">
             {{ row.name }}
           </span>
         </div>

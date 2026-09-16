@@ -18,11 +18,13 @@ function handleSidebarDoubleClick() {
 }
 
 /** Sidebar link styling: every entry shares the same base and active appearance. The row centers its
- *  children, so the icon lines up with the middle of the two-line label / hint block */
+ *  children, so the icon lines up with the middle of the two-line label / hint block. Selection is
+ *  the Fluent NavigationView treatment — a subtle fill plus the brand accent bar on the left edge,
+ *  with the icon picking up the accent colour — and nothing moves on hover. */
 const NAV_LINK_CLASS =
-    'group flex items-center gap-3 rounded-xl px-3 py-3 text-muted transition-all duration-200 hover:translate-x-1 hover:bg-tint hover:text-fg'
+    'group flex items-center gap-3 rounded-md px-3 py-2 text-muted transition-colors duration-150 ease-fluent hover:bg-tint hover:text-fg'
 const ACTIVE_CLASS =
-    '!bg-gradient-to-r !from-glow-cyan/20 !to-glow-blue/10 !text-glow-cyan shadow-[inset_0_0_0_1px_rgb(var(--c-glow-cyan)_/_0.35)]'
+    '!bg-tint !text-fg shadow-[inset_3px_0_0_0_rgb(var(--c-accent))] [&>svg]:text-accent'
 
 const navItems = computed(() => [
   {to: '/database', label: t('nav.database'), hint: t('nav.databaseHint'), icon: Database},
@@ -39,24 +41,25 @@ const aboutItems = computed(() => [
   <!-- Fill the whole window: 300px sidebar + adaptive main area; every window size fills completely, no central canvas and no gutters -->
   <div class="flex h-screen w-screen overflow-hidden bg-page">
     <aside
-        class="z-20 flex h-full w-[300px] shrink-0 flex-col border-r border-edge/10 bg-ink-900/80 backdrop-blur-xl"
+        class="z-20 flex h-full w-[300px] shrink-0 flex-col border-r border-hairline-strong bg-ink-800"
     >
-      <!-- Sidebar top: icon (spans both rows, centered with the text block) + app name + subtitle (window drag area) -->
+      <!-- Sidebar top: icon (spans both rows, centered with the text block) + app name + subtitle (window drag area).
+           It is exactly as tall as the title bar so the two columns share one horizontal line -->
       <div
-          class="flex h-[72px] select-none items-center gap-2.5 px-6"
+          class="flex h-12 select-none items-center gap-2.5 px-4"
           @mousedown.left.prevent="handleSidebarDrag"
           @dblclick.prevent="handleSidebarDoubleClick"
       >
-        <Aperture class="h-8 w-8 shrink-0 text-glow-cyan"/>
-        <div class="flex flex-col">
-          <p class="text-base font-semibold tracking-wide text-fg">
+        <Aperture class="h-6 w-6 shrink-0 text-accent"/>
+        <div class="flex flex-col leading-tight">
+          <p class="text-sm font-semibold text-fg">
             {{ $t('app.title') }}
           </p>
-          <p class="text-[11px] text-subtle">{{ $t('app.subtitle') }}</p>
+          <p class="text-[11px] text-muted">{{ $t('app.subtitle') }}</p>
         </div>
       </div>
 
-      <nav class="flex flex-1 flex-col gap-2 px-3 pt-4">
+      <nav class="flex flex-1 flex-col gap-0.5 px-2 pt-3">
         <RouterLink
             v-for="item in navItems"
             :key="item.to"
@@ -67,13 +70,13 @@ const aboutItems = computed(() => [
           <component :is="item.icon" class="h-6 w-6 shrink-0"/>
           <span class="flex flex-col">
             <span class="text-sm font-medium">{{ item.label }}</span>
-            <span class="text-[11px] text-subtle">{{ item.hint }}</span>
+            <span class="text-[11px] text-muted">{{ item.hint }}</span>
           </span>
         </RouterLink>
       </nav>
 
       <!-- Sidebar bottom: pinned row for secondary links -->
-      <div class="flex flex-col gap-2 border-t border-edge/10 px-3 pb-4 pt-3">
+      <div class="flex flex-col gap-0.5 border-t border-hairline-strong px-2 pb-3 pt-3">
         <RouterLink
             v-for="item in aboutItems"
             :key="item.to"
@@ -84,7 +87,7 @@ const aboutItems = computed(() => [
           <component :is="item.icon" class="h-6 w-6 shrink-0"/>
           <span class="flex flex-col">
             <span class="text-sm font-medium">{{ item.label }}</span>
-            <span class="text-[11px] text-subtle">{{ item.hint }}</span>
+            <span class="text-[11px] text-muted">{{ item.hint }}</span>
           </span>
         </RouterLink>
       </div>

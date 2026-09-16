@@ -14,24 +14,23 @@ type OrbitCtor = typeof import('three/examples/jsm/controls/OrbitControls.js').O
 const props = defineProps<{ path: string | null }>()
 
 /**
- * The scene is painted in WebGL, so it needs its own palette table instead of CSS variables.
- * The dark entry is what the preview shipped with; light darkens the grid and the fallback
- * material, both of which would otherwise fade into a white backdrop.
+ * The scene is painted in WebGL, so it needs its own palette table instead of CSS variables. The
+ * values are the Fluent tokens the surrounding panel uses: a flat recessed surface (no vignette —
+ * Fluent surfaces are flat), brandForeground1 for the grid and neutralForeground2 for the fallback
+ * material, which lightens on ink and darkens on paper so the model never fades into the backdrop.
  */
 const SCENE_PALETTE = {
     dark: {
-        backdrop: 'radial-gradient(circle at 50% 45%, #0f1724 0%, #080b12 100%)',
-        grid: 0x22d3ee,
-        gridOpacity: 0.08,
-        material: 0x9aa7b8,
+        backdrop: '#141414',
+        grid: 0x479ef5,
+        gridOpacity: 0.16,
+        material: 0xd6d6d6,
     },
     light: {
-        backdrop: 'radial-gradient(circle at 50% 45%, #ffffff 0%, #eef2f7 100%)',
-        // The grid and the fallback material sit on a white backdrop, so both take the deeper
-        // light-theme steps (--c-edge / --c-muted) instead of their bright dark-theme values
-        grid: 0x155e75,
-        gridOpacity: 0.22,
-        material: 0x475569,
+        backdrop: '#fafafa',
+        grid: 0x0f6cbd,
+        gridOpacity: 0.2,
+        material: 0x616161,
     },
 } as const
 
@@ -336,7 +335,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="space-y-2">
     <div class="flex items-center justify-between">
-      <p class="text-[11px] uppercase tracking-[0.18em] text-muted">
+      <p class="text-xs font-semibold text-muted">
         {{ $t('preview.title') }}
       </p>
     </div>
@@ -345,13 +344,13 @@ onBeforeUnmount(() => {
         ref="viewport"
         :class="loading || errorKind !== 'none' ? '' : 'cursor-grab active:cursor-grabbing'"
         :style="{background: scenePalette.backdrop}"
-        class="relative h-[220px] w-full overflow-hidden rounded-xl border border-hairline"
+        class="relative h-[220px] w-full overflow-hidden rounded-md border border-hairline-strong"
     >
       <div
           v-if="loading"
           class="absolute inset-0 flex flex-col items-center justify-center gap-2 animate-fade-in"
       >
-        <Loader2 class="h-5 w-5 animate-spin text-glow-cyan"/>
+        <Loader2 class="h-5 w-5 animate-spin text-accent"/>
         <span class="text-[11px] text-muted">{{ $t('preview.loading') }}</span>
       </div>
 

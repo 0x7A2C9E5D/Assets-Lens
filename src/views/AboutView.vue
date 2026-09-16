@@ -91,16 +91,16 @@ function openLink(url: string) {
   <!-- About is a plain, scrollable page: identity hero, intro, tech stack and credits -->
   <section class="flex min-h-0 w-full flex-col gap-4 overflow-y-auto px-8 pt-3 pb-8">
     <header>
-      <h1 class="text-2xl font-semibold tracking-wide text-fg">{{ $t('about.title') }}</h1>
+      <h1 class="font-display text-2xl font-semibold text-fg">{{ $t('about.title') }}</h1>
       <p class="mt-1 text-sm text-muted">{{ $t('about.subtitle') }}</p>
     </header>
 
     <!-- App header + project links: a single card so the hero identity and the external resources share one panel -->
-    <div class="glass-card p-6">
+    <div class="card p-6">
       <div class="flex flex-wrap items-center gap-3">
         <!-- The mark stands on its own: the glyph is the whole element, so the gap to the title is just
              the row gap — no slot or plate padding sits between them -->
-        <Aperture class="h-8 w-8 shrink-0 text-glow-cyan"/>
+        <Aperture class="h-8 w-8 shrink-0 text-accent"/>
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-lg font-semibold text-fg">{{ $t('app.title') }}</p>
@@ -110,7 +110,7 @@ function openLink(url: string) {
                  check add nothing, so the arrow is never shown for less than a newer release -->
             <span
                 :class="[
-                  'inline-flex items-center gap-1 rounded-md border border-ok/25 bg-ok/10 py-0.5 pl-1.5 font-mono text-[10px] font-medium leading-none text-ok',
+                  'inline-flex items-center gap-1 rounded-sm border border-success-line bg-success-bg py-0.5 pl-1.5 font-mono text-[10px] font-semibold leading-none text-success',
                   releaseState === 'outdated' ? 'pr-0.5' : 'pr-1.5',
                 ]"
             >
@@ -119,7 +119,7 @@ function openLink(url: string) {
                   v-if="releaseState === 'outdated'"
                   :aria-label="$t('about.updateAvailable', {version: remoteVersion})"
                   :title="$t('about.updateAvailable', {version: remoteVersion})"
-                  class="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] text-glow-gold transition-colors duration-200 hover:bg-glow-gold/20 hover:text-glow-gold"
+                  class="flex h-3.5 w-3.5 items-center justify-center rounded-sm text-warning transition-colors duration-150 ease-fluent hover:bg-warning/20"
                   type="button"
                   @click="openLink(NEXUS_MODS_URL)"
               >
@@ -141,7 +141,7 @@ function openLink(url: string) {
               :key="link.href"
               :aria-label="link.name"
               :title="link.name"
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-tint text-glow-cyan ring-1 ring-edge/15 transition-all duration-200 hover:bg-tint-strong hover:ring-edge/35"
+              class="flex h-8 w-8 items-center justify-center rounded-md bg-ink-800 text-accent transition-colors duration-150 ease-fluent hover:bg-tint"
               type="button"
               @click="openLink(link.href)"
           >
@@ -155,22 +155,22 @@ function openLink(url: string) {
 
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <!-- Introduction -->
-      <div class="glass-card flex flex-col gap-4 p-6">
+      <div class="card flex flex-col gap-4 p-6">
         <div class="flex items-center gap-2.5">
-          <BadgeCheck class="h-4 w-4 text-glow-cyan"/>
-          <p class="text-sm font-medium text-fg">{{ $t('about.introTitle') }}</p>
+          <BadgeCheck class="h-4 w-4 text-accent"/>
+          <p class="text-sm font-semibold text-fg">{{ $t('about.introTitle') }}</p>
         </div>
         <p class="text-sm leading-relaxed text-muted">{{ $t('about.intro') }}</p>
       </div>
 
       <!-- Tech stack -->
-      <div class="glass-card p-6">
-        <p class="text-xs uppercase tracking-[0.18em] text-muted">{{ $t('about.stackTitle') }}</p>
+      <div class="card p-6">
+        <p class="text-xs font-semibold text-muted">{{ $t('about.stackTitle') }}</p>
         <ul class="mt-4 flex flex-col gap-3">
           <li v-for="item in stack" :key="item.role" class="flex items-center gap-2">
             <!-- Bare glyphs, matching the hero mark. Every icon is the same size, so the row supplies the
                  spacing directly — no slot sits between a glyph and its label -->
-            <component :is="item.icon" class="h-6 w-6 shrink-0 text-glow-cyan"/>
+            <component :is="item.icon" class="h-6 w-6 shrink-0 text-accent"/>
             <div class="min-w-0">
               <p class="flex flex-wrap items-center gap-x-1.5 text-sm font-medium text-fg">
                 <template v-for="(part, index) in item.parts" :key="part.href">
@@ -181,13 +181,13 @@ function openLink(url: string) {
                   <button
                       :aria-label="part.href"
                       :title="part.href"
-                      class="group/link inline-flex items-center gap-1 text-left transition-colors duration-200 hover:text-glow-cyan"
+                      class="group/link inline-flex items-center gap-1 text-left transition-colors duration-200 hover:text-accent"
                       type="button"
                       @click="openLink(part.href)"
                   >
                     {{ part.label }}
                     <ArrowUpRight
-                        class="h-3 w-3 text-faint transition-colors duration-200 group-hover/link:text-glow-cyan"/>
+                        class="h-3 w-3 text-faint transition-colors duration-200 group-hover/link:text-accent"/>
                   </button>
                 </template>
               </p>
@@ -199,23 +199,23 @@ function openLink(url: string) {
     </div>
 
     <!-- Rights statement & privacy -->
-    <div class="glass-card p-6">
+    <div class="card p-6">
       <div class="flex items-center gap-2.5">
-        <ShieldCheck class="h-4 w-4 text-glow-cyan"/>
-        <p class="text-sm font-medium text-fg">{{ $t('about.rightsTitle') }}</p>
+        <ShieldCheck class="h-4 w-4 text-accent"/>
+        <p class="text-sm font-semibold text-fg">{{ $t('about.rightsTitle') }}</p>
       </div>
       <p class="mt-3 text-sm leading-relaxed text-muted">{{ $t('about.disclaimer') }}</p>
       <div class="mt-5 border-t border-hairline-strong pt-5">
         <div class="flex items-center gap-2.5">
-          <Lock class="h-4 w-4 text-glow-cyan"/>
-          <p class="text-sm font-medium text-fg">{{ $t('about.privacyTitle') }}</p>
+          <Lock class="h-4 w-4 text-accent"/>
+          <p class="text-sm font-semibold text-fg">{{ $t('about.privacyTitle') }}</p>
         </div>
         <p class="mt-3 text-sm leading-relaxed text-muted">{{ $t('about.privacy') }}</p>
       </div>
       <div class="mt-5 border-t border-hairline-strong pt-5">
         <div class="flex items-center gap-2.5">
-          <Scale class="h-4 w-4 text-glow-cyan"/>
-          <p class="text-sm font-medium text-fg">{{ $t('about.licenseTitle') }}</p>
+          <Scale class="h-4 w-4 text-accent"/>
+          <p class="text-sm font-semibold text-fg">{{ $t('about.licenseTitle') }}</p>
         </div>
         <p class="mt-3 text-sm leading-relaxed text-muted">{{ $t('about.license') }}</p>
       </div>

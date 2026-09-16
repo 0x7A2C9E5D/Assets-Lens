@@ -139,18 +139,20 @@ onMounted(() => {
   <section class="flex min-h-0 w-full flex-1 flex-col gap-4 px-8 pt-3 pb-4">
     <header class="flex shrink-0 flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold tracking-wide text-fg">
+        <h1 class="font-display text-2xl font-semibold text-fg">
           {{ $t('browse.title') }}
         </h1>
         <p class="mt-1 text-sm text-muted">{{ $t('browse.subtitle') }}</p>
       </div>
       <div class="relative w-full self-end lg:w-[380px]">
         <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"/>
+        <!-- Fluent input: a card-coloured field on the canvas, 32px tall, with the brand colour
+             standing in for the focus stroke -->
         <input
             v-model="searchTerm"
             :placeholder="$t('browse.searchPlaceholder')"
             autocomplete="off"
-            class="w-full rounded-xl border border-hairline-strong bg-ink-900/50 py-2 pl-9 pr-9 text-sm text-fg placeholder:text-faint transition-colors focus:border-edge/30 focus:outline-none"
+            class="h-8 w-full rounded-md border border-hairline-strong bg-ink-700 pl-9 pr-9 text-sm text-fg placeholder:text-faint transition-colors duration-150 ease-fluent focus:border-accent focus:outline-none"
             spellcheck="false"
             type="text"
         />
@@ -158,7 +160,7 @@ onMounted(() => {
             v-if="searchActive"
             :aria-label="$t('browse.searchClearAria')"
             :title="$t('browse.searchClearAria')"
-            class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted transition-colors hover:text-fg"
+            class="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1 text-muted transition-colors duration-150 ease-fluent hover:bg-tint hover:text-fg"
             type="button"
             @click="clearSearch"
         >
@@ -187,7 +189,7 @@ onMounted(() => {
     <template v-else>
       <div
           v-if="errorMsg"
-          class="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+          class="flex items-start gap-3 rounded-md border border-danger-line bg-danger-bg px-4 py-3 text-sm text-danger"
       >
         <Search class="mt-0.5 h-4 w-4 shrink-0"/>
         <span class="break-all">{{ errorMsg }}</span>

@@ -39,12 +39,12 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onPointerDown))
         :aria-label="t('language.label')"
         :title="t('language.label')"
         aria-haspopup="listbox"
-        class="btn-ghost !px-3 !py-1.5 text-[11px]"
+        class="btn-ghost !h-7 !px-2.5 !text-xs"
         type="button"
         @click="toggle"
     >
       <Languages class="h-3.5 w-3.5 shrink-0"/>
-      <span class="font-mono tracking-wide">{{ currentLabel }}</span>
+      <span class="font-mono">{{ currentLabel }}</span>
       <ChevronDown
           :class="open ? 'rotate-180' : ''"
           class="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
@@ -59,16 +59,18 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onPointerDown))
         leave-from-class="opacity-100"
         leave-to-class="opacity-0"
     >
+      <!-- The one surface that keeps its blur: a Fluent menu is an acrylic flyout floating above the
+           page, unlike the cards, which are solid -->
       <ul
           v-if="open"
-          class="absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-edge/20 bg-ink-800/95 p-1 shadow-[var(--shadow-pop)] backdrop-blur-xl"
+          class="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-md border border-hairline-strong bg-ink-700/95 p-1 shadow-[var(--shadow-pop)] backdrop-blur-xl"
           role="listbox"
       >
         <li v-for="item in SUPPORTED_LOCALES" :key="item.code">
           <button
               :aria-selected="item.code === locale"
-              :class="item.code === locale ? 'text-glow-cyan' : 'text-fg'"
-              class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-tint-strong"
+              :class="item.code === locale ? 'text-accent' : 'text-fg'"
+              class="flex w-full items-center justify-between gap-2 rounded-sm px-3 py-2 text-left text-xs transition-colors duration-150 ease-fluent hover:bg-tint"
               role="option"
               type="button"
               @click="select(item.code)"

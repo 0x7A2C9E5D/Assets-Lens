@@ -96,7 +96,7 @@ function toggle(section: SectionKey) {
 </script>
 
 <template>
-  <aside class="glass-card flex min-h-0 flex-1 flex-col p-5">
+  <aside class="card flex min-h-0 flex-1 flex-col p-5">
     <div v-if="loading" class="flex flex-1 items-center justify-center py-16">
       <span class="text-sm text-muted">{{ $t('detail.loading') }}</span>
     </div>
@@ -108,11 +108,11 @@ function toggle(section: SectionKey) {
 
     <div v-else class="flex min-h-0 flex-1 flex-col gap-5 animate-fade-in">
       <div class="flex items-center justify-between gap-3">
-        <p class="text-xs uppercase tracking-[0.18em] text-muted">
+        <p class="text-xs font-semibold text-muted">
           {{ $t('detail.visualAsset') }}
         </p>
         <button
-            class="btn-ghost shrink-0 !px-3 !py-1.5 !text-xs"
+            class="btn-ghost shrink-0 !h-7 !px-3 !text-xs"
             type="button"
             @click="exportOpen = true"
         >
@@ -126,7 +126,7 @@ function toggle(section: SectionKey) {
 
         <div>
           <button
-              class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg"
+              class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg"
               type="button"
               :aria-expanded="!collapsed.mesh"
               @click="toggle('mesh')"
@@ -140,8 +140,8 @@ function toggle(section: SectionKey) {
           </button>
           <div
               v-show="!collapsed.mesh"
-              class="mt-2 rounded-xl border border-hairline bg-ink-900/50 p-3 transition-colors hover:border-edge/25">
-            <p class="break-all font-mono text-[12px] text-glow-cyan">{{ asset.path }}</p>
+              class="card-well mt-2">
+            <p class="break-all font-mono text-[12px] text-accent">{{ asset.path }}</p>
             <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
               <span class="break-all font-mono">{{ asset.name }}</span>
               <span
@@ -158,7 +158,7 @@ function toggle(section: SectionKey) {
 
         <div>
           <button
-              class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg disabled:cursor-default disabled:hover:text-muted"
+              class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
               type="button"
               :aria-expanded="!collapsed.materials"
               :disabled="!asset.materials.length"
@@ -177,9 +177,9 @@ function toggle(section: SectionKey) {
             <div
                 v-for="material in materialsWithBindings"
                 :key="material.id"
-                class="rounded-xl border border-hairline bg-ink-900/50 p-3 transition-colors hover:border-edge/25"
+                class="card-well"
             >
-              <p v-if="material.sourceFile" class="break-all font-mono text-[12px] text-glow-cyan">
+              <p v-if="material.sourceFile" class="break-all font-mono text-[12px] text-accent">
                 {{ material.sourceFile }}
               </p>
               <!-- The GUID is the material's identity, not its name: names repeat across templates,
@@ -214,13 +214,13 @@ function toggle(section: SectionKey) {
                 <li
                     v-for="binding in material.bindings"
                     :key="binding.kind + binding.id"
-                    class="flex max-w-full items-center gap-1.5 rounded-md bg-overlay/[0.04] px-1.5 py-1"
+                    class="flex max-w-full items-center gap-1.5 rounded-sm bg-tint px-1.5 py-1"
                 >
                   <ImageIcon
                       v-if="binding.kind === 'texture'"
-                      class="h-3 w-3 shrink-0 text-glow-cyan/70"
+                      class="h-3 w-3 shrink-0 text-accent/70"
                   />
-                  <Grid2x2 v-else class="h-3 w-3 shrink-0 text-glow-cyan/70"/>
+                  <Grid2x2 v-else class="h-3 w-3 shrink-0 text-accent/70"/>
                   <span class="break-all font-mono text-[11px] text-muted">{{ binding.name }}</span>
                   <span v-if="binding.parameterName" class="shrink-0 text-[10px] text-faint">
                     {{ binding.parameterName }}
@@ -237,7 +237,7 @@ function toggle(section: SectionKey) {
         <div class="space-y-5">
           <div>
             <button
-                class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg disabled:cursor-default disabled:hover:text-muted"
+                class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
                 type="button"
                 :aria-expanded="!collapsed.textures"
                 :disabled="!asset.textures.length"
@@ -257,9 +257,9 @@ function toggle(section: SectionKey) {
               <div
                   v-for="tex in asset.textures"
                   :key="tex.id"
-                  class="rounded-xl border border-hairline bg-ink-900/50 p-3 transition-colors hover:border-edge/25"
+                  class="card-well"
               >
-                <p class="break-all font-mono text-[12px] text-glow-cyan">{{ tex.path }}</p>
+                <p class="break-all font-mono text-[12px] text-accent">{{ tex.path }}</p>
                 <!-- The parameter stays out of the card: it describes a binding, not the resource,
                      and the material section — where a material is read as a whole — already shows
                      it. The card reports the name, the size and the archive, nothing else. -->
@@ -284,7 +284,7 @@ function toggle(section: SectionKey) {
 
           <div>
             <button
-                class="flex w-full items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg disabled:cursor-default disabled:hover:text-muted"
+                class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
                 type="button"
                 :aria-expanded="!collapsed.virtualTextures"
                 :disabled="!asset.virtualTextures.length"
@@ -304,9 +304,9 @@ function toggle(section: SectionKey) {
               <div
                   v-for="vt in asset.virtualTextures"
                   :key="vt.id"
-                  class="rounded-xl border border-hairline bg-ink-900/50 p-3 transition-colors hover:border-edge/25"
+                  class="card-well"
               >
-                <p class="break-all font-mono text-[12px] text-glow-cyan">{{ vt.path || vt.hash }}</p>
+                <p class="break-all font-mono text-[12px] text-accent">{{ vt.path || vt.hash }}</p>
                 <!-- Same as the texture card: the parameter belongs to the material's binding, so
                      it is read in the material section (its chips) and not repeated here. -->
                 <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">

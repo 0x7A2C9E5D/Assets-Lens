@@ -37,10 +37,11 @@ const errorMsg = ref('')
 const elapsed = ref(0)
 const progress = ref<BuildProgress>({percent: 0})
 
+/** The status chip is a Fluent Badge: an outline in the state's own colour over a neutral fill */
 const status = computed(() => {
-  if (building.value) return {text: t('database.status.building'), class: 'border-glow-gold/40 text-glow-gold'}
-  if (stats.value) return {text: t('database.status.ready'), class: 'border-ok/40 text-ok'}
-  if (gamePath.value) return {text: t('database.status.pending'), class: 'border-glow-cyan/40 text-glow-cyan'}
+  if (building.value) return {text: t('database.status.building'), class: 'border-warning-line text-warning'}
+  if (stats.value) return {text: t('database.status.ready'), class: 'border-success-line text-success'}
+  if (gamePath.value) return {text: t('database.status.pending'), class: 'border-accent text-accent'}
   return {text: t('database.status.unset'), class: 'border-hairline-strong text-muted'}
 })
 
@@ -185,14 +186,14 @@ onMounted(() => {
   <section class="flex min-h-0 w-full flex-1 flex-col gap-4 px-8 pt-3 pb-8">
     <header class="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold tracking-wide text-fg">
+        <h1 class="font-display text-2xl font-semibold text-fg">
           {{ $t('database.title') }}
         </h1>
         <p class="mt-1 text-sm text-muted">{{ $t('database.subtitle') }}</p>
       </div>
       <span
           :class="status.class"
-          class="flex items-center gap-2 self-end rounded-full border bg-tint px-3 py-1.5 text-xs"
+          class="flex items-center gap-2 self-end rounded-full border bg-tint px-3 py-1 text-xs font-semibold"
       >
         <Loader2 v-if="building" class="h-3.5 w-3.5 animate-spin"/>
         {{ status.text }}
@@ -201,16 +202,16 @@ onMounted(() => {
 
     <div
         v-if="errorMsg"
-        class="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+        class="flex items-start gap-3 rounded-md border border-danger-line bg-danger-bg px-4 py-3 text-sm text-danger"
     >
       <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0"/>
       <span class="break-all">{{ errorMsg }}</span>
     </div>
 
-    <div class="glass-card p-6">
+    <div class="card p-6">
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
-          <p class="text-xs uppercase tracking-[0.18em] text-muted">
+          <p class="text-xs font-semibold text-muted">
             {{ $t('database.dir.label') }}
           </p>
           <p class="mt-2 break-all font-mono text-sm text-fg">
@@ -231,10 +232,10 @@ onMounted(() => {
       <p class="mt-3 text-xs leading-relaxed text-subtle">{{ $t('database.dir.tip') }}</p>
     </div>
 
-    <div class="glass-card p-6">
+    <div class="card p-6">
       <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p class="text-xs uppercase tracking-[0.18em] text-muted">
+          <p class="text-xs font-semibold text-muted">
             {{ stats ? $t('database.build.rebuildTitle') : $t('database.build.title') }}
           </p>
           <p class="mt-2 text-sm text-muted">
@@ -270,28 +271,28 @@ onMounted(() => {
           :hint="$t('stats.visualHint')"
           :icon="Boxes"
           :value="stats ? stats.visualCount : '—'"
-          accent="cyan"
+          accent="brand"
           label="Visuals"
       />
       <StatCard
           :hint="$t('stats.materialHint')"
           :icon="Palette"
           :value="stats ? stats.materialCount : '—'"
-          accent="blue"
+          accent="success"
           label="Materials"
       />
       <StatCard
           :hint="$t('stats.textureHint')"
           :icon="ImageIcon"
           :value="stats ? stats.textureCount : '—'"
-          accent="gold"
+          accent="warning"
           label="Textures"
       />
       <StatCard
           :hint="$t('stats.virtualHint')"
           :icon="Grid2x2"
           :value="stats ? stats.virtualTextureCount : '—'"
-          accent="green"
+          accent="neutral"
           label="Virtual Textures"
       />
     </div>

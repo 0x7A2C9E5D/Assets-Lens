@@ -34,7 +34,7 @@ function jump(delta: number) {
       <button
           :disabled="offset === 0"
           :title="$t('pagination.first')"
-          class="btn-ghost !h-7 !w-7 !p-0"
+          class="btn-ghost !h-6 !w-6 !px-0"
           type="button"
           @click="go(0)"
       >
@@ -43,21 +43,21 @@ function jump(delta: number) {
       <button
           :disabled="offset === 0"
           :title="$t('pagination.prev')"
-          class="btn-ghost !h-7 !w-7 !p-0"
+          class="btn-ghost !h-6 !w-6 !px-0"
           type="button"
           @click="jump(-1)"
       >
         <ChevronLeft class="h-3.5 w-3.5"/>
       </button>
       <span
-          class="flex h-7 items-center justify-center px-3 text-sm font-medium tabular-nums text-fg"
+          class="flex h-6 items-center justify-center px-3 text-sm font-semibold tabular-nums text-fg"
       >
         {{ page }} / {{ pageCount }}
       </span>
       <button
           :disabled="offset + limit >= total"
           :title="$t('pagination.next')"
-          class="btn-ghost !h-7 !w-7 !p-0"
+          class="btn-ghost !h-6 !w-6 !px-0"
           type="button"
           @click="jump(1)"
       >
@@ -66,7 +66,7 @@ function jump(delta: number) {
       <button
           :disabled="offset + limit >= total"
           :title="$t('pagination.last')"
-          class="btn-ghost !h-7 !w-7 !p-0"
+          class="btn-ghost !h-6 !w-6 !px-0"
           type="button"
           @click="go((pageCount - 1) * limit)"
       >
