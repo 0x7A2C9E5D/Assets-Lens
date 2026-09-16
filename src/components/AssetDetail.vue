@@ -189,7 +189,7 @@ function toggle(section: SectionKey) {
                    GUID, so the two would be the same string twice. -->
               <p class="mt-1.5 flex flex-wrap items-baseline gap-x-2 font-mono text-[11px] text-muted">
                 <span class="break-all">{{ material.name || material.id }}</span>
-                <span v-if="material.name" class="break-all text-[10px] text-faint">
+                <span v-if="material.name" class="break-all text-[10px] text-subtle">
                   {{ material.id }}
                 </span>
               </p>
@@ -207,9 +207,11 @@ function toggle(section: SectionKey) {
                   <span class="truncate font-mono">{{ material.pak }}</span>
                 </span>
               </p>
+              <!-- The chip block keeps the card's row step (6px) on both sides of the divider, so the
+                   gap above it reads like every other gap in the card instead of a section break -->
               <ul
                   v-if="material.bindings.length"
-                  class="mt-2.5 flex flex-wrap gap-1.5 border-t border-hairline pt-2"
+                  class="mt-1.5 flex flex-wrap gap-1.5 border-t border-hairline pt-1.5"
               >
                 <li
                     v-for="binding in material.bindings"
@@ -224,7 +226,7 @@ function toggle(section: SectionKey) {
                   />
                   <Grid2x2 v-else class="h-3 w-3 shrink-0 text-muted"/>
                   <span class="break-all font-mono text-[11px] text-muted">{{ binding.name }}</span>
-                  <span v-if="binding.parameterName" class="shrink-0 text-[10px] text-faint">
+                  <span v-if="binding.parameterName" class="shrink-0 text-[10px] text-subtle">
                     {{ binding.parameterName }}
                   </span>
                 </li>
@@ -311,7 +313,7 @@ function toggle(section: SectionKey) {
                 <p class="break-all font-mono text-[12px] text-accent">{{ vt.path || vt.hash }}</p>
                 <!-- Same as the texture card: the parameter belongs to the material's binding, so
                      it is read in the material section (its chips) and not repeated here. -->
-                <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+                <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span class="break-all font-mono">{{ vt.name }}</span>
                   <span v-if="vt.width">{{ vt.width }} × {{ vt.height }}</span>
                   <span
