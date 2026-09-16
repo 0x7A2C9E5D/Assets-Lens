@@ -134,14 +134,17 @@ function openLink(url: string) {
           </div>
           <p class="mt-0.5 text-sm text-muted">{{ $t('app.subtitle') }}</p>
         </div>
-        <!-- External links: opened in the system browser through the Tauri opener plugin -->
+        <!-- External links: opened in the system browser through the Tauri opener plugin. The brand
+             mark is the whole button — a Fluent subtle button, so nothing is filled at rest and the
+             hover wash is what says it is clickable; a plate behind it would be the only one on the
+             page and would fight the accent the mark is drawn in -->
         <div class="flex shrink-0 items-center gap-2">
           <button
               v-for="link in links"
               :key="link.href"
               :aria-label="link.name"
               :title="link.name"
-              class="flex h-8 w-8 items-center justify-center rounded-md bg-ink-800 text-accent transition-colors duration-150 ease-fluent hover:bg-tint"
+              class="flex h-8 w-8 items-center justify-center rounded-md text-accent transition-colors duration-150 ease-fluent hover:bg-tint active:bg-tint-strong"
               type="button"
               @click="openLink(link.href)"
           >
