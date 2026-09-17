@@ -357,6 +357,3 @@ fn stage_gts_file(
         Err(_) => false,
     }
 }
-
-
-
