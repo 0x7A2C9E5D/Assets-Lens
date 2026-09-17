@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -378,11 +377,8 @@ pub fn list_visuals(
 
 /// Query the detail of a single visual asset by its GUID (names are not unique).
 ///
-/// The archives holding the mesh and each texture are resolved here rather than at build time:
-/// which PAK contains a file can only be answered by consulting the archives, and that walk is
-/// heavy enough to belong off the main thread (see `Archives::locate_many_in`). Virtual textures take
-/// the other route: maclarian reports page files as `GtpMatch` values that carry their own path
-/// and archive, so nothing has to be scanned for them.
+/// Reading a page file size is the only archive work here, and it is off the main thread: the GTS
+/// that carries it is one file read, not a scan.
 #[tauri::command]
 pub async fn get_visual(
     app: AppHandle,
@@ -425,30 +421,12 @@ pub async fn get_visual(
             (detail, matches, st.pool().ok(), page_file_sizes)
         };
 
-        // Every archive name is resolved in the one archive its kind is read from — the mesh in
-        // `Models.pak`, each DDS in `Textures.pak`, each material template in `Materials.pak`. Each
-        // call walks one cached file table once and decompresses nothing, so the three lookups cost
-        // about what a single walk did, and a file the expected archive does not hold comes back
-        // unnamed instead of being attributed to whichever archive happened to contain it. Virtual
-        // textures need none of this: their match names its own page file.
-        let (mesh_archives, texture_archives, template_archives) = match pool {
-            Some(pool) => match lock_pool(&pool) {
+        // Page file sizes need the archives: a GTS is one file read from the virtual texture archive
+        // (no scan), and each of them serves every page file of its tile set, so `page_file_size`
+        // sees to reading one only once
+        if let Some(pool) = pool {
+            match lock_pool(&pool) {
                 Ok(mut archives) => {
-                    let textures: Vec<String> =
-                        detail.textures.iter().map(|tex| tex.path.clone()).collect();
-                    let templates: Vec<String> = detail
-                        .materials
-                        .iter()
-                        .map(|material| material.source_file.clone())
-                        .collect();
-                    let mesh_archives =
-                        archives.locate_many_in(Pak::Models, &[detail.path.clone()]);
-                    let texture_archives = archives.locate_many_in(Pak::Textures, &textures);
-                    let template_archives = archives.locate_many_in(Pak::Materials, &templates);
-
-                    // Page file sizes come out of the same lock: a GTS is one file read from the
-                    // virtual texture archive (no scan), and each of them serves every page file of
-                    // its tile set — `page_file_size` sees to reading one only once
                     for vt in &mut detail.virtual_textures {
                         let size = match_for_hash(&matches, &vt.hash).and_then(|matched| {
                             virtual_textures::page_file_size(
@@ -460,26 +438,10 @@ pub async fn get_visual(
                         });
                         vt.set_size(size);
                     }
-
-                    (mesh_archives, texture_archives, template_archives)
                 }
-                Err(_) => (HashMap::new(), HashMap::new(), HashMap::new()),
-            },
-            None => (HashMap::new(), HashMap::new(), HashMap::new()),
-        };
-
-        // Archive names are decoration: an unresolved file just renders without one. A material is
-        // reported by the archive of its template — the only path of a material that can be looked up
-        // at all, and one an unknown material does not have
-        detail.mesh_pak = mesh_archives.get(&detail.path).cloned().unwrap_or_default();
-        for material in &mut detail.materials {
-            material.pak = template_archives
-                .get(&material.source_file)
-                .cloned()
-                .unwrap_or_default();
-        }
-        for tex in &mut detail.textures {
-            tex.source = texture_archives.get(&tex.path).cloned().unwrap_or_default();
+                // A size is decoration: an unavailable pool leaves the rows without one
+                Err(err) => eprintln!("[maclarian] page file sizes unavailable: {err}"),
+            }
         }
 
         // Back into the state, for the next detail view of this game directory

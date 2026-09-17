@@ -19,10 +19,6 @@ pub struct TextureSummary {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Archive holding this DDS (e.g. `Textures.pak`); left empty here and filled in by `get_visual`,
-    /// which is the only place with access to the PAK pool — maclarian never fills
-    /// `TextureRef::source_pak`, so the export manifest still carries it empty
-    pub source: String,
     pub width: u32,
     pub height: u32,
     pub parameter_name: Option<String>,
@@ -40,7 +36,6 @@ impl From<&TextureRef> for TextureSummary {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.dds_path.clone(),
-            source: String::new(),
             width: value.width,
             height: value.height,
             parameter_name: value.parameter_name.clone(),
@@ -60,11 +55,6 @@ pub struct MaterialSummary {
     pub name: String,
     /// Base material template (`.lsf`) the material is derived from
     pub source_file: String,
-    /// Archive holding that template (e.g. `Materials.pak`); left empty here and filled in by
-    /// `get_visual`, which is the only place with access to the PAK pool. It names the archive of the
-    /// template rather than of the material itself: every material of a merged document lives in the
-    /// same archive, which no lookup can attribute to one material
-    pub pak: String,
 }
 
 impl MaterialSummary {
@@ -77,7 +67,6 @@ impl MaterialSummary {
             source_file: known
                 .map(|material| material.source_file.clone())
                 .unwrap_or_default(),
-            pak: String::new(),
         }
     }
 }
@@ -131,10 +120,6 @@ pub struct VirtualTextureSummary {
     pub hash: String,
     /// Page file (`.gtp`) inside its archive; empty when no lookup was run or nothing matched
     pub path: String,
-    /// Archive holding that page file, taken from the match itself (`GtpMatch::pak_path`) rather
-    /// than rebuilt from a configured archive name — unresolved hashes stay empty instead of
-    /// claiming a plausible-but-unverified archive
-    pub source: String,
     /// Pixel size of this page file, read out of its tile set's GTS on demand by `get_visual` — the
     /// same box the extractor writes as its DDS. `None` when the hash resolved to no page file or
     /// that GTS could not be parsed (the row then renders without a size); the export manifest
@@ -163,11 +148,6 @@ impl VirtualTextureSummary {
             name: value.name.clone(),
             hash: value.gtex_hash.clone(),
             path: matched.map(|m| m.gtp_path.clone()).unwrap_or_default(),
-            source: matched
-                .and_then(|m| m.pak_path.file_name())
-                .and_then(|name| name.to_str())
-                .unwrap_or_default()
-                .to_string(),
             // Settled later: reading the size needs the archives, which this constructor is not given
             width: None,
             height: None,
@@ -204,9 +184,6 @@ pub struct VisualAssetDetail {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Archive holding the GR2 mesh (e.g. `Models.pak`); left empty here and filled in by
-    /// `get_visual`, which is the only place with access to the PAK pool
-    pub mesh_pak: String,
     pub materials: Vec<MaterialSummary>,
     pub textures: Vec<TextureSummary>,
     pub virtual_textures: Vec<VirtualTextureSummary>,
@@ -226,7 +203,6 @@ impl VisualAssetDetail {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.gr2_path.clone(),
-            mesh_pak: String::new(),
             materials: value
                 .material_ids
                 .iter()

@@ -18,8 +18,6 @@ export interface TextureRef {
     id: string
     name: string
     path: string
-    /** Archive holding this DDS (e.g. `Textures.pak`); empty when it cannot be resolved */
-    source: string
     width: number
     height: number
     parameterName: string | null
@@ -35,8 +33,6 @@ export interface MaterialRef {
     name: string
     /** Base material template (`.lsf`) the material is derived from */
     sourceFile: string
-    /** Archive holding that template (e.g. `Materials.pak`); empty when it cannot be resolved */
-    pak: string
 }
 
 export interface VirtualTextureRef {
@@ -45,8 +41,6 @@ export interface VirtualTextureRef {
     hash: string
     /** Page file (`.gtp`) inside its archive; empty when the hash resolved to no page file */
     path: string
-    /** Archive holding that page file (e.g. `VirtualTextures.pak`), taken from the resolved match */
-    source: string
     /** Pixel size of this page file, the same box the extractor writes as its DDS; null while its
      *  GTS could not be read */
     width: number | null
@@ -66,8 +60,6 @@ export interface VisualAsset {
     id: string
     name: string
     path: string
-    /** Archive holding the GR2 mesh (e.g. `Models.pak`); empty when it cannot be resolved */
-    meshPak: string
     materials: MaterialRef[]
     textures: TextureRef[]
     virtualTextures: VirtualTextureRef[]

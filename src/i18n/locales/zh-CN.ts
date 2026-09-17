@@ -132,7 +132,6 @@ const zhCN = {
         placeholder: '在左侧选择条目查看详情',
         visualAsset: '视觉资源',
         mesh: '网格文件',
-        pakLabel: 'PAK 归档',
         materialIds: '材质 · {count}',
         materialLabel: '材质',
         none: '无',

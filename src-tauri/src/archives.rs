@@ -5,7 +5,7 @@
 //! of `Textures.pak`, a material template out of `Materials.pak` and a virtual texture page file out
 //! of `VirtualTextures.pak` — so the data directory is never walked looking for a file, and no read
 //! falls back to another archive. Nothing here knows about assets or export formats: callers name
-//! the archive they expect (`read_from` / `locate_many_in` / `list_in`).
+//! the archive they expect (`read_from` / `list_in`).
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -129,42 +129,6 @@ impl Archives {
                     .collect()
             })
             .unwrap_or_default())
-    }
-
-    /// Resolve which of `targets` the archive `pak` holds, as `target -> archive file name`.
-    ///
-    /// The whole batch is answered by a single pass over that one archive's file table: a visual
-    /// easily references a dozen textures, and rescanning a table with hundreds of thousands of
-    /// entries per texture would be far too slow. Targets the archive does not hold come back
-    /// absent, which the caller renders as "no archive" instead of a plausible-but-wrong name.
-    /// Nothing is decompressed.
-    pub fn locate_many_in(&mut self, pak: Pak, targets: &[String]) -> HashMap<String, String> {
-        // Normalized path -> target exactly as the caller spelled it, so the result can be keyed by
-        // the original string
-        let mut pending: HashMap<String, String> = targets
-            .iter()
-            .filter(|target| !target.is_empty())
-            .map(|target| (normalize_path(target), target.clone()))
-            .collect();
-        let mut located = HashMap::new();
-
-        if pending.is_empty() || self.ensure(pak).is_err() {
-            return located;
-        }
-
-        if let Some(entries) = self.tables.get(&pak) {
-            for entry in entries {
-                let path = normalize_path(&entry.path.to_string_lossy());
-                if let Some(target) = pending.remove(&path) {
-                    located.insert(target, pak.file_name().to_string());
-                }
-                if pending.is_empty() {
-                    break;
-                }
-            }
-        }
-
-        located
     }
 }
 

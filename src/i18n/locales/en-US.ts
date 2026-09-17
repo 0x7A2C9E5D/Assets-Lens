@@ -131,7 +131,6 @@ const enUS = {
         placeholder: 'Select an entry on the left to view it',
         visualAsset: 'Visual Asset',
         mesh: 'Mesh file',
-        pakLabel: 'PAK archive',
         materialIds: 'Materials · {count}',
         materialLabel: 'Materials',
         none: 'None',

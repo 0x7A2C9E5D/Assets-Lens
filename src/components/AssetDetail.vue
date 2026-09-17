@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import {computed, defineAsyncComponent, ref} from 'vue'
-import {ChevronDown, Download, FileArchive, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
+import {ChevronDown, Download, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
 import type {VisualAsset} from '../api/tauri'
 import ExportDialog from './ExportDialog.vue'
 
@@ -142,17 +142,7 @@ function toggle(section: SectionKey) {
               v-show="!collapsed.mesh"
               class="card-well mt-2">
             <p class="break-all font-mono text-[12px] text-accent">{{ asset.path }}</p>
-            <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
-              <span class="break-all font-mono">{{ asset.name }}</span>
-              <span
-                  v-if="asset.meshPak"
-                  :title="$t('detail.pakLabel')"
-                  class="flex min-w-0 items-center gap-1.5"
-              >
-                <FileArchive class="h-3 w-3 shrink-0"/>
-                <span class="truncate font-mono">{{ asset.meshPak }}</span>
-              </span>
-            </div>
+            <p class="mt-1.5 break-all font-mono text-[11px] text-muted">{{ asset.name }}</p>
           </div>
         </div>
 
@@ -193,20 +183,6 @@ function toggle(section: SectionKey) {
                   {{ material.id }}
                 </span>
               </p>
-              <!-- The archive belongs to the template path above, so it sits under the identity line
-                   rather than after the bindings — the chips below are what the material binds -->
-              <p
-                  v-if="material.pak"
-                  class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted"
-              >
-                <span
-                    :title="$t('detail.pakLabel')"
-                    class="flex min-w-0 items-center gap-1.5"
-                >
-                  <FileArchive class="h-3 w-3 shrink-0"/>
-                  <span class="truncate font-mono">{{ material.pak }}</span>
-                </span>
-              </p>
               <!-- The chip block keeps the card's row step (6px) on both sides of the divider, so the
                    gap above it reads like every other gap in the card instead of a section break -->
               <ul
@@ -218,8 +194,9 @@ function toggle(section: SectionKey) {
                     :key="binding.kind + binding.id"
                     class="flex max-w-full items-center gap-1.5 rounded-sm bg-tint px-1.5 py-1"
                 >
-                  <!-- Same grey as the archive glyph in the pak row above: both rows are chrome
-                       around a name, so they share one weight instead of grading against each other -->
+                  <!-- One grey for both chip icons: the texture and the virtual texture rows are
+                       chrome around a name, so they share one weight instead of grading against
+                       each other -->
                   <ImageIcon
                       v-if="binding.kind === 'texture'"
                       class="h-3 w-3 shrink-0 text-muted"
@@ -266,18 +243,10 @@ function toggle(section: SectionKey) {
                 <p class="break-all font-mono text-[12px] text-accent">{{ tex.path }}</p>
                 <!-- The parameter stays out of the card: it describes a binding, not the resource,
                      and the material section — where a material is read as a whole — already shows
-                     it. The card reports the name, the size and the archive, nothing else. -->
+                     it. The card reports the name and the size, nothing else. -->
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span v-if="tex.name" class="break-all font-mono">{{ tex.name }}</span>
                   <span>{{ tex.width }} × {{ tex.height }}</span>
-                  <span
-                      v-if="tex.source"
-                      :title="$t('detail.pakLabel')"
-                      class="flex min-w-0 items-center gap-1.5"
-                  >
-                    <FileArchive class="h-3 w-3 shrink-0"/>
-                    <span class="truncate font-mono">{{ tex.source }}</span>
-                  </span>
                 </div>
               </div>
               <p v-if="!asset.textures.length" class="text-xs text-subtle">
@@ -316,14 +285,6 @@ function toggle(section: SectionKey) {
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span class="break-all font-mono">{{ vt.name }}</span>
                   <span v-if="vt.width">{{ vt.width }} × {{ vt.height }}</span>
-                  <span
-                      v-if="vt.source"
-                      :title="$t('detail.pakLabel')"
-                      class="flex min-w-0 items-center gap-1.5"
-                  >
-                    <FileArchive class="h-3 w-3 shrink-0"/>
-                    <span class="truncate font-mono">{{ vt.source }}</span>
-                  </span>
                 </div>
               </div>
               <p v-if="!asset.virtualTextures.length" class="text-xs text-subtle">

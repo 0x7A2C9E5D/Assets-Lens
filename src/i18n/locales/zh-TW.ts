@@ -132,7 +132,6 @@ const zhTW = {
         placeholder: '在左側選擇項目以查看詳細資料',
         visualAsset: '視覺資源',
         mesh: '網格檔案',
-        pakLabel: 'PAK 封存檔',
         materialIds: '材質 · {count}',
         materialLabel: '材質',
         none: '無',
