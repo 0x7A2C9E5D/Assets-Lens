@@ -23,18 +23,18 @@ const props = defineProps<{ path: string | null }>()
  * model never fades into the backdrop.
  */
 const SCENE_PALETTE = {
-    dark: {
-        backdrop: '#1f1f1f',
-        grid: 0x525252,
-        gridOpacity: 0.9,
-        material: 0xd6d6d6,
-    },
-    light: {
-        backdrop: '#fafafa',
-        grid: 0xd1d1d1,
-        gridOpacity: 0.9,
-        material: 0x616161,
-    },
+  dark: {
+    backdrop: '#1f1f1f',
+    grid: 0x525252,
+    gridOpacity: 0.9,
+    material: 0xd6d6d6,
+  },
+  light: {
+    backdrop: '#fafafa',
+    grid: 0xd1d1d1,
+    gridOpacity: 0.9,
+    material: 0x616161,
+  },
 } as const
 
 const scenePalette = computed(() => SCENE_PALETTE[theme.value])

@@ -14,7 +14,7 @@
 
 import {PhysicalPosition, PhysicalSize} from '@tauri-apps/api/dpi'
 import {availableMonitors, getCurrentWindow, type Monitor} from '@tauri-apps/api/window'
-import {readWindowGeometry, writeWindowGeometry, type WindowGeometry} from './settings'
+import {readWindowGeometry, type WindowGeometry, writeWindowGeometry} from './settings'
 
 /** A rectangle without the `maximized` flag: the half of the record the move/resize events carry */
 type Rect = Omit<WindowGeometry, 'maximized'>
@@ -37,7 +37,7 @@ async function boot(): Promise<void> {
     try {
         const remembered = readWindowGeometry()
         if (remembered) await place(remembered)
-        // Nothing remembered yet (first launch): the rectangle the window was created with is the one
+            // Nothing remembered yet (first launch): the rectangle the window was created with is the one
         // to come back to
         else await seed()
     } catch (err) {

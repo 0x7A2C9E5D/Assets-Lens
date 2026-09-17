@@ -45,8 +45,8 @@ const accentClass: Record<Accent, string> = {
            thickens the 2-unit default stroke on screen — so the stroke is dialled down to keep the
            drawn weight the same as an icon at its native size -->
       <component
-          :class="accentClass[accent ?? 'brand']"
           :is="icon"
+          :class="accentClass[accent ?? 'brand']"
           class="h-10 w-10 shrink-0 [stroke-width:1.5]"
       />
     </div>

@@ -3,8 +3,8 @@
  * writes it, the 3D preview reads it, and nothing else touches localStorage or the DOM for colour.
  */
 
-import {ref} from 'vue'
 import type {Ref} from 'vue'
+import {ref} from 'vue'
 import {readThemeSetting, writeThemeSetting} from './settings'
 
 /** The two palettes declared in index.css */

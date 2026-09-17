@@ -130,7 +130,8 @@ tauri-app/
 - The pool order is the directory listing with `PAK_PREFERENCE` (`Models.pak` / `Textures.pak`) hoisted to the front,
   and the first archive holding a path wins. Across a full install that rule is unambiguous for everything the app
   labels: 924 of 567,681 entries (0.163%) are listed by two or more archives, but no `.gr2` is, and none of the 11,774
-  meshes / 1,717 textures the database references is shared (see [Measured on a full install](#measured-on-a-full-install))
+  meshes / 1,717 textures the database references is shared
+  (see [Measured on a full install](#measured-on-a-full-install))
 - `vt_matches()` resolves a visual's GTex hashes with maclarian's own lookup
   (`MergedResolver::find_gtp_by_hashes_in_pak`), which reports `GtpMatch` values carrying both the `.gtp` path and the
   archive holding it. Only the archive to list is supplied (`VirtualTextures.pak`); a hash that matches nothing renders
@@ -174,13 +175,13 @@ These numbers come from one complete *Baldur's Gate 3* installation (patch 8, GO
 profile: they show the scale the app is built against rather than a promise, and a different game version shifts them.
 
 | Metric                                 | Value                                                                   |
-|----------------------------------------|--------------------------------------------------------------------------|
-| `.pak` files under `Data/`             | 54 — 26 main archives, 22 numbered data partitions, 6 localization        |
-| File-table entries in the 26 main paks | 567,681                                                                  |
-| Database built from `Shared.pak`       | 13,880 visuals, 2,312 materials, 1,904 textures, 1,863 virtual textures  |
-| Paths listed by two or more archives   | 924 (0.163%) — no `.gr2`, none referenced by the database                 |
-| `VirtualTextures.pak`                  | 12,974 `.gtp` page files served by 16 `.gts` tile sets                    |
-| Naming a mesh and all its textures     | p50 ≈ 1.0 s, p90 ≈ 1.7 s (cold pool)                                     |
+|----------------------------------------|-------------------------------------------------------------------------|
+| `.pak` files under `Data/`             | 54 — 26 main archives, 22 numbered data partitions, 6 localization      |
+| File-table entries in the 26 main paks | 567,681                                                                 |
+| Database built from `Shared.pak`       | 13,880 visuals, 2,312 materials, 1,904 textures, 1,863 virtual textures |
+| Paths listed by two or more archives   | 924 (0.163%) — no `.gr2`, none referenced by the database               |
+| `VirtualTextures.pak`                  | 12,974 `.gtp` page files served by 16 `.gts` tile sets                  |
+| Naming a mesh and all its textures     | p50 ≈ 1.0 s, p90 ≈ 1.7 s (cold pool)                                    |
 
 ### Development
 
@@ -249,8 +250,10 @@ Larian Studios. All trademarks and copyrights related to the game and its assets
 
 ### 功能
 
-- **数据库页**：自动检测 Steam 默认安装目录（仅 Windows / macOS，且只探测固定默认位置——GOG 版或非默认 Steam 库需手动选择），或用系统原生目录对话框手动选择含
-  `Shared.pak` 的 Data 目录；构建合并索引时通过 `Channel` 推送逐文件进度并显示耗时，完成后展示 Visual / Material / Texture / Virtual Texture 统计卡片
+- **数据库页**：自动检测 Steam 默认安装目录（仅 Windows / macOS，且只探测固定默认位置——GOG 版或非默认 Steam
+  库需手动选择），或用系统原生目录对话框手动选择含
+  `Shared.pak` 的 Data 目录；构建合并索引时通过 `Channel` 推送逐文件进度并显示耗时，完成后展示 Visual / Material /
+  Texture / Virtual Texture 统计卡片
 - **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓`
   依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径与来源 PAK、材质 ID、DDS
   纹理列表（每条纹理各自标注来源归档）与虚拟纹理列表（每个哈希解析到的页文件及其来源归档）
@@ -351,8 +354,10 @@ tauri-app/
 - `archives`（`archives.rs` 里的 `Archives`）是跨命令复用的 PAK 读池：打开一个归档要解析整张文件表，因此每个游戏目录只建一次，并设
   `MAX_CACHED_PAKS = 6` 上限；给文件标注归档名的是 `Archives::locate_many`——对已解析的表只走一遍、不解压任何文件，一次就回答
   `get_visual` 的「网格 + 全部纹理」；一个视觉资源动辄引用十几张 DDS，若每条纹理都把几十万条的表重扫一遍就太慢了
-- 池序 = 目录列出的主档，并把 `PAK_PREFERENCE`（`Models.pak` / `Textures.pak`）提到最前；同一条路径以「第一个含它的归档」为准。完整安装实测下这条规则对本工具的标注范围没有歧义：
-  567,681 条表项中有 924 条（0.163%）被两个以上归档列出，但 `.gr2` 零共享，数据库引用的 11774 个网格 / 1717 张纹理也零共享（见[实测数据](#实测数据)）
+- 池序 = 目录列出的主档，并把 `PAK_PREFERENCE`（`Models.pak` / `Textures.pak`
+  ）提到最前；同一条路径以「第一个含它的归档」为准。完整安装实测下这条规则对本工具的标注范围没有歧义：
+  567,681 条表项中有 924 条（0.163%）被两个以上归档列出，但 `.gr2` 零共享，数据库引用的 11774 个网格 / 1717
+  张纹理也零共享（见[实测数据](#实测数据)）
 - `vt_matches()` 用 maclarian 自带查找（`MergedResolver::find_gtp_by_hashes_in_pak`）解析视觉资源的 GTex 哈希，返回的
   `GtpMatch` 同时携带 `.gtp` 路径与持有它的归档。需要提供的只有「列哪一个归档」（`VirtualTextures.pak`
   ）；匹配不到的哈希不显示页文件，而不是退化成猜测。resolver 持有构建它的那份数据库，因此每次调用都把数据库移出再放回
@@ -389,14 +394,14 @@ tauri-app/
 
 以下数字来自一份完整的《Baldur's Gate 3》安装（补丁 8、GOG 版、Windows）与 **dev** 配置，用来体现本工具面对的数据量级而非承诺值，换一个游戏版本数字即会变化。
 
-| 指标                             | 数值                                                               |
-|----------------------------------|---------------------------------------------------------------------|
-| `Data/` 下的 `.pak` 文件         | 54 个——26 个主档、22 个编号数据分片、6 个本地化                     |
-| 26 个主档的文件表条目            | 567,681 条                                                          |
-| 由 `Shared.pak` 构建的数据库     | 13,880 个视觉资源、2,312 个材质、1,904 张纹理、1,863 个虚拟纹理      |
-| 被两个以上归档列出的路径         | 924 条（0.163%）——不含 `.gr2`，也不含数据库引用的任何路径           |
-| `VirtualTextures.pak`            | 12,974 个 `.gtp` 页文件，由 16 个 `.gts` 瓦片集提供                 |
-| 标注「网格 + 其全部纹理」的归档  | 冷池 p50 ≈ 1.0 s、p90 ≈ 1.7 s                                       |
+| 指标                            | 数值                                                            |
+|---------------------------------|-----------------------------------------------------------------|
+| `Data/` 下的 `.pak` 文件        | 54 个——26 个主档、22 个编号数据分片、6 个本地化                 |
+| 26 个主档的文件表条目           | 567,681 条                                                      |
+| 由 `Shared.pak` 构建的数据库    | 13,880 个视觉资源、2,312 个材质、1,904 张纹理、1,863 个虚拟纹理 |
+| 被两个以上归档列出的路径        | 924 条（0.163%）——不含 `.gr2`，也不含数据库引用的任何路径       |
+| `VirtualTextures.pak`           | 12,974 个 `.gtp` 页文件，由 16 个 `.gts` 瓦片集提供             |
+| 标注「网格 + 其全部纹理」的归档 | 冷池 p50 ≈ 1.0 s、p90 ≈ 1.7 s                                   |
 
 ### 开发
 

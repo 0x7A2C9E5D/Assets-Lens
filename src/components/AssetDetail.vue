@@ -67,10 +67,10 @@ const bindingsByMaterial = computed(() => {
 
 /** Material rows, each paired with the bindings it has (empty when none are named) */
 const materialsWithBindings = computed(() =>
-  (props.asset?.materials ?? []).map((material) => ({
-    ...material,
-    bindings: bindingsByMaterial.value.get(material.name) ?? [],
-  })),
+    (props.asset?.materials ?? []).map((material) => ({
+      ...material,
+      bindings: bindingsByMaterial.value.get(material.name) ?? [],
+    })),
 )
 
 /**
@@ -126,16 +126,16 @@ function toggle(section: SectionKey) {
 
         <div>
           <button
+              :aria-expanded="!collapsed.mesh"
               class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg"
               type="button"
-              :aria-expanded="!collapsed.mesh"
               @click="toggle('mesh')"
           >
             <FileBox class="h-3.5 w-3.5 shrink-0"/>
             <span>{{ $t('detail.mesh') }}</span>
             <ChevronDown
-                class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
                 :class="collapsed.mesh ? '-rotate-90' : ''"
+                class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
             />
           </button>
           <div
@@ -148,10 +148,10 @@ function toggle(section: SectionKey) {
 
         <div>
           <button
-              class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
-              type="button"
               :aria-expanded="!collapsed.materials"
               :disabled="!asset.materials.length"
+              class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
+              type="button"
               @click="toggle('materials')"
           >
             <Palette class="h-3.5 w-3.5 shrink-0"/>
@@ -159,8 +159,8 @@ function toggle(section: SectionKey) {
             <span class="tabular-nums text-faint">{{ asset.materials.length }}</span>
             <ChevronDown
                 v-if="asset.materials.length"
-                class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
                 :class="collapsed.materials ? '-rotate-90' : ''"
+                class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
             />
           </button>
           <div v-show="!collapsed.materials" class="mt-2 space-y-2">
@@ -218,10 +218,10 @@ function toggle(section: SectionKey) {
         <div class="space-y-5">
           <div>
             <button
-                class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
-                type="button"
                 :aria-expanded="!collapsed.textures"
                 :disabled="!asset.textures.length"
+                class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
+                type="button"
                 @click="toggle('textures')"
             >
               <ImageIcon class="h-3.5 w-3.5 shrink-0"/>
@@ -229,8 +229,8 @@ function toggle(section: SectionKey) {
               <span class="tabular-nums text-faint">{{ asset.textures.length }}</span>
               <ChevronDown
                   v-if="asset.textures.length"
-                  class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
                   :class="collapsed.textures ? '-rotate-90' : ''"
+                  class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
               />
             </button>
 
@@ -257,10 +257,10 @@ function toggle(section: SectionKey) {
 
           <div>
             <button
-                class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
-                type="button"
                 :aria-expanded="!collapsed.virtualTextures"
                 :disabled="!asset.virtualTextures.length"
+                class="flex w-full items-center gap-2 text-xs font-semibold text-muted transition-colors duration-150 ease-fluent hover:text-fg disabled:cursor-default disabled:hover:text-muted"
+                type="button"
                 @click="toggle('virtualTextures')"
             >
               <Grid2x2 class="h-3.5 w-3.5 shrink-0"/>
@@ -268,8 +268,8 @@ function toggle(section: SectionKey) {
               <span class="tabular-nums text-faint">{{ asset.virtualTextures.length }}</span>
               <ChevronDown
                   v-if="asset.virtualTextures.length"
-                  class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
                   :class="collapsed.virtualTextures ? '-rotate-90' : ''"
+                  class="ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-200"
               />
             </button>
 
