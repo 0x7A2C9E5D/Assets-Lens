@@ -5,16 +5,8 @@ use std::sync::{Arc, Mutex};
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
 use serde::Deserialize;
 
-use crate::archives::Archives;
+use crate::archives::{Archives, Pak};
 use crate::virtual_textures::PageFileSizes;
-
-/// Read preference for the shared PAK pool. Callers name the archive they expect (meshes from
-/// `Models.pak`, a texture from its own archive), so this order only decides the fallback scan.
-const PAK_PREFERENCE: &[&str] = &["Models.pak", "Textures.pak"];
-
-/// Archive holding the virtual texture page files. It is the one name the GTex lookup cannot get
-/// from a match (the match is what it produces), so it is spelled out here.
-const VIRTUAL_TEXTURES_PAK: &str = "VirtualTextures.pak";
 
 /// One material of the built database: the name that makes its GUID readable, plus the resources it
 /// binds (GUIDs, in parameter order).
@@ -222,23 +214,24 @@ impl AppState {
             .game_path
             .as_ref()
             .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
-        let pool = Arc::new(Mutex::new(Archives::new(game_path, PAK_PREFERENCE)?));
+        let pool = Arc::new(Mutex::new(Archives::new(game_path)));
         self.archives = Some(pool.clone());
         Ok(pool)
     }
 
     /// The archive that holds the virtual texture page files. maclarian's lookup needs one archive
     /// to list; which one that is cannot come from a page file (finding it is the lookup's job), so
-    /// it is the single name this module spells out.
+    /// it is spelled out by kind.
     fn vt_pak(&self) -> Result<PathBuf, String> {
         let game_path = self
             .game_path
             .as_ref()
             .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
-        let vt_pak = game_path.join(VIRTUAL_TEXTURES_PAK);
+        let vt_pak = game_path.join(Pak::VirtualTextures.file_name());
         if !vt_pak.is_file() {
             return Err(format!(
-                "{VIRTUAL_TEXTURES_PAK} not found in {}",
+                "{} not found in {}",
+                Pak::VirtualTextures.file_name(),
                 game_path.display()
             ));
         }

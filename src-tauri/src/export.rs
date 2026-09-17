@@ -19,7 +19,7 @@ use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
 use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
-use crate::archives::{lock_pool, Archives};
+use crate::archives::{lock_pool, Archives, Pak};
 use crate::models::{
     match_for_hash,
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
@@ -322,8 +322,10 @@ fn read_mesh_bytes(
     pool: &Arc<Mutex<Archives>>,
     mesh_format: MeshFormat,
 ) -> Result<Vec<u8>, String> {
+    // The mesh is read from `Models.pak` and nowhere else; a GR2 the game ships in another archive
+    // reports that rather than being searched for
     let gr2_bytes = lock_pool(pool)?
-        .read(&asset.gr2_path, Some("Models.pak"))
+        .read_from(Pak::Models, &asset.gr2_path)
         .map_err(|err| format!("Mesh data unavailable: {err}"))?;
 
     match mesh_format {
@@ -373,7 +375,7 @@ fn export_texture(
 ) -> Result<(), String> {
     // Locked per file only: decompressing one texture is quick, and it leaves the pool available to
     // other commands (a preview) while the export runs
-    match lock_pool(pool)?.read(&tex.dds_path, Some(tex.source_pak.as_str())) {
+    match lock_pool(pool)?.read_from(Pak::Textures, &tex.dds_path) {
         Ok(dds) => write_texture(tex, &dds, tex_dir, convert_to_png, files, warnings),
         Err(err) => push_warning(warnings, "textureUnavailable", err),
     }

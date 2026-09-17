@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use maclarian::merged::GtpMatch;
 
-use crate::archives::Archives;
+use crate::archives::{Archives, Pak};
 
 /// Files staged for one-page file, both already on disk
 pub struct StagedSources {
@@ -45,9 +45,8 @@ pub fn stage_sources(
 
     let gtp = shared.join(gtp_name);
     if !gtp.exists() {
-        // The match names the archive that holds this page file, so it is read straight out of it
-        // instead of scanning every archive for a path the lookup already resolved
-        let bytes = read_from_match(pak, matched, gtp_rel)?;
+        // Page files are read from the virtual texture archive and nowhere else
+        let bytes = pak.read_from(Pak::VirtualTextures, gtp_rel)?;
         fs::write(&gtp, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
     }
 
@@ -81,7 +80,8 @@ pub fn page_file_size(
 ) -> Option<(u32, u32)> {
     let gts_rel = derive_gts_path(&matched.gtp_path);
     if !sizes.contains_key(&gts_rel) {
-        let parsed = read_from_match(pak, matched, &gts_rel)
+        let parsed = pak
+            .read_from(Pak::VirtualTextures, &gts_rel)
             .ok()
             .and_then(|bytes| parse_page_file_sizes(&bytes))
             .unwrap_or_default();
@@ -255,15 +255,6 @@ fn derive_gts_path(gtp_path: &str) -> String {
     }
 }
 
-/// Read a file through the archive a match names. `GtpMatch::pak_path` is the archive its page file
-/// was listed from, so reading there is a table lookup rather than a scan; the pool-wide read stays
-/// as the fallback for names the match does not pin down (`GtpMatch` covers the GTP only — the GTS
-/// for its tile set is derived from the page file name).
-fn read_from_match(pak: &mut Archives, matched: &GtpMatch, target: &str) -> Result<Vec<u8>, String> {
-    pak.read_in(matched.pak_path.as_path(), target)
-        .or_else(|_| pak.read(target, None))
-}
-
 /// Resolve GTS candidates and stage them into the `shared` directory, ordered by likelihood:
 /// 1. `<GTP with the `_<hash>` suffix stripped>.gts` — the tile set's own GTS (maclarian's standard
 ///    derivation), the only candidate that is normally needed
@@ -273,8 +264,7 @@ fn read_from_match(pak: &mut Archives, matched: &GtpMatch, target: &str) -> Resu
 /// More than one candidate is staged because a GTS outlives the page file that led here — tile sets
 /// do not always share the index spelling of their page files — and `export.rs` tries them in order
 /// until one accepts the page file. Staged files are reused by file name, so the GTS of a tile set is
-/// read once no matter how many of its page files this export touches. `matched` gives the archive to
-/// try first; the pool-wide scan remains for the derived names it does not cover.
+/// read once no matter how many of its page files this export touches.
 fn stage_gts_candidates(
     pak: &mut Archives,
     matched: &GtpMatch,
@@ -297,14 +287,14 @@ fn stage_gts_candidates(
     let mut staged: Vec<PathBuf> = Vec::new();
 
     // 1. Standard derived name
-    if stage_gts_file(pak, matched, &gts_rel, shared, &mut staged) {
+    if stage_gts_file(pak, &gts_rel, shared, &mut staged) {
         return Ok(staged);
     }
 
-    // 2. Same-directory prefix fallback: filter GTS files sharing the directory and a name prefix
-    //    across all PAKs
+    // 2. Same-directory prefix fallback: the tile set names of the virtual texture archive, filtered
+    //    to the GTP's directory and a name prefix
     let mut fallbacks: Vec<String> = pak
-        .list_all()?
+        .list_in(Pak::VirtualTextures)?
         .into_iter()
         .filter(|p| {
             p.to_lowercase().ends_with(".gts")
@@ -329,11 +319,14 @@ fn stage_gts_candidates(
     fallbacks.sort_by_key(|p| std::cmp::Reverse(p.len()));
 
     for rel in fallbacks {
-        stage_gts_file(pak, matched, &rel, shared, &mut staged);
+        stage_gts_file(pak, &rel, shared, &mut staged);
     }
 
     if staged.is_empty() {
-        return Err(format!("{gts_rel} not found in any PAK"));
+        return Err(format!(
+            "{gts_rel} not found in {}",
+            Pak::VirtualTextures.file_name()
+        ));
     }
     Ok(staged)
 }
@@ -341,7 +334,6 @@ fn stage_gts_candidates(
 /// Stage one GTS to disk; reuse it directly when already staged (shared with another GTP)
 fn stage_gts_file(
     pak: &mut Archives,
-    matched: &GtpMatch,
     rel: &str,
     shared: &Path,
     staged: &mut Vec<PathBuf>,
@@ -354,7 +346,7 @@ fn stage_gts_file(
         staged.push(path);
         return true;
     }
-    match read_from_match(pak, matched, rel) {
+    match pak.read_from(Pak::VirtualTextures, rel) {
         Ok(bytes) => match fs::write(&path, &bytes) {
             Ok(()) => {
                 staged.push(path);

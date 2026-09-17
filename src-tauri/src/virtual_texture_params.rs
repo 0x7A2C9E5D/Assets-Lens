@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use maclarian::formats::lsf::parse_lsf_bytes;
 
-use crate::archives::Archives;
+use crate::archives::{Archives, Pak};
 
 /// The parameter every binding fills, keyed by material GUID, in binding order — for the materials
 /// named by `materials`, each paired with its `SourceFile` template.
@@ -52,9 +52,8 @@ pub fn read_parameters(
 /// `VirtualTextureParameters` only occurs under it. Node order is document order — the very order
 /// maclarian reports the bindings in — which is what lets the two pair up by position.
 fn read_template(pool: &mut Archives, source_file: &str) -> Vec<String> {
-    // Looked up across the archives rather than in a named one: a template is an ordinary game file,
-    // and which archive ships it is not part of the path
-    let Ok(bytes) = pool.read(source_file, None) else {
+    // Read from `Materials.pak`, the one archive material templates ship in
+    let Ok(bytes) = pool.read_from(Pak::Materials, source_file) else {
         return Vec::new();
     };
     let Ok(doc) = parse_lsf_bytes(&bytes) else {

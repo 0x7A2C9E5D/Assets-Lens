@@ -8,7 +8,7 @@ use maclarian::merged::{GameDataResolver, MergedDatabase, VisualAsset};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
-use crate::archives::lock_pool;
+use crate::archives::{lock_pool, Pak};
 use crate::export::run_export;
 use crate::models::{
     match_for_hash, AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult,
@@ -379,8 +379,8 @@ pub fn list_visuals(
 /// Query the detail of a single visual asset by its GUID (names are not unique).
 ///
 /// The archives holding the mesh and each texture are resolved here rather than at build time:
-/// which PAK contains a file can only be answered by consulting the archives, and that scan is
-/// heavy enough to belong off the main thread (see `Archives::locate_many`). Virtual textures take
+/// which PAK contains a file can only be answered by consulting the archives, and that walk is
+/// heavy enough to belong off the main thread (see `Archives::locate_many_in`). Virtual textures take
 /// the other route: maclarian reports page files as `GtpMatch` values that carry their own path
 /// and archive, so nothing has to be scanned for them.
 #[tauri::command]
@@ -425,28 +425,29 @@ pub async fn get_visual(
             (detail, matches, st.pool().ok(), page_file_sizes)
         };
 
-        // The mesh and every DDS go into one batch: `locate_many` walks the cached file tables a
-        // single time and decompresses nothing, so the texture paths ride along on the scan the mesh
-        // already needed. Textures are not confined to `Textures.pak` (there is also
-        // `Gustav_Textures.pak`, `LowTex.pak`, `Icons.pak`), which is why each one is located instead
-        // of assumed
-        let located = match pool {
+        // Every archive name is resolved in the one archive its kind is read from — the mesh in
+        // `Models.pak`, each DDS in `Textures.pak`, each material template in `Materials.pak`. Each
+        // call walks one cached file table once and decompresses nothing, so the three lookups cost
+        // about what a single walk did, and a file the expected archive does not hold comes back
+        // unnamed instead of being attributed to whichever archive happened to contain it. Virtual
+        // textures need none of this: their match names its own page file.
+        let (mesh_archives, texture_archives, template_archives) = match pool {
             Some(pool) => match lock_pool(&pool) {
                 Ok(mut archives) => {
-                    let mut targets =
-                        Vec::with_capacity(detail.textures.len() + detail.materials.len() + 1);
-                    targets.push(detail.path.clone());
-                    targets.extend(detail.textures.iter().map(|tex| tex.path.clone()));
-                    targets.extend(
-                        detail
-                            .materials
-                            .iter()
-                            .map(|material| material.source_file.clone()),
-                    );
-                    let located = archives.locate_many(&targets);
+                    let textures: Vec<String> =
+                        detail.textures.iter().map(|tex| tex.path.clone()).collect();
+                    let templates: Vec<String> = detail
+                        .materials
+                        .iter()
+                        .map(|material| material.source_file.clone())
+                        .collect();
+                    let mesh_archives =
+                        archives.locate_many_in(Pak::Models, &[detail.path.clone()]);
+                    let texture_archives = archives.locate_many_in(Pak::Textures, &textures);
+                    let template_archives = archives.locate_many_in(Pak::Materials, &templates);
 
                     // Page file sizes come out of the same lock: a GTS is one file read from the
-                    // archive the match names (no scan), and each of them serves every page file of
+                    // virtual texture archive (no scan), and each of them serves every page file of
                     // its tile set — `page_file_size` sees to reading one only once
                     for vt in &mut detail.virtual_textures {
                         let size = match_for_hash(&matches, &vt.hash).and_then(|matched| {
@@ -460,22 +461,25 @@ pub async fn get_visual(
                         vt.set_size(size);
                     }
 
-                    located
+                    (mesh_archives, texture_archives, template_archives)
                 }
-                Err(_) => HashMap::new(),
+                Err(_) => (HashMap::new(), HashMap::new(), HashMap::new()),
             },
-            None => HashMap::new(),
+            None => (HashMap::new(), HashMap::new(), HashMap::new()),
         };
 
         // Archive names are decoration: an unresolved file just renders without one. A material is
         // reported by the archive of its template — the only path of a material that can be looked up
         // at all, and one an unknown material does not have
-        detail.mesh_pak = located.get(&detail.path).cloned().unwrap_or_default();
+        detail.mesh_pak = mesh_archives.get(&detail.path).cloned().unwrap_or_default();
         for material in &mut detail.materials {
-            material.pak = located.get(&material.source_file).cloned().unwrap_or_default();
+            material.pak = template_archives
+                .get(&material.source_file)
+                .cloned()
+                .unwrap_or_default();
         }
         for tex in &mut detail.textures {
-            tex.source = located.get(&tex.path).cloned().unwrap_or_default();
+            tex.source = texture_archives.get(&tex.path).cloned().unwrap_or_default();
         }
 
         // Back into the state, for the next detail view of this game directory
@@ -510,12 +514,13 @@ pub async fn get_visual_preview(
         // maclarian's own reader compares PAK entries with an exact `==` on the raw path, which
         // never matches on Windows (`\` vs `/`); the `Archives` pool normalizes separators and casing
         // instead.
-        let gr2_bytes = lock_pool(&pool)?
-            .read(&path, Some("Models.pak"))
-            .map_err(|err| {
-                eprintln!("[maclarian] find gr2 {path} failed: {err}");
-                err
-            })?;
+        let gr2_bytes =
+            lock_pool(&pool)?
+                .read_from(Pak::Models, &path)
+                .map_err(|err| {
+                    eprintln!("[maclarian] find gr2 {path} failed: {err}");
+                    err
+                })?;
 
         let glb = convert_gr2_bytes_to_glb(&gr2_bytes).map_err(|err| {
             eprintln!("[maclarian] gr2 -> glb failed for {path}: {err}");

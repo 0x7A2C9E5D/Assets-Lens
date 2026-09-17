@@ -1,42 +1,53 @@
-//! PAK archive access: a read pool over the game's LSPK archives.
+//! PAK archive access: the four archives the app reads from, opened on demand.
 //!
-//! Opening an archive parses its whole file table, so each one is opened once and kept resident
-//! (`Archives`). Nothing here knows about assets or export formats: callers either ask for file
-//! bytes (`read_in` / `read`) or for the archive a path belongs to (`locate_many`).
+//! Opening an archive parses its whole file table, so each one is opened once and kept resident.
+//! Which archives those are is fixed by resource kind — a GR2 comes out of `Models.pak`, a DDS out
+//! of `Textures.pak`, a material template out of `Materials.pak` and a virtual texture page file out
+//! of `VirtualTextures.pak` — so the data directory is never walked looking for a file, and no read
+//! falls back to another archive. Nothing here knows about assets or export formats: callers name
+//! the archive they expect (`read_from` / `locate_many_in` / `list_in`).
 
-use std::collections::{HashMap, HashSet};
-use std::fs::{self, File};
+use std::collections::HashMap;
+use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use maclarian::pak::lspk::{FileTableEntry, LspkReader};
 
-/// How many archives the pool keeps open at most. A cached archive pins a file handle plus its whole
-/// file table, and a fallback scan touches every PAK in the game directory, so the cache is capped
-/// and dropped wholesale once it is full.
-const MAX_CACHED_PAKS: usize = 6;
-
-/// PAK read pool: each PAK is opened once and its file table and reader stay resident, so indexes
-/// are never reparsed per file.
-pub struct Archives {
-    /// Game archives, sorted by read priority (earlier entries are tried first)
-    paks: Vec<PathBuf>,
-    readers: HashMap<PathBuf, LspkReader<BufReader<File>>>,
-    tables: HashMap<PathBuf, Vec<FileTableEntry>>,
+/// The archives the app reads from. The variant is the resource kind, not a directory listing:
+/// every read names the kind it expects, which is what keeps a lookup from wandering into the
+/// wrong archive (and from parsing a 12 GB file table to answer a question about a texture).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Pak {
+    /// GR2 meshes
+    Models,
+    /// DDS textures
+    Textures,
+    /// Material templates (`.lsf`) materials are derived from
+    Materials,
+    /// Virtual texture page files (`.gtp`) and the tile set metadata (`.gts`) beside them
+    VirtualTextures,
 }
 
-/// True when `file_name` is a LSPK data-partition archive (`<Name>_<n>.pak`, e.g.
-/// `VirtualTextures_12.pak`). BG3 splits large resources over numbered archives that only hold
-/// raw data blocks — they carry no LSPK header of their own, cannot be opened standalone, and are
-/// already reachable through their main (`<Name>.pak`) archive, so they are excluded up front.
-fn is_data_partition(file_name: &str) -> bool {
-    let lower = file_name.to_lowercase();
-    let stem = lower.strip_suffix(".pak").unwrap_or(&lower);
-    match stem.rsplit_once('_') {
-        Some((_, tail)) => !tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit()),
-        None => false,
+impl Pak {
+    /// File name inside the game's data directory
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Pak::Models => "Models.pak",
+            Pak::Textures => "Textures.pak",
+            Pak::Materials => "Materials.pak",
+            Pak::VirtualTextures => "VirtualTextures.pak",
+        }
     }
+}
+
+/// PAK read pool: each of the four archives is opened once and its file table and reader stay
+/// resident, so indexes are never reparsed per file.
+pub struct Archives {
+    game_path: PathBuf,
+    readers: HashMap<Pak, LspkReader<BufReader<File>>>,
+    tables: HashMap<Pak, Vec<FileTableEntry>>,
 }
 
 /// Normalize a path: unify on `/` separators and lowercase for comparison
@@ -46,69 +57,71 @@ fn normalize_path(path: &str) -> String {
 }
 
 impl Archives {
-    /// List every main `.pak` under the data directory, hoisting the names in `prefer` to the front
-    /// (e.g. `Models.pak` / `Textures.pak`). Numbered data partitions (`<Name>_<n>.pak`) are
-    /// excluded — see `is_data_partition`.
-    pub fn new(game_path: &Path, prefer: &[&str]) -> Result<Self, String> {
-        let mut paks: Vec<PathBuf> = fs::read_dir(game_path)
-            .map_err(|e| format!("Failed to list BG3 data directory: {e}"))?
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| {
-                p.is_file()
-                    && p.extension().and_then(|s| s.to_str()) == Some("pak")
-                    && !p
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(is_data_partition)
-            })
-            .collect();
-
-        paks.sort_by_key(|p| {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            prefer
-                .iter()
-                .position(|want| name.eq_ignore_ascii_case(want))
-                .unwrap_or(prefer.len())
-        });
-
-        Ok(Self {
-            paks,
+    /// A pool over the fixed archive set in `game_path`; nothing is opened until it is first read
+    pub fn new(game_path: &Path) -> Self {
+        Self {
+            game_path: game_path.to_path_buf(),
             readers: HashMap::new(),
             tables: HashMap::new(),
-        })
+        }
     }
 
-    /// Open a PAK and cache its file table; no-op when already cached
-    fn ensure(&mut self, pak: &Path) -> Result<(), String> {
-        if self.tables.contains_key(pak) {
+    /// Path of one archive inside the data directory
+    fn path_of(&self, pak: Pak) -> PathBuf {
+        self.game_path.join(pak.file_name())
+    }
+
+    /// Open an archive and cache its file table; no-op when already cached
+    fn ensure(&mut self, pak: Pak) -> Result<(), String> {
+        if self.tables.contains_key(&pak) {
             return Ok(());
         }
 
-        if self.readers.len() >= MAX_CACHED_PAKS {
-            // Over the cap: drop the cache rather than grow it, so one full scan cannot pin every
-            // archive in the game directory. The hot ones are re-opened on the next read.
-            self.readers.clear();
-            self.tables.clear();
-        }
-
-        let file = File::open(pak).map_err(|e| format!("Failed to open {}: {e}", pak.display()))?;
-        let mut reader = LspkReader::with_path(BufReader::new(file), pak);
+        let path = self.path_of(pak);
+        let file =
+            File::open(&path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
+        let mut reader = LspkReader::with_path(BufReader::new(file), &path);
         let entries = reader
             .list_files()
-            .map_err(|e| format!("Failed to read file table of {}: {e}", pak.display()))?;
+            .map_err(|e| format!("Failed to read file table of {}: {e}", path.display()))?;
 
-        self.readers.insert(pak.to_path_buf(), reader);
-        self.tables.insert(pak.to_path_buf(), entries);
+        self.readers.insert(pak, reader);
+        self.tables.insert(pak, entries);
         Ok(())
     }
 
-    /// List all file paths inside a PAK (`/`-separated)
-    fn list(&mut self, pak: &Path) -> Result<Vec<String>, String> {
+    /// Read file bytes out of one archive. The archive is named by kind, so a missing file is an
+    /// error rather than the start of a search: `Models.pak` is the only archive a GR2 is read from
+    pub fn read_from(&mut self, pak: Pak, target: &str) -> Result<Vec<u8>, String> {
+        self.ensure(pak)?;
+
+        let want = normalize_path(target);
+        let entry = self
+            .tables
+            .get(&pak)
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|e| normalize_path(&e.path.to_string_lossy()) == want)
+            })
+            .cloned()
+            .ok_or_else(|| format!("{target} not found in {}", pak.file_name()))?;
+        let reader = self
+            .readers
+            .get_mut(&pak)
+            .ok_or_else(|| format!("Reader unavailable for {}", pak.file_name()))?;
+
+        reader
+            .decompress_file(&entry)
+            .map_err(|e| format!("Failed to decompress {target}: {e}"))
+    }
+
+    /// List all file paths inside one archive (`/`-separated)
+    pub fn list_in(&mut self, pak: Pak) -> Result<Vec<String>, String> {
         self.ensure(pak)?;
         Ok(self
             .tables
-            .get(pak)
+            .get(&pak)
             .map(|entries| {
                 entries
                     .iter()
@@ -118,87 +131,14 @@ impl Archives {
             .unwrap_or_default())
     }
 
-    /// Read file bytes from a specific PAK
-    pub fn read_in(&mut self, pak: &Path, target: &str) -> Result<Vec<u8>, String> {
-        self.ensure(pak)?;
-
-        let want = normalize_path(target);
-        let entry = self
-            .tables
-            .get(pak)
-            .and_then(|entries| {
-                entries
-                    .iter()
-                    .find(|e| normalize_path(&e.path.to_string_lossy()) == want)
-            })
-            .cloned()
-            .ok_or_else(|| format!("{target} not found in {}", pak.display()))?;
-        let reader = self
-            .readers
-            .get_mut(pak)
-            .ok_or_else(|| format!("Reader unavailable for {}", pak.display()))?;
-
-        reader
-            .decompress_file(&entry)
-            .map_err(|e| format!("Failed to decompress {target}: {e}"))
-    }
-
-    /// Read a file from any PAK under the data directory, honoring priority.
-    /// When `prefer` is given, that PAK is tried first (e.g. GR2 in `Models.pak`,
-    /// DDS in `Textures.pak`); otherwise every PAK is scanned in order.
-    pub fn read(&mut self, target: &str, prefer: Option<&str>) -> Result<Vec<u8>, String> {
-        if let Some(want) = prefer {
-            let preferred = self.paks.iter().find(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.eq_ignore_ascii_case(want))
-            });
-            if let Some(pak) = preferred.cloned() {
-                if let Ok(bytes) = self.read_in(&pak, target) {
-                    return Ok(bytes);
-                }
-            }
-        }
-
-        for pak in self.paks.clone() {
-            if let Ok(bytes) = self.read_in(&pak, target) {
-                return Ok(bytes);
-            }
-        }
-
-        Err(format!("{target} not found in BG3 archives"))
-    }
-
-    /// List file paths across *all* main PAKs in the data directory, deduplicated.
-    /// Numbered data partitions were already excluded in `new` (see `is_data_partition`); the
-    /// `skipping unreadable` branch below only fires for genuinely broken or foreign archives.
-    pub fn list_all(&mut self) -> Result<Vec<String>, String> {
-        let mut seen = HashSet::new();
-        let mut out = Vec::new();
-        for pak in self.paks.clone() {
-            if let Ok(entries) = self.list(&pak) {
-                for entry in entries {
-                    if seen.insert(entry.clone()) {
-                        out.push(entry);
-                    }
-                }
-            } else {
-                eprintln!(
-                    "[maclarian] skipping unreadable / non-LSPK archive: {}",
-                    pak.display()
-                );
-            }
-        }
-        Ok(out)
-    }
-
-    /// Resolve which archive actually holds each of `targets`, as `target -> archive file name`.
+    /// Resolve which of `targets` the archive `pak` holds, as `target -> archive file name`.
     ///
-    /// The whole batch is answered by a single pass over the cached file tables: a visual easily
-    /// references a dozen textures, and rescanning a table with hundreds of thousands of entries per
-    /// texture would be far too slow. Priority follows the pool's own order — the same rule `read`
-    /// applies, so the first archive containing a path wins. Nothing is decompressed.
-    pub fn locate_many(&mut self, targets: &[String]) -> HashMap<String, String> {
+    /// The whole batch is answered by a single pass over that one archive's file table: a visual
+    /// easily references a dozen textures, and rescanning a table with hundreds of thousands of
+    /// entries per texture would be far too slow. Targets the archive does not hold come back
+    /// absent, which the caller renders as "no archive" instead of a plausible-but-wrong name.
+    /// Nothing is decompressed.
+    pub fn locate_many_in(&mut self, pak: Pak, targets: &[String]) -> HashMap<String, String> {
         // Normalized path -> target exactly as the caller spelled it, so the result can be keyed by
         // the original string
         let mut pending: HashMap<String, String> = targets
@@ -208,27 +148,18 @@ impl Archives {
             .collect();
         let mut located = HashMap::new();
 
-        for pak in self.paks.clone() {
-            if pending.is_empty() {
-                break;
-            }
-            if self.ensure(&pak).is_err() {
-                continue;
-            }
-            let name = match pak.file_name().and_then(|n| n.to_str()) {
-                Some(name) => name.to_string(),
-                None => continue,
-            };
+        if pending.is_empty() || self.ensure(pak).is_err() {
+            return located;
+        }
 
-            if let Some(entries) = self.tables.get(&pak) {
-                for entry in entries {
-                    let path = normalize_path(&entry.path.to_string_lossy());
-                    if let Some(target) = pending.remove(&path) {
-                        located.insert(target, name.clone());
-                    }
-                    if pending.is_empty() {
-                        break;
-                    }
+        if let Some(entries) = self.tables.get(&pak) {
+            for entry in entries {
+                let path = normalize_path(&entry.path.to_string_lossy());
+                if let Some(target) = pending.remove(&path) {
+                    located.insert(target, pak.file_name().to_string());
+                }
+                if pending.is_empty() {
+                    break;
                 }
             }
         }
