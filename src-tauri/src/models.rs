@@ -604,7 +604,10 @@ pub struct ExportResult {
     pub warnings: Vec<ExportWarning>,
 }
 
-/// Content of asset.json
+/// Content of asset.json: the asset and the resources it is made of — not a listing of the export
+/// directory. Which files a run wrote, and how large they came out, is the export result's business
+/// (`ExportResult`), so it stays out of here: those paths only mean anything on the machine that
+/// exported them, and everything else about them follows from the resource rows below.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportManifest {
@@ -620,8 +623,6 @@ pub struct ExportManifest {
     /// each carrying the textures and virtual textures it binds — the manifest states the asset's
     /// resources there and nowhere else, so this is the list to read them from
     pub materials: Vec<ExportMaterial>,
-    /// Exported artifacts; asset.json itself is deliberately not listed here
-    pub files: Vec<ExportedFile>,
     pub exported_at_unix: u64,
     pub maclarian_version: String,
 }

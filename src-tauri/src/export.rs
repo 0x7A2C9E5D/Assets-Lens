@@ -272,7 +272,7 @@ pub fn run_export(
 
     // 4. Metadata manifest (always written, but never listed among the exported files)
     progress.item(PHASE_MANIFEST, None);
-    let mut manifest = build_manifest(asset, materials, vt_matches, &plan, &files);
+    let mut manifest = build_manifest(asset, materials, vt_matches, &plan);
     // Completed before the write: the sizes come out of the archives, which the manifest alone has
     // no access to
     fill_vt_sizes(pool, vt_matches, &mut manifest);
@@ -714,7 +714,6 @@ fn build_manifest(
     materials: &HashMap<String, MaterialInfo>,
     vt_matches: &[GtpMatch],
     plan: &ExportPlan<'_>,
-    files: &[ExportedFile],
 ) -> ExportManifest {
     // Built once and handed to the material rows, which carry these very rows for their own resources
     // (see `manifest_materials`); the manifest lists the resources nowhere else
@@ -728,7 +727,6 @@ fn build_manifest(
         mesh_format: plan.mesh_format,
         source: asset.source_pak.clone(),
         materials: manifest_materials(asset, materials, &textures, &virtual_textures),
-        files: files.to_vec(),
         exported_at_unix: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())

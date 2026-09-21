@@ -159,7 +159,7 @@ tauri-app/
 │                  <name>_Normal.*       (Albedo / Normal / Physical)
 │                  <name>_Physical.*
 └─ asset.json                            Manifest (maclarian version, materials with their
-                                         textures, exported files)
+                                         textures)
 ```
 
 - Every conversion reuses maclarian (`convert_gr2_bytes_to_glb`, `dds_bytes_to_png_bytes`, `VirtualTextureExtractor`,
@@ -382,7 +382,7 @@ tauri-app/
 ├─ virtual_textures/<名>_Albedo.*   虚拟纹理三层（Albedo / Normal / Physical）
 │                  <名>_Normal.*
 │                  <名>_Physical.*
-└─ asset.json                       元数据清单（maclarian 版本、材质及其纹理、导出文件列表）
+└─ asset.json                       元数据清单（maclarian 版本、材质及其纹理）
 ```
 
 - 格式转换全部复用 maclarian（`convert_gr2_bytes_to_glb`、`dds_bytes_to_png_bytes`、`VirtualTextureExtractor`、`LspkReader`
