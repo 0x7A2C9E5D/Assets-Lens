@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::archives::{lock_pool, Pak};
 use crate::export::run_export;
 use crate::models::{
-    match_for_hash, material_summaries, AppInfo, BuildProgress, DatabaseStats, ExportOptions,
+    match_for_hash, materials_of, AppInfo, BuildProgress, DatabaseStats, ExportOptions,
     ExportProgress, ExportResult, ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
 use crate::state::{extract_materials, fill_virtual_texture_parameters, AppState};
@@ -521,6 +521,12 @@ pub async fn export_visual_asset(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, String> {
+        // The manifest states the parameter of every virtual texture binding, both on the material
+        // rows and on the virtual texture rows. Those names are not in the parsed database, so they
+        // are read off this asset's material templates first — and only while some binding of this
+        // asset has no name yet (see `ensure_virtual_texture_parameters`).
+        ensure_virtual_texture_parameters(&state, &id)?;
+
         let (pool, asset, materials, vt_matches) = {
             let mut st = lock(&state)?;
             let asset = st
@@ -536,9 +542,9 @@ pub async fn export_visual_asset(
             } else {
                 Vec::new()
             };
-            // The names are resolved while the state is held: the manifest has to name its materials,
-            // and the cache they come from is not handed to the export
-            let materials = material_summaries(&asset.material_ids, &st.materials);
+            // Cut out of the cache while the state is held: the manifest names the materials of the
+            // asset, and the cache they live in is not handed to the export
+            let materials = materials_of(&asset.material_ids, &st.materials);
             // Shared with the previews: the archives this export needs are usually open already
             (st.pool()?, asset, materials, vt_matches)
         };

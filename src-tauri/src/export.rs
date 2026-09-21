@@ -22,9 +22,11 @@ use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::archives::{lock_pool, Archives, Pak};
 use crate::models::{
-    match_for_hash, ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning,
-    ExportedFile, MaterialSummary, MeshFormat, TextureSummary, VirtualTextureSummary,
+    manifest_materials, match_for_hash, texture_summaries, virtual_texture_summaries,
+    ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
+    MeshFormat, VirtualTextureSummary,
 };
+use crate::state::MaterialInfo;
 use crate::virtual_textures::{self, PageFileSizes, StagedSources};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
@@ -250,11 +252,13 @@ fn vt_targets_of(asset: &VisualAsset, export_textures: bool) -> Vec<&VirtualText
 /// Export a single visual asset. The GLB is the core artifact — its failure aborts the whole
 /// export, while a single texture / virtual texture failure only records a warning.
 ///
-/// `materials` are the asset's materials already summarized by the caller: the names live in the
-/// material cache that only the command holds (see `models::material_summaries`).
+/// `materials` are the material cache entries of this asset's materials, taken by the command that
+/// holds the cache (see `models::materials_of`). The manifest names the material rows with them and
+/// reads the bindings of every resource from them, so they are the one piece of state the export
+/// cannot do without.
 pub fn run_export(
     asset: &VisualAsset,
-    materials: &[MaterialSummary],
+    materials: &HashMap<String, MaterialInfo>,
     pool: &Arc<Mutex<Archives>>,
     dest_root: &Path,
     options: &ExportOptions,
@@ -659,7 +663,7 @@ fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, Strin
         }))
 }
 
-/// Fill in the pixel size of every virtual texture row of the manifest.
+/// Fill in the pixel size of every virtual texture the materials of the manifest carry.
 ///
 /// The size is the bounding box of that page file's own tiles, which is exactly the DDS the extractor
 /// wrote next to the manifest and the value the detail view shows for the same virtual texture (see
@@ -669,7 +673,11 @@ fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, Strin
 /// no page file or a GTS that does not parse all leave the field unset rather than failing an export
 /// whose files are already on disk.
 fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest: &mut ExportManifest) {
-    if manifest.virtual_textures.is_empty() {
+    if manifest
+        .materials
+        .iter()
+        .all(|material| material.virtual_textures.is_empty())
+    {
         return;
     }
 
@@ -677,37 +685,48 @@ fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest:
         return;
     };
 
-    // One GTS serves every page file of its tile set, so a shared cache reads each of them once
+    // One GTS serves every page file of its tile set, so a shared cache reads each of them once — also
+    // when two materials of the asset bind the same virtual texture
     let mut sizes: HashMap<String, PageFileSizes> = HashMap::new();
-    for row in &mut manifest.virtual_textures {
-        let size = match_for_hash(vt_matches, &row.hash).and_then(|matched| {
-            virtual_textures::page_file_size(&mut archives, &mut sizes, matched, &row.hash)
-        });
-        row.set_size(size);
+    for material in &mut manifest.materials {
+        for row in &mut material.virtual_textures {
+            fill_vt_size(&mut archives, vt_matches, &mut sizes, row);
+        }
     }
+}
+
+/// Size of the page file one row resolved to, or nothing when it did not resolve
+fn fill_vt_size(
+    archives: &mut Archives,
+    vt_matches: &[GtpMatch],
+    sizes: &mut HashMap<String, PageFileSizes>,
+    row: &mut VirtualTextureSummary,
+) {
+    let size = match_for_hash(vt_matches, &row.hash)
+        .and_then(|matched| virtual_textures::page_file_size(archives, sizes, matched, &row.hash));
+    row.set_size(size);
 }
 
 /// Assemble the `asset.json` content of one export. The virtual texture sizes are the one field that
 /// needs the archives, so they are settled by `fill_vt_sizes` before the manifest is written.
 fn build_manifest(
     asset: &VisualAsset,
-    materials: &[MaterialSummary],
+    materials: &HashMap<String, MaterialInfo>,
     vt_matches: &[GtpMatch],
     plan: &ExportPlan<'_>,
     files: &[ExportedFile],
 ) -> ExportManifest {
+    // Built once and handed to the material rows, which carry these very rows for their own resources
+    // (see `manifest_materials`); the manifest lists the resources nowhere else
+    let textures = texture_summaries(asset, materials);
+    let virtual_textures = virtual_texture_summaries(asset, vt_matches, materials);
+
     ExportManifest {
         name: asset.name.clone(),
         path: asset.gr2_path.clone(),
         mesh_format: plan.mesh_format,
         source: asset.source_pak.clone(),
-        materials: materials.to_vec(),
-        textures: asset.textures.iter().map(TextureSummary::from).collect(),
-        virtual_textures: asset
-            .virtual_textures
-            .iter()
-            .map(|vt| VirtualTextureSummary::new(vt, match_for_hash(vt_matches, &vt.gtex_hash)))
-            .collect(),
+        materials: manifest_materials(asset, materials, &textures, &virtual_textures),
         files: files.to_vec(),
         exported_at_unix: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

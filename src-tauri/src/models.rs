@@ -12,8 +12,12 @@ pub struct BuildProgress {
     pub percent: f32,
 }
 
-/// Texture reference (DDS)
-#[derive(Serialize)]
+/// Texture reference (DDS).
+///
+/// A row of the asset's texture list (the detail panel), and — copied, without `material_names` — the
+/// entry the export manifest material binding it carries: the resource stated in full (name, path,
+/// size, parameter) rather than a GUID to look up. Hence `Clone`.
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureSummary {
     pub id: String,
@@ -22,10 +26,11 @@ pub struct TextureSummary {
     pub width: u32,
     pub height: u32,
     pub parameter_name: Option<String>,
-    /// Names of this asset's materials that bind this texture, in the asset's own material order.
-    /// Filled by `get_visual` only, and left out of the JSON while empty (the export manifest
-    /// resolves no names). The material section inverts this to list a material's textures; the
-    /// texture rows themselves carry no material reference.
+    /// Names of this asset's materials that bind this texture, in the asset's own material order —
+    /// what the detail panel inverts to list a material's textures. Left out of the JSON while empty,
+    /// which is what a material the cache does not know yields. A material row of the export manifest
+    /// leaves it out as well: there the material already contains its textures, so the relation would
+    /// only be repeated the wrong way round.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub material_names: Vec<String>,
 }
@@ -46,9 +51,7 @@ impl From<&TextureRef> for TextureSummary {
 
 /// Material reference. The GUID stays the identity (names are not unique), the name is what makes
 /// a material row readable, and the template file is where the material is defined.
-///
-/// `Clone` because the export manifest is assembled from a summary list the command already built
-#[derive(Clone, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MaterialSummary {
     pub id: String,
@@ -75,10 +78,11 @@ impl MaterialSummary {
 
 /// Summaries of `material_ids` in the order the asset lists them.
 ///
-/// Shared by the detail panel and the export manifest: a material is identified by its GUID but is
-/// only readable through the name, and a manifest carrying bare GUIDs cannot be looked up in the
-/// game data. A material the cache does not know keeps an empty name instead of dropping out of the
-/// list, so the reference itself is never lost.
+/// The material rows of the detail panel; the export manifest lists the same identity plus the
+/// resources each material binds (see `ExportMaterial`). A material is identified by its GUID but is
+/// only readable through the name, and a list carrying bare GUIDs cannot be looked up in the game
+/// data. A material the cache does not know keeps an empty name instead of dropping out of the list,
+/// so the reference itself is never lost.
 pub fn material_summaries(
     material_ids: &[String],
     materials: &HashMap<String, MaterialInfo>,
@@ -86,6 +90,144 @@ pub fn material_summaries(
     material_ids
         .iter()
         .map(|id| MaterialSummary::new(id, materials.get(id)))
+        .collect()
+}
+
+/// One material as `asset.json` lists it: the identity of a `MaterialSummary` plus the resources the
+/// material binds, each stated in full.
+///
+/// A material row carries the asset's texture rows for its own resources, in binding order: each
+/// resource in full (name, path, size, parameter) rather than a GUID to look up, so a reader takes the
+/// resources of a material from one place instead of joining two lists by GUID. The inverse relation
+/// (`materialNames`) is the one field left out of those copies — a material containing its textures
+/// says that already.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportMaterial {
+    pub id: String,
+    pub name: String,
+    pub source_file: String,
+    /// The textures this material binds, in parameter order
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub textures: Vec<TextureSummary>,
+    /// The virtual textures this material binds, in binding order
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub virtual_textures: Vec<VirtualTextureSummary>,
+}
+
+impl ExportMaterial {
+    /// `known` is the name cache entry for this GUID. The identity is taken from `MaterialSummary`, so
+    /// an unknown material keeps an empty name here exactly as it does on a detail row.
+    ///
+    /// A material names its resources by GUID, so `textures` / `virtual_textures` are looked up in the
+    /// asset's own rows by that GUID.
+    fn new(
+        id: &str,
+        known: Option<&MaterialInfo>,
+        textures: &HashMap<&str, &TextureSummary>,
+        virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
+    ) -> Self {
+        let MaterialSummary {
+            id,
+            name,
+            source_file,
+        } = MaterialSummary::new(id, known);
+
+        Self {
+            id,
+            name,
+            source_file,
+            // In the material's own order (its parameter order); an id the asset's texture rows do
+            // not carry contributes nothing
+            textures: known
+                .map(|material| {
+                    material
+                        .texture_ids
+                        .iter()
+                        .filter_map(|id| textures.get(id.as_str()).map(|row| bound_texture(row)))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            virtual_textures: known
+                .map(|material| {
+                    material
+                        .virtual_textures
+                        .iter()
+                        .filter_map(|binding| {
+                            virtual_textures
+                                .get(binding.id.as_str())
+                                .map(|row| bound_virtual_texture(row))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+}
+
+/// The row of a texture as the entry of the material binding it
+fn bound_texture(row: &TextureSummary) -> TextureSummary {
+    TextureSummary {
+        material_names: Vec::new(),
+        ..row.clone()
+    }
+}
+
+/// The row of a virtual texture as the entry of the material binding it
+fn bound_virtual_texture(row: &VirtualTextureSummary) -> VirtualTextureSummary {
+    VirtualTextureSummary {
+        material_names: Vec::new(),
+        ..row.clone()
+    }
+}
+
+/// The materials of `value` in the asset's own order, as the export manifest lists them: each one
+/// carrying the asset's texture and virtual texture rows for the resources it binds.
+///
+/// Those rows are the manifest's only statement of the asset's resources — the material containing them
+/// says which material they belong to, so a separate list beside the materials would only repeat it.
+pub fn manifest_materials(
+    value: &VisualAsset,
+    materials: &HashMap<String, MaterialInfo>,
+    textures: &[TextureSummary],
+    virtual_textures: &[VirtualTextureSummary],
+) -> Vec<ExportMaterial> {
+    let textures: HashMap<&str, &TextureSummary> = textures
+        .iter()
+        .map(|row| (row.id.as_str(), row))
+        .collect();
+    let virtual_textures: HashMap<&str, &VirtualTextureSummary> = virtual_textures
+        .iter()
+        .map(|row| (row.id.as_str(), row))
+        .collect();
+
+    value
+        .material_ids
+        .iter()
+        .map(|id| {
+            ExportMaterial::new(
+                id,
+                materials.get(id),
+                &textures,
+                &virtual_textures,
+            )
+        })
+        .collect()
+}
+
+/// The entries of the material cache that `material_ids` reference, as an owned subset.
+///
+/// A material row of the export manifest reads the resources it binds out of these entries (see
+/// `manifest_materials`), and the cache they live in is not handed to the export task — so the export
+/// takes the handful of entries it needs rather than the whole cache (one entry per material of the
+/// game, each holding its own texture lists).
+pub fn materials_of(
+    material_ids: &[String],
+    materials: &HashMap<String, MaterialInfo>,
+) -> HashMap<String, MaterialInfo> {
+    material_ids
+        .iter()
+        .filter_map(|id| materials.get(id).map(|material| (id.clone(), material.clone())))
         .collect()
 }
 
@@ -129,8 +271,13 @@ fn virtual_texture_parameter(
         .filter(|name| !name.is_empty())
 }
 
-/// Streaming virtual texture reference (GTex)
-#[derive(Serialize)]
+/// Streaming virtual texture reference (GTex).
+///
+/// A row of the asset's virtual texture list (the detail panel), and — copied, without
+/// `material_names` — the entry the export manifest material binding it carries, which is why it is
+/// `Clone`. Its `width` / `height` are filled by whoever holds the archives, for the detail rows and
+/// for the entries inside a material alike (see `export::fill_vt_sizes`).
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VirtualTextureSummary {
     pub id: String,
@@ -146,14 +293,16 @@ pub struct VirtualTextureSummary {
     pub width: Option<u32>,
     pub height: Option<u32>,
     /// Names of this asset's materials that bind this virtual texture, in the asset's own material
-    /// order. Filled by `get_visual` only, and left out of the JSON while empty (the export
-    /// manifest resolves no names). The material section inverts this to list a material's virtual
-    /// textures; the rows here carry no material reference.
+    /// order — what the detail panel inverts to list a material's virtual textures. Left out of the
+    /// JSON while empty, which is what a material the cache does not know yields. A material row of the
+    /// export manifest leaves it out as well: there the material already contains its virtual textures,
+    /// so the relation would only be repeated the wrong way round.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub material_names: Vec<String>,
     /// Parameter the binding fills (e.g. `virtualtexture`), read off the asset's materials — it
-    /// belongs to the binding, not to the resource. Absent from the JSON while unset, which is the
-    /// case for the export manifest, so its bytes stay exactly what they were.
+    /// belongs to the binding, not to the resource. Absent from the JSON while unset: the names come
+    /// from the materials' templates (see `state::fill_virtual_texture_parameters`), which a detail view
+    /// and an export both read up front (`commands::ensure_virtual_texture_parameters`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameter_name: Option<String>,
 }
@@ -195,6 +344,66 @@ pub fn match_for_hash<'a>(matches: &'a [GtpMatch], hash: &str) -> Option<&'a Gtp
         .find(|matched| matched.gtex_hash.eq_ignore_ascii_case(hash))
 }
 
+/// The textures of `value`, each carrying the names of the asset's materials that bind it.
+///
+/// The texture list of the detail panel, and the source the export manifest builds its material rows
+/// from (see `manifest_materials`): a texture means the same thing in both, the resource plus the
+/// materials it belongs to.
+pub fn texture_summaries(
+    value: &VisualAsset,
+    materials: &HashMap<String, MaterialInfo>,
+) -> Vec<TextureSummary> {
+    value
+        .textures
+        .iter()
+        .map(|texture| {
+            let mut summary = TextureSummary::from(texture);
+            summary.material_names = material_names_for(
+                |material| material.texture_ids.iter().any(|id| id == &texture.id),
+                &value.material_ids,
+                materials,
+            );
+            summary
+        })
+        .collect()
+}
+
+/// The virtual textures of `value`, each carrying the names of the asset's materials that bind it and
+/// the parameter the binding fills.
+///
+/// The virtual texture list of the detail panel, and the source the export manifest builds its material
+/// rows from (see `manifest_materials`). The parameter name is only ever filled once the caller
+/// resolved it — the templates carrying it are read by a detail view and by an export
+/// (`commands::ensure_virtual_texture_parameters`), not by this function — so a row stays without one
+/// until then.
+pub fn virtual_texture_summaries(
+    value: &VisualAsset,
+    matches: &[GtpMatch],
+    materials: &HashMap<String, MaterialInfo>,
+) -> Vec<VirtualTextureSummary> {
+    value
+        .virtual_textures
+        .iter()
+        .map(|vt| {
+            let mut summary =
+                VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash));
+            summary.material_names = material_names_for(
+                |material| {
+                    material
+                        .virtual_textures
+                        .iter()
+                        .any(|binding| binding.id == vt.id)
+                },
+                &value.material_ids,
+                materials,
+            );
+            summary.parameter_name =
+                virtual_texture_parameter(&vt.id, &value.material_ids, materials);
+            summary
+        })
+        .collect()
+}
+
 /// Full visual asset information (detail panel)
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -223,35 +432,8 @@ impl VisualAssetDetail {
             name: value.name.clone(),
             path: value.gr2_path.clone(),
             materials: material_summaries(&value.material_ids, materials),
-            textures: value
-                .textures
-                .iter()
-                .map(|texture| {
-                    let mut summary = TextureSummary::from(texture);
-                    summary.material_names = material_names_for(
-                        |material| material.texture_ids.iter().any(|id| id == &texture.id),
-                        &value.material_ids,
-                        materials,
-                    );
-                    summary
-                })
-                .collect(),
-            virtual_textures: value
-                .virtual_textures
-                .iter()
-                .map(|vt| {
-                    let mut summary =
-                        VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash));
-                    summary.material_names = material_names_for(
-                        |material| material.virtual_textures.iter().any(|b| b.id == vt.id),
-                        &value.material_ids,
-                        materials,
-                    );
-                    summary.parameter_name =
-                        virtual_texture_parameter(&vt.id, &value.material_ids, materials);
-                    summary
-                })
-                .collect(),
+            textures: texture_summaries(value, materials),
+            virtual_textures: virtual_texture_summaries(value, matches, materials),
         }
     }
 }
@@ -431,11 +613,10 @@ pub struct ExportManifest {
     /// Mesh format that was exported: gr2 / glb
     pub mesh_format: MeshFormat,
     pub source: String,
-    /// The asset's materials, in its own order. GUID plus name (and the template they derive from):
-    /// a manifest listing bare GUIDs leaves nothing to look the material up by
-    pub materials: Vec<MaterialSummary>,
-    pub textures: Vec<TextureSummary>,
-    pub virtual_textures: Vec<VirtualTextureSummary>,
+    /// The asset's materials, in its own order. GUID plus name (and the template they derive from),
+    /// each carrying the textures and virtual textures it binds — the manifest states the asset's
+    /// resources there and nowhere else, so this is the list to read them from
+    pub materials: Vec<ExportMaterial>,
     /// Exported artifacts; asset.json itself is deliberately not listed here
     pub files: Vec<ExportedFile>,
     pub exported_at_unix: u64,

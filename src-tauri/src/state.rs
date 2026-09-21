@@ -10,6 +10,10 @@ use crate::virtual_textures::PageFileSizes;
 
 /// One material of the built database: the name that makes its GUID readable, plus the resources it
 /// binds (GUIDs, in parameter order).
+///
+/// `Clone` so a command can hand the entries of one asset to an export task without copying the whole
+/// cache (see `models::materials_of`).
+#[derive(Clone)]
 pub struct MaterialInfo {
     /// Human-readable name from `MaterialBank` (e.g. `BEAR_Body_A`); empty when the resource has none
     pub name: String,
@@ -24,6 +28,7 @@ pub struct MaterialInfo {
 }
 
 /// A virtual texture one material binds, together with the parameter that binding fills.
+#[derive(Clone)]
 pub struct VirtualTextureBinding {
     /// GUID of the virtual texture resource (`VirtualTextureBank`)
     pub id: String,
