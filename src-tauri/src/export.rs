@@ -40,8 +40,8 @@ const PHASE_MANIFEST: &str = "manifest";
 const PHASE_DONE: &str = "done";
 
 /// The three layers exported from a virtual texture (order matches `VirtualTextureLayer`).
-/// Extractor output is `<name>_<layer>.dds`; export file names drop the trailing `Map`
-/// (`BaseMap` → `Base`, see `export_vt_layer`)
+/// Extractor output is `<name>_<layer>.dds`; export file names follow the engine's naming for split
+/// virtual textures (`BaseMap` → `Albedo`, see `export_layer_name`)
 const VT_LAYERS: [&str; 3] = ["BaseMap", "NormalMap", "PhysicalMap"];
 
 /// Append a structured warning (code is localized by the frontend, detail keeps the raw message)
@@ -607,6 +607,16 @@ fn collect_vt_layers(
     Ok(())
 }
 
+/// The name a layer takes in the export. The extractor calls the base layer `BaseMap` while the engine
+/// calls it Albedo — the export follows the engine, so `BaseMap` → `Albedo`; the other two layers just
+/// drop the trailing `Map` (`NormalMap` → `Normal`)
+fn export_layer_name(layer: &str) -> &str {
+    match layer {
+        "BaseMap" => "Albedo",
+        other => other.trim_end_matches("Map"),
+    }
+}
+
 /// Move one extracted layer into `vt_dir` under its export name and record the artifact
 fn export_vt_layer(
     layer: &str,
@@ -617,10 +627,9 @@ fn export_vt_layer(
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
 ) -> Result<(), String> {
-    // The extractor writes `<name>_<layer>.dds` (e.g. `..._basemap.dds`); the export file drops the
-    // trailing `Map` from the layer name (`BaseMap` → `Base`), matching the engine's
-    // `Albedo_Normal_Physical` naming for split virtual textures
-    let stem = format!("{safe_name}_{}", layer.trim_end_matches("Map"));
+    // The extractor writes `<name>_<layer>.dds` (e.g. `..._basemap.dds`); the export file is named
+    // after the layer as the engine names it
+    let stem = format!("{safe_name}_{}", export_layer_name(layer));
     // Same name, same place: a re-export overwrites the file the previous one left behind. A rename
     // onto an existing destination fails on Windows, which is what the copy below covers
     let dds_path = vt_dir.join(format!("{stem}.dds"));

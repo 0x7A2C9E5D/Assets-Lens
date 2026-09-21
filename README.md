@@ -155,8 +155,8 @@ tauri-app/
 <target>/<asset name>/
 ├─ <asset name>.gr2 | <asset name>.glb   Mesh (raw GR2 or converted GLB)
 ├─ textures/<name>.dds | .png            Referenced DDS textures (optionally PNG)
-├─ virtual_textures/<name>_Base.*        Three virtual texture layers
-│                  <name>_Normal.*       (Base / Normal / Physical)
+├─ virtual_textures/<name>_Albedo.*      Three virtual texture layers
+│                  <name>_Normal.*       (Albedo / Normal / Physical)
 │                  <name>_Physical.*
 └─ asset.json                            Manifest (maclarian version, materials with their
                                          textures, exported files)
@@ -379,7 +379,7 @@ tauri-app/
 <目标目录>/<资源名>/
 ├─ <资源名>.gr2 | <资源名>.glb      网格（原始 GR2 或转换后的 GLB）
 ├─ textures/<纹理名>.dds | .png     引用的 DDS 纹理（可选转 PNG）
-├─ virtual_textures/<名>_Base.*     虚拟纹理三层（Base / Normal / Physical）
+├─ virtual_textures/<名>_Albedo.*   虚拟纹理三层（Albedo / Normal / Physical）
 │                  <名>_Normal.*
 │                  <名>_Physical.*
 └─ asset.json                       元数据清单（maclarian 版本、材质及其纹理、导出文件列表）
