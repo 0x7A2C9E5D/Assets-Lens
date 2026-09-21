@@ -74,18 +74,6 @@ fn sanitize_file_name(raw: &str) -> String {
     }
 }
 
-/// Append a sequence number when the target file already exists, so same-named files never
-/// overwrite each other
-fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
-    let mut candidate = dir.join(format!("{stem}.{ext}"));
-    let mut seq = 2usize;
-    while candidate.exists() {
-        candidate = dir.join(format!("{stem}-{seq}.{ext}"));
-        seq += 1;
-    }
-    candidate
-}
-
 /// Record one written artifact in the export result
 fn record_file(files: &mut Vec<ExportedFile>, path: &Path, kind: &str, size_bytes: usize) {
     files.push(ExportedFile {
@@ -130,7 +118,7 @@ fn replace_dds_with_png(
 ) -> bool {
     match dds_bytes_to_png_bytes(dds_bytes) {
         Ok(png) => {
-            let png_path = unique_path(dir, stem, "png");
+            let png_path = dir.join(format!("{stem}.png"));
             try_write_png_and_record(&png, &png_path, dds_path, files, warnings, source_label)
         }
         Err(err) => {
@@ -404,7 +392,8 @@ fn write_texture(
     warnings: &mut Vec<ExportWarning>,
 ) {
     let stem = texture_stem(tex);
-    let dds_path = unique_path(tex_dir, &stem, "dds");
+    // Same name, same place: a re-export overwrites the file the previous one left behind
+    let dds_path = tex_dir.join(format!("{stem}.dds"));
     if let Err(err) = fs::write(&dds_path, dds) {
         push_warning(warnings, "textureWriteFailed", format!("{}: {err}", tex.dds_path));
         return;
@@ -632,7 +621,9 @@ fn export_vt_layer(
     // trailing `Map` from the layer name (`BaseMap` → `Base`), matching the engine's
     // `Albedo_Normal_Physical` naming for split virtual textures
     let stem = format!("{safe_name}_{}", layer.trim_end_matches("Map"));
-    let dds_path = unique_path(vt_dir, &stem, "dds");
+    // Same name, same place: a re-export overwrites the file the previous one left behind. A rename
+    // onto an existing destination fails on Windows, which is what the copy below covers
+    let dds_path = vt_dir.join(format!("{stem}.dds"));
     if fs::rename(src, &dds_path).is_err() {
         fs::copy(src, &dds_path).map_err(|e| format!("Failed to move {layer} output: {e}"))?;
     }
