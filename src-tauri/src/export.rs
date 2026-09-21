@@ -9,6 +9,7 @@
 //! Reaching into the archives is not this module's job: `crate::archives` owns the PAK read pool and
 //! `crate::virtual_textures` stages the page files the extractor consumes.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,7 +26,7 @@ use crate::models::{
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
     MeshFormat, TextureSummary, VirtualTextureSummary,
 };
-use crate::virtual_textures::{self, StagedSources};
+use crate::virtual_textures::{self, PageFileSizes, StagedSources};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
 const PHASE_PREPARE: &str = "prepare";
@@ -276,7 +277,10 @@ pub fn run_export(
 
     // 4. Metadata manifest (always written, but never listed among the exported files)
     progress.item(PHASE_MANIFEST, None);
-    let manifest = build_manifest(asset, vt_matches, &plan, &files);
+    let mut manifest = build_manifest(asset, vt_matches, &plan, &files);
+    // Completed before the write: the sizes come out of the archives, which the manifest alone has
+    // no access to
+    fill_vt_sizes(pool, vt_matches, &mut manifest);
     write_manifest(&manifest, &plan.out_dir, &mut warnings);
 
     progress.phase(PHASE_DONE, 1.0);
@@ -652,7 +656,36 @@ fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, Strin
         }))
 }
 
-/// Assemble the `asset.json` content of one export
+/// Fill in the pixel size of every virtual texture row of the manifest.
+///
+/// The size is the bounding box of that page file's own tiles, which is exactly the DDS the extractor
+/// wrote next to the manifest and the value the detail view shows for the same virtual texture (see
+/// `virtual_textures::page_file_size`), so `asset.json` and the UI agree on it.
+///
+/// The archives are read here, and a size is decoration: an unavailable pool, a hash that resolved to
+/// no page file or a GTS that does not parse all leave the field unset rather than failing an export
+/// whose files are already on disk.
+fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest: &mut ExportManifest) {
+    if manifest.virtual_textures.is_empty() {
+        return;
+    }
+
+    let Ok(mut archives) = lock_pool(pool) else {
+        return;
+    };
+
+    // One GTS serves every page file of its tile set, so a shared cache reads each of them once
+    let mut sizes: HashMap<String, PageFileSizes> = HashMap::new();
+    for row in &mut manifest.virtual_textures {
+        let size = match_for_hash(vt_matches, &row.hash).and_then(|matched| {
+            virtual_textures::page_file_size(&mut archives, &mut sizes, matched, &row.hash)
+        });
+        row.set_size(size);
+    }
+}
+
+/// Assemble the `asset.json` content of one export. The virtual texture sizes are the one field that
+/// needs the archives, so they are settled by `fill_vt_sizes` before the manifest is written.
 fn build_manifest(
     asset: &VisualAsset,
     vt_matches: &[GtpMatch],

@@ -120,10 +120,11 @@ pub struct VirtualTextureSummary {
     pub hash: String,
     /// Page file (`.gtp`) inside its archive; empty when no lookup was run or nothing matched
     pub path: String,
-    /// Pixel size of this page file, read out of its tile set's GTS on demand by `get_visual` — the
-    /// same box the extractor writes as its DDS. `None` when the hash resolved to no page file or
-    /// that GTS could not be parsed (the row then renders without a size); the export manifest
-    /// leaves it `None` because it never reads the GTS
+    /// Pixel size of this page file, read out of its tile set's GTS — by `get_visual` for a detail
+    /// row and by `export::fill_vt_sizes` for the export manifest, both off the same
+    /// `virtual_textures::page_file_size`. It is the same box the extractor writes as its DDS.
+    /// `None` when the hash resolved to no page file, that GTS could not be parsed, or the caller
+    /// does not read the GTS at all (the row then renders without a size)
     pub width: Option<u32>,
     pub height: Option<u32>,
     /// Names of this asset's materials that bind this virtual texture, in the asset's own material
