@@ -713,6 +713,7 @@ fn build_manifest(
     let virtual_textures = virtual_texture_summaries(asset, vt_matches, materials);
 
     ExportManifest {
+        id: asset.id.clone(),
         name: asset.name.clone(),
         path: asset.gr2_path.clone(),
         mesh_format: plan.mesh_format,

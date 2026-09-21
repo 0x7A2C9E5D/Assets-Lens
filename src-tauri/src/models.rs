@@ -608,6 +608,9 @@ pub struct ExportResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportManifest {
+    /// Visual resource ID (GUID): the asset's identity, and the key to look it up by — the name below
+    /// is not unique
+    pub id: String,
     pub name: String,
     pub path: String,
     /// Mesh format that was exported: gr2 / glb
