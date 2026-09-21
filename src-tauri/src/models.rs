@@ -616,9 +616,6 @@ pub struct ExportManifest {
     pub id: String,
     pub name: String,
     pub path: String,
-    /// Mesh format that was exported: gr2 / glb
-    pub mesh_format: MeshFormat,
-    pub source: String,
     /// The asset's materials, in its own order. GUID plus name (and the template they derive from),
     /// each carrying the textures and virtual textures it binds — the manifest states the asset's
     /// resources there and nowhere else, so this is the list to read them from
