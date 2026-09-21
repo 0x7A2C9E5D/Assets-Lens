@@ -22,9 +22,8 @@ use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::archives::{lock_pool, Archives, Pak};
 use crate::models::{
-    match_for_hash,
-    ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
-    MeshFormat, TextureSummary, VirtualTextureSummary,
+    match_for_hash, ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning,
+    ExportedFile, MaterialSummary, MeshFormat, TextureSummary, VirtualTextureSummary,
 };
 use crate::virtual_textures::{self, PageFileSizes, StagedSources};
 
@@ -250,8 +249,12 @@ fn vt_targets_of(asset: &VisualAsset, export_textures: bool) -> Vec<&VirtualText
 
 /// Export a single visual asset. The GLB is the core artifact — its failure aborts the whole
 /// export, while a single texture / virtual texture failure only records a warning.
+///
+/// `materials` are the asset's materials already summarized by the caller: the names live in the
+/// material cache that only the command holds (see `models::material_summaries`).
 pub fn run_export(
     asset: &VisualAsset,
+    materials: &[MaterialSummary],
     pool: &Arc<Mutex<Archives>>,
     dest_root: &Path,
     options: &ExportOptions,
@@ -277,7 +280,7 @@ pub fn run_export(
 
     // 4. Metadata manifest (always written, but never listed among the exported files)
     progress.item(PHASE_MANIFEST, None);
-    let mut manifest = build_manifest(asset, vt_matches, &plan, &files);
+    let mut manifest = build_manifest(asset, materials, vt_matches, &plan, &files);
     // Completed before the write: the sizes come out of the archives, which the manifest alone has
     // no access to
     fill_vt_sizes(pool, vt_matches, &mut manifest);
@@ -688,6 +691,7 @@ fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest:
 /// needs the archives, so they are settled by `fill_vt_sizes` before the manifest is written.
 fn build_manifest(
     asset: &VisualAsset,
+    materials: &[MaterialSummary],
     vt_matches: &[GtpMatch],
     plan: &ExportPlan<'_>,
     files: &[ExportedFile],
@@ -697,7 +701,7 @@ fn build_manifest(
         path: asset.gr2_path.clone(),
         mesh_format: plan.mesh_format,
         source: asset.source_pak.clone(),
-        material_ids: asset.material_ids.clone(),
+        materials: materials.to_vec(),
         textures: asset.textures.iter().map(TextureSummary::from).collect(),
         virtual_textures: asset
             .virtual_textures

@@ -10,8 +10,8 @@ use tauri::{AppHandle, Manager, State};
 use crate::archives::{lock_pool, Pak};
 use crate::export::run_export;
 use crate::models::{
-    match_for_hash, AppInfo, BuildProgress, DatabaseStats, ExportOptions, ExportProgress, ExportResult,
-    ModelPreview, Page, VisualAssetDetail, VisualSummary,
+    match_for_hash, material_summaries, AppInfo, BuildProgress, DatabaseStats, ExportOptions,
+    ExportProgress, ExportResult, ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
 use crate::state::{extract_materials, fill_virtual_texture_parameters, AppState};
 use crate::virtual_texture_params;
@@ -521,7 +521,7 @@ pub async fn export_visual_asset(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, String> {
-        let (pool, asset, vt_matches) = {
+        let (pool, asset, materials, vt_matches) = {
             let mut st = lock(&state)?;
             let asset = st
                 .merged_db
@@ -536,12 +536,16 @@ pub async fn export_visual_asset(
             } else {
                 Vec::new()
             };
+            // The names are resolved while the state is held: the manifest has to name its materials,
+            // and the cache they come from is not handed to the export
+            let materials = material_summaries(&asset.material_ids, &st.materials);
             // Shared with the previews: the archives this export needs are usually open already
-            (st.pool()?, asset, vt_matches)
+            (st.pool()?, asset, materials, vt_matches)
         };
 
         run_export(
             &asset,
+            &materials,
             &pool,
             &dest_root,
             &options,

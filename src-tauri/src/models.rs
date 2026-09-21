@@ -46,7 +46,9 @@ impl From<&TextureRef> for TextureSummary {
 
 /// Material reference. The GUID stays the identity (names are not unique), the name is what makes
 /// a material row readable, and the template file is where the material is defined.
-#[derive(Serialize)]
+///
+/// `Clone` because the export manifest is assembled from a summary list the command already built
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MaterialSummary {
     pub id: String,
@@ -69,6 +71,22 @@ impl MaterialSummary {
                 .unwrap_or_default(),
         }
     }
+}
+
+/// Summaries of `material_ids` in the order the asset lists them.
+///
+/// Shared by the detail panel and the export manifest: a material is identified by its GUID but is
+/// only readable through the name, and a manifest carrying bare GUIDs cannot be looked up in the
+/// game data. A material the cache does not know keeps an empty name instead of dropping out of the
+/// list, so the reference itself is never lost.
+pub fn material_summaries(
+    material_ids: &[String],
+    materials: &HashMap<String, MaterialInfo>,
+) -> Vec<MaterialSummary> {
+    material_ids
+        .iter()
+        .map(|id| MaterialSummary::new(id, materials.get(id)))
+        .collect()
 }
 
 /// Names of the materials of one asset that bind the resource `id`. More than one is possible (two
@@ -204,11 +222,7 @@ impl VisualAssetDetail {
             id: value.id.clone(),
             name: value.name.clone(),
             path: value.gr2_path.clone(),
-            materials: value
-                .material_ids
-                .iter()
-                .map(|id| MaterialSummary::new(id, materials.get(id)))
-                .collect(),
+            materials: material_summaries(&value.material_ids, materials),
             textures: value
                 .textures
                 .iter()
@@ -417,7 +431,9 @@ pub struct ExportManifest {
     /// Mesh format that was exported: gr2 / glb
     pub mesh_format: MeshFormat,
     pub source: String,
-    pub material_ids: Vec<String>,
+    /// The asset's materials, in its own order. GUID plus name (and the template they derive from):
+    /// a manifest listing bare GUIDs leaves nothing to look the material up by
+    pub materials: Vec<MaterialSummary>,
     pub textures: Vec<TextureSummary>,
     pub virtual_textures: Vec<VirtualTextureSummary>,
     /// Exported artifacts; asset.json itself is deliberately not listed here
