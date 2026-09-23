@@ -199,6 +199,13 @@ pub struct AppState {
     pub page_file_sizes: HashMap<String, PageFileSizes>,
 }
 
+/// An empty state: no directory chosen and nothing built yet, which is what `new` returns
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppState {
     pub fn new() -> Self {
         Self {
