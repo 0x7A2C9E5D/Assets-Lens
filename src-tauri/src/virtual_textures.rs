@@ -51,7 +51,10 @@ pub fn stage_sources(
     }
 
     let gts_candidates = stage_gts_candidates(pak, matched, shared)?;
-    Ok(StagedSources { gtp, gts_candidates })
+    Ok(StagedSources {
+        gtp,
+        gts_candidates,
+    })
 }
 
 /// Pixel size of every page file of one tile set, paired with the page file name it belongs to.
@@ -299,11 +302,11 @@ fn stage_gts_candidates(
         .filter(|p| {
             p.to_lowercase().ends_with(".gts")
                 && Path::new(p)
-                .parent()
-                .and_then(|p| p.to_str())
-                .unwrap_or("")
-                .to_lowercase()
-                == gtp_dir
+                    .parent()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or("")
+                    .to_lowercase()
+                    == gtp_dir
         })
         .filter(|p| {
             let stem = Path::new(p)
@@ -332,12 +335,7 @@ fn stage_gts_candidates(
 }
 
 /// Stage one GTS to disk; reuse it directly when already staged (shared with another GTP)
-fn stage_gts_file(
-    pak: &mut Archives,
-    rel: &str,
-    shared: &Path,
-    staged: &mut Vec<PathBuf>,
-) -> bool {
+fn stage_gts_file(pak: &mut Archives, rel: &str, shared: &Path, staged: &mut Vec<PathBuf>) -> bool {
     let Some(name) = Path::new(rel).file_name().and_then(|n| n.to_str()) else {
         return false;
     };

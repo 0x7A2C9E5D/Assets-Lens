@@ -101,16 +101,20 @@ const zhCN = {
         emptyTitle: '资源尚未扫描',
         emptyDescription: '请先前往“数据库”，选择游戏数据目录并完成扫描。',
         emptyAction: '前往数据库',
+        tabBase: '本体资源',
+        tabMod: '模组资源',
     },
 
     table: {
         headerName: '资源名称',
         headerUuid: 'ID',
+        headerSource: '来源',
         headerMaterial: '材质',
         headerTexture: '纹理',
         headerVirtual: '虚拟纹理',
         sortByName: '按名称排序',
         sortById: '按 ID 排序',
+        sortBySource: '按来源排序',
         empty: '没有可显示的条目',
     },
 

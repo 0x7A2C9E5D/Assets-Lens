@@ -16,6 +16,11 @@ virtual textures), with a live 3D preview and one-click export.
   default location — a GOG build or a non-default Steam library has to be picked manually), or pick the Data directory
   containing `Shared.pak` through the native folder dialog; while building the merged index, per-file progress (pushed
   over a `Channel`) and elapsed time are shown, followed by Visual / Material / Texture / Virtual Texture stat cards
+- **Mod support**: the game's own `Mods` directory (`%LOCALAPPDATA%\Larian Studios\Baldur's Gate 3\Mods`) is scanned
+  along with the Data directory — no configuration, since that is where the game reads mods from — and the visual /
+  material / texture banks the `*.pak` files there carry are merged into the same index (a mod's resource wins over the
+  base game on the same name or GUID); every asset, material and texture reports which mod supplies it, both in the UI
+  and in `asset.json`, and mod files are read back out of their own pak for the preview and for export
 - **Browse page**: a paginated list of visual assets, sortable by name or GUID from the column headers, with debounced
   keyword search that matches a name or a GUID and `↑` / `↓` keyboard navigation; selecting an entry shows its 3D
   preview, GR2 mesh path and source PAK, material IDs, the DDS texture list with each texture's own source PAK, and, for
@@ -255,6 +260,10 @@ Larian Studios. All trademarks and copyrights related to the game and its assets
   库需手动选择），或用系统原生目录对话框手动选择含
   `Shared.pak` 的 Data 目录；构建合并索引时通过 `Channel` 推送逐文件进度并显示耗时，完成后展示 Visual / Material /
   Texture / Virtual Texture 统计卡片
+- **模组支持**：自动扫描游戏自身的 `Mods` 目录（`%LOCALAPPDATA%\Larian Studios\Baldur's Gate 3\Mods`
+  ），无需任何设置——游戏就是从该目录读取模组的；其中的
+  `*.pak` 包内视觉 / 材质 / 纹理 bank 会并入同一索引（同名或同 GUID 时以模组为准）；每条资源、材质、纹理都会标注来源模组，界面与
+  `asset.json` 中一致，预览与导出也会回到模组 pak 中读取文件
 - **浏览页**：视觉资源分页浏览，可点击表头按名称或 GUID 排序，并支持按名称或 GUID 的关键字搜索（防抖过滤）与键盘 `↑` / `↓`
   依次切换；点击条目在右侧详情面板查看 3D 预览、GR2 网格路径与来源 PAK、材质 ID、DDS
   纹理列表（每条纹理各自标注来源归档）与虚拟纹理列表（每个哈希解析到的页文件及其来源归档）

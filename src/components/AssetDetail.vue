@@ -182,6 +182,13 @@ function toggle(section: SectionKey) {
                 <span v-if="material.name" class="break-all text-[10px] text-subtle">
                   {{ material.id }}
                 </span>
+                <!-- Only a mod-sourced row carries a label: base-game rows stay exactly as before -->
+                <span
+                    v-if="material.source"
+                    class="shrink-0 rounded-sm bg-tint px-1.5 py-0.5 text-[10px] text-fg/85"
+                >
+                  {{ material.source }}
+                </span>
               </p>
               <!-- The chip block keeps the card's row step (6px) on both sides of the divider, so the
                    gap above it reads like every other gap in the card instead of a section break -->
@@ -247,6 +254,12 @@ function toggle(section: SectionKey) {
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span v-if="tex.name" class="break-all font-mono">{{ tex.name }}</span>
                   <span>{{ tex.width }} × {{ tex.height }}</span>
+                  <span
+                      v-if="tex.source"
+                      class="shrink-0 rounded-sm bg-tint px-1.5 py-0.5 text-[10px] text-fg/85"
+                  >
+                    {{ tex.source }}
+                  </span>
                 </div>
               </div>
               <p v-if="!asset.textures.length" class="text-xs text-subtle">
@@ -285,6 +298,12 @@ function toggle(section: SectionKey) {
                 <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span class="break-all font-mono">{{ vt.name }}</span>
                   <span v-if="vt.width">{{ vt.width }} × {{ vt.height }}</span>
+                  <span
+                      v-if="vt.source"
+                      class="shrink-0 rounded-sm bg-tint px-1.5 py-0.5 text-[10px] text-fg/85"
+                  >
+                    {{ vt.source }}
+                  </span>
                 </div>
               </div>
               <p v-if="!asset.virtualTextures.length" class="text-xs text-subtle">

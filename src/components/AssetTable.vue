@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import {computed} from 'vue'
 import type {VisualSort, VisualSummary} from '../api/tauri'
 import {ArrowDown, ArrowUp, Grid2x2, Image, Loader2, Palette} from 'lucide-vue-next'
 
@@ -11,6 +12,9 @@ const props = defineProps<{
   sortBy: VisualSort
   sortDesc: boolean
   hideEmpty?: boolean
+  /** Show the source column. Only the mod table needs it: every row there is topped by a mod, while
+   *  the base-game table is uniformly the game's own and the column would repeat one word */
+  showSource?: boolean
 }>()
 
 const emit = defineEmits(['select', 'move', 'sort'])
@@ -28,13 +32,18 @@ function headerClass(field: VisualSort) {
   return isSorted(field) ? 'text-accent' : 'hover:text-fg'
 }
 
-/** Five-column layout: the UUID column leads and caps at 300px (a full 36-char GUID at 12px mono +
+/** Six-column layout: the UUID column leads and caps at 300px (a full 36-char GUID at 12px mono +
  *  padding) but starts at 0, so a narrow window shrinks it to a truncating stub — with a `title`
  *  fallback — instead of pushing the other columns out of the grid; the name column is ≥220px wide
  *  to fit asset names and its 1fr absorbs the remaining space, so the table always fills its
- *  wrapper with zero leftover; the three count columns are fixed at 80px (14px icon + padding) —
- *  they skip fr distribution for a compact, gap-free fit. */
-const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
+ *  wrapper with zero leftover; the source column only exists where `showSource` is on and is fixed
+ *  at 140px, while the three count columns at 80px (14px icon + padding) — they skip fr distribution
+ *  for a compact, gap-free fit. */
+const GRID_COLS = computed(() =>
+    props.showSource
+        ? 'minmax(0, 300px) minmax(220px, 1fr) 140px repeat(3, 80px)'
+        : 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)',
+)
 </script>
 
 <template>
@@ -82,6 +91,19 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
           <ArrowUp v-if="isSorted('name') && !sortDesc" class="h-3 w-3 shrink-0"/>
           <ArrowDown v-else-if="isSorted('name')" class="h-3 w-3 shrink-0"/>
         </button>
+        <button
+            v-if="showSource"
+            :aria-label="$t('table.sortBySource')"
+            :class="headerClass('source')"
+            :title="$t('table.sortBySource')"
+            class="flex w-full items-center justify-center gap-1 px-3 py-2.5 transition-colors duration-150 ease-fluent"
+            type="button"
+            @click="emit('sort', 'source')"
+        >
+          <span class="min-w-0 truncate">{{ $t('table.headerSource') }}</span>
+          <ArrowUp v-if="isSorted('source') && !sortDesc" class="h-3 w-3 shrink-0"/>
+          <ArrowDown v-else-if="isSorted('source')" class="h-3 w-3 shrink-0"/>
+        </button>
         <div
             :title="$t('table.headerMaterial')"
             class="flex items-center justify-center px-3 py-3"
@@ -125,6 +147,15 @@ const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
           <span :class="isActive(row.id) ? 'text-accent' : 'text-fg'">
             {{ row.name }}
           </span>
+        </div>
+        <!-- Source column: the mod's name as plain text, shown only in the mod table, where every row has
+             one -->
+        <div
+            v-if="showSource"
+            :title="row.source"
+            class="truncate px-3 py-2 text-center text-[12px] text-fg/85"
+        >
+          {{ row.source }}
         </div>
         <div
             :title="$t('detail.materialIds', {count: row.materialCount})"

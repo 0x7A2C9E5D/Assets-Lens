@@ -101,16 +101,20 @@ const zhTW = {
         emptyTitle: '尚未掃描資源',
         emptyDescription: '請先前往「資料庫」，選擇遊戲資料夾並完成掃描。',
         emptyAction: '前往資料庫',
+        tabBase: '本體資源',
+        tabMod: '模組資源',
     },
 
     table: {
         headerName: '資源名稱',
         headerUuid: 'ID',
+        headerSource: '來源',
         headerMaterial: '材質',
         headerTexture: '紋理',
         headerVirtual: '虛擬紋理',
         sortByName: '依名稱排序',
         sortById: '依 ID 排序',
+        sortBySource: '依來源排序',
         empty: '沒有可顯示的項目',
     },
 

@@ -25,6 +25,8 @@ export interface TextureRef {
      *  The material section inverts this relation (material name → the textures under it); a
      *  texture row itself carries no material reference */
     materialNames?: string[]
+    /** Mod that supplies this resource; absent for resources from the base game */
+    source?: string
 }
 
 /** Material reference: the GUID stays the identity, the name is the readable label */
@@ -33,6 +35,8 @@ export interface MaterialRef {
     name: string
     /** Base material template (`.lsf`) the material is derived from */
     sourceFile: string
+    /** Mod that supplies this material; absent for materials from the base game */
+    source?: string
 }
 
 export interface VirtualTextureRef {
@@ -53,6 +57,8 @@ export interface VirtualTextureRef {
      *  template of the material that binds it; absent when that template could not be read, so the
      *  chip renders without it */
     parameterName?: string
+    /** Mod that supplies this resource; absent for resources from the base game */
+    source?: string
 }
 
 export interface VisualAsset {
@@ -63,6 +69,8 @@ export interface VisualAsset {
     materials: MaterialRef[]
     textures: TextureRef[]
     virtualTextures: VirtualTextureRef[]
+    /** Mod that supplies this visual; absent for visuals from the base game */
+    source?: string
 }
 
 export interface VisualSummary {
@@ -72,6 +80,8 @@ export interface VisualSummary {
     materialCount: number
     textureCount: number
     virtualTextureCount: number
+    /** Mod that supplies this visual; absent for visuals from the base game */
+    source?: string
 }
 
 /** 3D preview: the GR2 mesh converted to GLB (transferred as Base64 to avoid per-byte JSON arrays) */
@@ -115,11 +125,15 @@ export function dbStats(): Promise<DatabaseStats | null> {
 }
 
 /** Sort columns the browse list offers; each maps to an order cached by the backend */
-export type VisualSort = 'name' | 'id'
+export type VisualSort = 'name' | 'id' | 'source'
+
+/** Which half of the index a list request covers: the game's own resources, or what the mods add */
+export type VisualOrigin = 'base' | 'mod'
 
 /**
  * One page of visual assets. `keyword` matches the asset name or its GUID; `sort` / `descending`
  * select the backend's cached order — sorting has to happen there, because the list is paged there.
+ * `origin` narrows the page to one half of the index, so each tab counts and pages on its own.
  */
 export function listVisuals(
     offset: number,
@@ -127,6 +141,7 @@ export function listVisuals(
     keyword?: string,
     sort: VisualSort = 'name',
     descending = false,
+    origin: VisualOrigin = 'base',
 ): Promise<Page<VisualSummary>> {
     return invoke<Page<VisualSummary>>('list_visuals', {
         offset,
@@ -134,6 +149,7 @@ export function listVisuals(
         keyword: keyword && keyword.trim() ? keyword : null,
         sort,
         descending,
+        origin,
     })
 }
 

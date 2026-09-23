@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
@@ -7,6 +8,15 @@ use serde::Deserialize;
 
 use crate::archives::{Archives, Pak};
 use crate::virtual_textures::PageFileSizes;
+
+/// The resources a mod provides, by resource GUID. Everything the game itself provides is absent, so a
+/// GUID missing here reads as the base game.
+pub type ModSources = HashMap<String, String>;
+
+/// The mod that provides a resource, or `None` when it comes from the game
+pub fn source_of(sources: &ModSources, id: &str) -> Option<String> {
+    sources.get(id).cloned()
+}
 
 /// One material of the built database: the name that makes its GUID readable, plus the resources it
 /// binds (GUIDs, in parameter order).
@@ -147,11 +157,12 @@ pub fn fill_virtual_texture_parameters(
     }
 }
 
-/// Global application state: BG3 data directory, resource resolver, the built database,
-/// and a stable name cache for consistent pagination order.
+/// Global application state: BG3 data directory, the resource resolver, the built database, and a
+/// stable name cache for consistent pagination order.
 ///
-/// The game directory is not persisted here: the frontend remembers it (Web storage) and hands it
-/// back through `set_game_path` on startup, so this state only lives for the current session.
+/// The game data directory is not persisted here: the frontend remembers it (Web storage) and hands
+/// it back through `set_game_path` on startup, so this state only lives for the current session. The
+/// mod directory is not settable at all — it is always the game's own default location.
 pub struct AppState {
     /// Shared rather than owned: building the database runs for minutes, and the build has to keep
     /// working on the resolver after the state lock has been released (see `build_database`).
@@ -166,9 +177,17 @@ pub struct AppState {
     /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
     /// picks a sequence instead of re-sorting every id on each page request.
     pub visual_ids_by_id: Vec<String>,
+    /// The same GUIDs ordered by their source (mod name), with the base game first: the mod table
+    /// offers that column as a sort key, and it is resolved here for the same reason as the orders
+    /// above.
+    pub visual_ids_by_source: Vec<String>,
     /// Materials by GUID, filled once per build. The database itself cannot be queried for them
     /// (see `extract_materials`), so the names are read out at build time and kept here.
     pub materials: HashMap<String, MaterialInfo>,
+    /// The mod providing each resource of the index, filled once per build. Only the resources a mod
+    /// provides are in here (see `ModSources`), and it labels them in the list, the detail panel and
+    /// `asset.json` alike.
+    pub mod_sources: ModSources,
     /// PAK read pool shared by every command: opening an archive parses its whole file table, so the
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
     /// reading an archive needs `&mut` on its reader.
@@ -188,7 +207,9 @@ impl AppState {
             merged_db: None,
             visual_ids: Vec::new(),
             visual_ids_by_id: Vec::new(),
+            visual_ids_by_source: Vec::new(),
             materials: HashMap::new(),
+            mod_sources: ModSources::new(),
             archives: None,
             page_file_sizes: HashMap::new(),
         }
@@ -199,8 +220,11 @@ impl AppState {
         self.merged_db = None;
         self.visual_ids.clear();
         self.visual_ids_by_id.clear();
+        self.visual_ids_by_source.clear();
         // The names were read out of the database that was just dropped
         self.materials.clear();
+        // The sources belong to the database that was just dropped
+        self.mod_sources.clear();
         // The archives still open belong to the previous directory
         self.archives = None;
         // Page file sizes were read from those archives
@@ -219,7 +243,14 @@ impl AppState {
             .game_path
             .as_ref()
             .ok_or_else(|| "BG3 Data directory is not set.".to_string())?;
-        let pool = Arc::new(Mutex::new(Archives::new(game_path)));
+        // Read once, here: the pool is built per game directory, and the mod list is part of what it
+        // is built from. The mod directory is the game's own default location (see
+        // `default_mods_path`) — it is not user-settable, so the list only changes when the user
+        // adds or removes a mod file, which a rebuild picks up.
+        let mod_paths = default_mods_path()
+            .map(|dir| mod_paks(&dir))
+            .unwrap_or_default();
+        let pool = Arc::new(Mutex::new(Archives::new(game_path, mod_paths)));
         self.archives = Some(pool.clone());
         Ok(pool)
     }
@@ -277,4 +308,43 @@ impl AppState {
         self.merged_db = Some(resolver.into_database());
         matches
     }
+}
+
+/// Where the game installs its mods: `%LOCALAPPDATA%\Larian Studios\Baldur's Gate 3\Mods`, which is
+/// the directory every mod manager for the game writes to.
+///
+/// This is fixed rather than configurable: it is where the game itself reads mods from, so scanning
+/// anything else would index resources the game never loads. `None` on a machine that has never run
+/// the game — and a `Mods` directory holding no `.pak` is just as valid — leaves the database built
+/// from the game alone.
+fn default_mods_path() -> Option<PathBuf> {
+    let base = std::env::var_os("LOCALAPPDATA")?;
+    let path = PathBuf::from(base)
+        .join("Larian Studios")
+        .join("Baldur's Gate 3")
+        .join("Mods");
+    path.is_dir().then_some(path)
+}
+
+/// The mod archives of a directory, in ascending file name order.
+///
+/// The order is fixed rather than left to the file system, because it is what decides which mod wins
+/// when two of them provide the same resource: a read walks the list backwards, so the last file name
+/// takes precedence. A directory that cannot be listed contributes no mods rather than an error —
+/// mods are optional, and the game's own data is read either way.
+fn mod_paks(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    let mut paths: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("pak"))
+        })
+        .collect();
+    paths.sort();
+    paths
 }

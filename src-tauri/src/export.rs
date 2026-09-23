@@ -26,7 +26,7 @@ use crate::models::{
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
     MeshFormat, VirtualTextureSummary,
 };
-use crate::state::MaterialInfo;
+use crate::state::{source_of, MaterialInfo, ModSources};
 use crate::virtual_textures::{self, PageFileSizes, StagedSources};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
@@ -122,7 +122,11 @@ fn replace_dds_with_png(
             try_write_png_and_record(&png, &png_path, dds_path, files, warnings, source_label)
         }
         Err(err) => {
-            push_warning(warnings, "pngConvertFailed", format!("{source_label}: {err}"));
+            push_warning(
+                warnings,
+                "pngConvertFailed",
+                format!("{source_label}: {err}"),
+            );
             false
         }
     }
@@ -201,8 +205,7 @@ fn plan_export<'a>(
 
     let dir_name = sanitize_file_name(&asset.name);
     let out_dir = dest_root.join(&dir_name);
-    fs::create_dir_all(&out_dir)
-        .map_err(|e| format!("Failed to create export directory: {e}"))?;
+    fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create export directory: {e}"))?;
 
     let vt_targets = vt_targets_of(asset, export_textures);
     let texture_total = if export_textures {
@@ -237,22 +240,39 @@ fn vt_targets_of(asset: &VisualAsset, export_textures: bool) -> Vec<&VirtualText
         .collect()
 }
 
+/// What an export reads from: the asset being exported and the caches describing it, grouped so the
+/// entry point takes one input instead of a parameter list that only grows with each new source.
+pub struct ExportContext<'a> {
+    /// The asset to export, already resolved by GUID
+    pub asset: &'a VisualAsset,
+    /// Material cache entries of this asset's materials, taken by the command that holds the cache
+    /// (see `models::materials_of`). The manifest names the material rows with them and reads every
+    /// resource's bindings from them, so they are the one piece of state that cannot be missing.
+    pub materials: &'a HashMap<String, MaterialInfo>,
+    /// Labels each manifest row with the mod providing it; the game's own rows stay unlabeled
+    pub sources: &'a ModSources,
+    /// Page files resolved for this asset's virtual textures (see `state::AppState::vt_matches`)
+    pub vt_matches: &'a [GtpMatch],
+    /// The archives every read above goes through
+    pub pool: &'a Arc<Mutex<Archives>>,
+}
+
 /// Export a single visual asset. The GLB is the core artifact — its failure aborts the whole
 /// export, while a single texture / virtual texture failure only records a warning.
-///
-/// `materials` are the material cache entries of this asset's materials, taken by the command that
-/// holds the cache (see `models::materials_of`). The manifest names the material rows with them and
-/// reads the bindings of every resource from them, so they are the one piece of state the export
-/// cannot do without.
 pub fn run_export(
-    asset: &VisualAsset,
-    materials: &HashMap<String, MaterialInfo>,
-    pool: &Arc<Mutex<Archives>>,
+    ctx: &ExportContext<'_>,
     dest_root: &Path,
     options: &ExportOptions,
-    vt_matches: &[GtpMatch],
     on_progress: &dyn Fn(ExportProgress),
 ) -> Result<ExportResult, String> {
+    let ExportContext {
+        asset,
+        materials,
+        sources,
+        vt_matches,
+        pool,
+    } = *ctx;
+
     let plan = plan_export(asset, dest_root, options)?;
 
     let mut files: Vec<ExportedFile> = Vec::new();
@@ -268,12 +288,19 @@ pub fn run_export(
 
     // 3. Virtual textures: GTP + GTS → three layer DDS files. Every hash was resolved to a
     // `GtpMatch` up front, which carries both the page file and the archive holding it
-    export_virtual_textures(pool, &plan, vt_matches, &mut files, &mut warnings, &mut progress)?;
+    export_virtual_textures(
+        pool,
+        &plan,
+        vt_matches,
+        &mut files,
+        &mut warnings,
+        &mut progress,
+    )?;
 
     // 4. Metadata manifest (always written, but never listed among the exported files)
     progress.item(PHASE_MANIFEST, None);
-    let mut manifest = build_manifest(asset, materials, vt_matches);
-    // Completed before the write: the sizes come out of the archives, which the manifest alone has
+    let mut manifest = build_manifest(asset, materials, sources, vt_matches);
+    // Completed before to write: the sizes come out of the archives, which the manifest alone has
     // no access to
     fill_vt_sizes(pool, vt_matches, &mut manifest);
     write_manifest(&manifest, &plan.out_dir, &mut warnings);
@@ -395,12 +422,24 @@ fn write_texture(
     // Same name, same place: a re-export overwrites the file the previous one left behind
     let dds_path = tex_dir.join(format!("{stem}.dds"));
     if let Err(err) = fs::write(&dds_path, dds) {
-        push_warning(warnings, "textureWriteFailed", format!("{}: {err}", tex.dds_path));
+        push_warning(
+            warnings,
+            "textureWriteFailed",
+            format!("{}: {err}", tex.dds_path),
+        );
         return;
     }
 
     let replaced = convert_to_png
-        && replace_dds_with_png(dds, tex_dir, &stem, &dds_path, files, warnings, &tex.dds_path);
+        && replace_dds_with_png(
+            dds,
+            tex_dir,
+            &stem,
+            &dds_path,
+            files,
+            warnings,
+            &tex.dds_path,
+        );
     if !replaced {
         record_file(files, &dds_path, "dds", dds.len());
     }
@@ -559,7 +598,14 @@ fn export_virtual_texture(
     extract_with_any_gts(&gtp, gts_candidates, &stage)?;
 
     let safe_name = sanitize_file_name(vt_name);
-    collect_vt_layers(&stage, &plan.vt_dir(), &safe_name, plan.convert_to_png, files, warnings)
+    collect_vt_layers(
+        &stage,
+        &plan.vt_dir(),
+        &safe_name,
+        plan.convert_to_png,
+        files,
+        warnings,
+    )
 }
 
 /// Run the extractor with each GTS candidate until one accepts the page file: GTS naming does not
@@ -601,7 +647,15 @@ fn collect_vt_layers(
         let Some(src) = find_layer_output(stage, layer)? else {
             continue;
         };
-        export_vt_layer(layer, &src, vt_dir, safe_name, convert_to_png, files, warnings)?;
+        export_vt_layer(
+            layer,
+            &src,
+            vt_dir,
+            safe_name,
+            convert_to_png,
+            files,
+            warnings,
+        )?;
     }
 
     Ok(())
@@ -672,7 +726,11 @@ fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, Strin
 /// The archives are read here, and a size is decoration: an unavailable pool, a hash that resolved to
 /// no page file or a GTS that does not parse all leave the field unset rather than failing an export
 /// whose files are already on disk.
-fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest: &mut ExportManifest) {
+fn fill_vt_sizes(
+    pool: &Arc<Mutex<Archives>>,
+    vt_matches: &[GtpMatch],
+    manifest: &mut ExportManifest,
+) {
     if manifest
         .materials
         .iter()
@@ -712,18 +770,20 @@ fn fill_vt_size(
 fn build_manifest(
     asset: &VisualAsset,
     materials: &HashMap<String, MaterialInfo>,
+    sources: &ModSources,
     vt_matches: &[GtpMatch],
 ) -> ExportManifest {
     // Built once and handed to the material rows, which carry these very rows for their own resources
     // (see `manifest_materials`); the manifest lists the resources nowhere else
-    let textures = texture_summaries(asset, materials);
-    let virtual_textures = virtual_texture_summaries(asset, vt_matches, materials);
+    let textures = texture_summaries(asset, materials, sources);
+    let virtual_textures = virtual_texture_summaries(asset, vt_matches, materials, sources);
 
     ExportManifest {
         id: asset.id.clone(),
         name: asset.name.clone(),
+        source: source_of(sources, &asset.id),
         path: asset.gr2_path.clone(),
-        materials: manifest_materials(asset, materials, &textures, &virtual_textures),
+        materials: manifest_materials(asset, materials, &textures, &virtual_textures, sources),
         exported_at_unix: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())

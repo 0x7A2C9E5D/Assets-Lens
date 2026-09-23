@@ -8,12 +8,13 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 use crate::archives::{lock_pool, Pak};
-use crate::export::run_export;
+use crate::export::{run_export, ExportContext};
 use crate::models::{
     match_for_hash, materials_of, AppInfo, BuildProgress, DatabaseStats, ExportOptions,
     ExportProgress, ExportResult, ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
-use crate::state::{extract_materials, fill_virtual_texture_parameters, AppState};
+use crate::mods;
+use crate::state::{extract_materials, fill_virtual_texture_parameters, AppState, ModSources};
 use crate::virtual_texture_params;
 use crate::virtual_textures;
 
@@ -21,11 +22,20 @@ pub type SharedState = Arc<Mutex<AppState>>;
 
 /// Lock the shared state; the only failure mode is a poisoned mutex, reported as a plain string
 fn lock(state: &SharedState) -> Result<MutexGuard<'_, AppState>, String> {
-    state.lock().map_err(|e| format!("State lock unavailable: {e}"))
+    state
+        .lock()
+        .map_err(|e| format!("State lock unavailable: {e}"))
 }
 
-const NOT_CONFIGURED: &str = "BG3 Data directory is not set. Please use auto-detect or select a directory first.";
-const NOT_BUILT: &str = "Resource database has not been built. Please go to the Database page and build it first.";
+const NOT_CONFIGURED: &str =
+    "BG3 Data directory is not set. Please use auto-detect or select a directory first.";
+const NOT_BUILT: &str =
+    "Resource database has not been built. Please go to the Database page and build it first.";
+
+/// Share of the build progress the mods are given, when there are any. The game data is one huge
+/// archive and the mods are a handful of files, so the split is fixed rather than measured: it keeps
+/// the bar from jumping back once the game data is done.
+const MOD_WEIGHT: f32 = 0.2;
 
 /// How far the archive has been parsed, as a fraction (0 while it reports no file count)
 fn parse_fraction(current: usize, total: usize) -> f32 {
@@ -49,14 +59,18 @@ fn vt_hashes(asset: &VisualAsset) -> Vec<String> {
         .collect()
 }
 
-/// Every visual GUID in both ascending orders the list can be sorted by: by (name, id) — the
-/// default — and by id. Names are only a sort key: they are not unique, so using them as the
-/// identity would collapse same-named visuals into one list row. Sorting by name first keeps those
-/// duplicates adjacent while the id tiebreak keeps pagination deterministic.
+/// Every visual GUID in the ascending orders the list can be sorted by: by (name, id) — the default —
+/// by id, and by (source, name, id). Names and sources are only sort keys: neither is unique, so
+/// using them as the identity would collapse same-keyed visuals into one list row. Sorting by name
+/// first keeps those duplicates adjacent while the id tiebreak keeps pagination deterministic. The
+/// source order puts the base game first (its records carry no source) and then the mods by name.
 ///
-/// Both orders are built here, once, so a sort change only picks a different cached sequence
-/// instead of re-sorting every id on each page request.
-fn sorted_visual_ids(db: &MergedDatabase) -> (Vec<String>, Vec<String>) {
+/// All orders are built here, once, so a sort change only picks a different cached sequence instead
+/// of re-sorting every id on each page request.
+fn sorted_visual_ids(
+    db: &MergedDatabase,
+    sources: &ModSources,
+) -> (Vec<String>, Vec<String>, Vec<String>) {
     let mut rows: Vec<(&str, &str)> = db
         .visuals_by_id
         .values()
@@ -69,7 +83,27 @@ fn sorted_visual_ids(db: &MergedDatabase) -> (Vec<String>, Vec<String>) {
     ids.sort_unstable();
     let by_id: Vec<String> = ids.into_iter().map(str::to_string).collect();
 
-    (by_name, by_id)
+    let mut sourced: Vec<(&str, &str, &str)> = db
+        .visuals_by_id
+        .values()
+        .map(|visual| {
+            (
+                sources
+                    .get(&visual.id)
+                    .map(String::as_str)
+                    .unwrap_or_default(),
+                visual.name.as_str(),
+                visual.id.as_str(),
+            )
+        })
+        .collect();
+    sourced.sort_unstable();
+    let by_source: Vec<String> = sourced
+        .into_iter()
+        .map(|(_, _, id)| id.to_string())
+        .collect();
+
+    (by_name, by_id, by_source)
 }
 
 /// Auto-detect the BG3 Data directory (default Steam install location)
@@ -139,9 +173,10 @@ pub async fn build_database(
 
     tauri::async_runtime::spawn_blocking(move || -> Result<DatabaseStats, String> {
         // Take what the build needs, then release the lock immediately: parsing Shared.pak runs for
-        // minutes, and every other command needs that lock to answer.
-        let (resolver, game_path) = {
-            let st = lock(&state)?;
+        // minutes, and every other command needs that lock to answer. The pool is taken here too, so
+        // it is built from the mod directory this build belongs to.
+        let (resolver, game_path, pool) = {
+            let mut st = lock(&state)?;
             (
                 st.resolver
                     .clone()
@@ -149,19 +184,31 @@ pub async fn build_database(
                 st.game_path
                     .clone()
                     .ok_or_else(|| NOT_CONFIGURED.to_string())?,
+                st.pool()?,
             )
         };
 
         let channel = on_progress.clone();
         channel.send(BuildProgress { percent: 0.0 }).ok();
 
+        // How many mods there are settles the shape of the progress bar before any of them is read
+        let mod_count = lock_pool(&pool)
+            .map(|archives| archives.mod_count())
+            .unwrap_or(0);
+        let mod_weight = if mod_count == 0 { 0.0 } else { MOD_WEIGHT };
+        let game_weight = 1.0 - mod_weight;
+
         let pak_path = game_path.join("Shared.pak");
         let mut db = MergedDatabase::new(game_path.display().to_string());
-        let parsed = resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, _| {
-            let _ = channel.send(BuildProgress {
-                percent: parse_fraction(current, total),
+        // A second handle for the parse callback, which takes its channel by value: the mods below
+        // keep reporting through this one
+        let parse_channel = channel.clone();
+        let parsed =
+            resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, _| {
+                let _ = parse_channel.send(BuildProgress {
+                    percent: game_weight * parse_fraction(current, total),
+                });
             });
-        });
 
         match parsed {
             Ok(()) if db.stats().visual_count > 0 => {}
@@ -173,7 +220,8 @@ pub async fn build_database(
         }
 
         // Materials and textures only become reachable from their visuals once the whole database
-        // has been parsed.
+        // has been parsed. This runs before the mods are merged, so it only ever sees game data:
+        // mod visuals resolve their own references as they are merged (see `mods::merge_into`).
         db.resolve_references();
 
         // Read out while the database is here rather than on the first detail view: maclarian does
@@ -183,11 +231,39 @@ pub async fn build_database(
         // The parameter names of the virtual texture bindings are *not* read here either: they come
         // from the materials' own templates and are read per detail view (see
         // `ensure_virtual_texture_parameters`).
-        let materials = extract_materials(&db);
+        let mut materials = extract_materials(&db);
 
-        let stats = db.stats();
-        let (visual_ids, visual_ids_by_id) = sorted_visual_ids(&db);
+        // Mods come last, over a database that already holds everything the game provides: a mod
+        // overrides what it redefines, and its visuals routinely bind the game's own materials.
+        let mut mod_sources = ModSources::new();
+        if mod_count > 0 {
+            let mut archives = lock_pool(&pool)?;
+            for index in 0..mod_count {
+                let assets = mods::read_mod(&mut archives, index);
+                mods::merge_into(&mut db, assets, &mut materials, &mut mod_sources);
+
+                let done = (index + 1) as f32 / mod_count as f32;
+                channel
+                    .send(BuildProgress {
+                        percent: game_weight + mod_weight * done,
+                    })
+                    .ok();
+            }
+        }
+
+        let (visual_ids, visual_ids_by_id, visual_ids_by_source) =
+            sorted_visual_ids(&db, &mod_sources);
         let visual_count = visual_ids.len();
+
+        // Read off the merged maps rather than `db.stats()`: maclarian keeps the material map to
+        // itself, so the mod materials are only ever in the cache above
+        let stats = DatabaseStats {
+            // One entry per visual GUID, so the dashboard always matches the browse list
+            visual_count,
+            material_count: materials.len(),
+            texture_count: db.textures.len(),
+            virtual_texture_count: db.virtual_textures.len(),
+        };
 
         // The lock is taken again only to publish the result. A build that raced with a directory
         // switch belongs to the directory that is no longer current, so it is dropped instead.
@@ -201,22 +277,18 @@ pub async fn build_database(
             }
             st.visual_ids = visual_ids;
             st.visual_ids_by_id = visual_ids_by_id;
+            st.visual_ids_by_source = visual_ids_by_source;
             st.materials = materials;
+            st.mod_sources = mod_sources;
             st.merged_db = Some(db);
         }
 
         on_progress.send(BuildProgress { percent: 1.0 }).ok();
 
-        Ok(DatabaseStats {
-            // One entry per visual GUID, so the dashboard always matches the browse list
-            visual_count,
-            material_count: stats.material_count,
-            texture_count: stats.texture_count,
-            virtual_texture_count: stats.virtual_texture_count,
-        })
+        Ok(stats)
     })
-        .await
-        .map_err(|err| format!("Build task terminated unexpectedly: {err}"))?
+    .await
+    .map_err(|err| format!("Build task terminated unexpectedly: {err}"))?
 }
 
 /// Make sure the materials of `visual_id` carry the parameter name of every virtual texture binding.
@@ -292,14 +364,14 @@ pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, 
 
     match st.merged_db.as_ref() {
         Some(db) => {
-            let stats = db.stats();
-            Ok(Some(DatabaseStats {
+            let stats = DatabaseStats {
                 // Same as build_database: the dashboard should reflect what the UI can actually browse
                 visual_count: st.visual_ids.len(),
-                material_count: stats.material_count,
-                texture_count: stats.texture_count,
-                virtual_texture_count: stats.virtual_texture_count,
-            }))
+                material_count: st.materials.len(),
+                texture_count: db.textures.len(),
+                virtual_texture_count: db.virtual_textures.len(),
+            };
+            Ok(Some(stats))
         }
         None => Ok(None),
     }
@@ -315,7 +387,9 @@ pub fn app_info() -> AppInfo {
 
 /// Browse visual assets page by page. `keyword` is an optional filter matched against the asset
 /// name or its GUID (so a pasted ID finds its row); `sort` picks the column and `descending` the
-/// direction, both resolved against the orders cached when the database was built.
+/// direction, both resolved against the orders cached when the database was built. `origin` splits
+/// the index in two: "mod" keeps only what a mod provides, "base" only the game's own resources,
+/// and anything else (including a missing value) keeps both.
 #[tauri::command]
 pub fn list_visuals(
     state: State<'_, SharedState>,
@@ -324,13 +398,16 @@ pub fn list_visuals(
     keyword: Option<String>,
     sort: Option<String>,
     descending: Option<bool>,
+    origin: Option<String>,
 ) -> Result<Page<VisualSummary>, String> {
     let st = lock(&state)?;
     let db = st.merged_db.as_ref().ok_or_else(|| NOT_BUILT.to_string())?;
 
-    // "id" opts into the GUID order; anything else (including a missing value) keeps the name order
+    // "id" opts into the GUID order and "source" into the mod-name order; anything else (including a
+    // missing value) keeps the name order
     let ids = match sort.as_deref() {
         Some("id") => &st.visual_ids_by_id,
+        Some("source") => &st.visual_ids_by_source,
         _ => &st.visual_ids,
     };
 
@@ -341,14 +418,23 @@ pub fn list_visuals(
     let mut matched: Vec<&String> = ids
         .iter()
         .filter(|id| {
+            // Mod-provided ids are exactly the ones the source table lists, so membership in it is
+            // the whole test; the game's own resources are never written there.
+            let from_mod = st.mod_sources.contains_key(id.as_str());
+            match origin.as_deref() {
+                Some("mod") if !from_mod => return false,
+                Some("base") if from_mod => return false,
+                _ => {}
+            }
+
             keyword.as_deref().is_none_or(|kw| {
                 // The cached order only holds GUIDs, so the name to match against comes from the
                 // DB. GUIDs are ASCII, so folding them stays a cheap ASCII-lowercase compare.
                 id.as_str().to_ascii_lowercase().contains(kw)
                     || db
-                    .visuals_by_id
-                    .get(*id)
-                    .is_some_and(|visual| visual.name.to_lowercase().contains(kw))
+                        .visuals_by_id
+                        .get(*id)
+                        .is_some_and(|visual| visual.name.to_lowercase().contains(kw))
             })
         })
         .collect();
@@ -365,7 +451,7 @@ pub fn list_visuals(
     let items: Vec<VisualSummary> = matched[start..end]
         .iter()
         .filter_map(|id| db.visuals_by_id.get(*id))
-        .map(VisualSummary::from)
+        .map(|visual| VisualSummary::of(visual, &st.mod_sources))
         .collect();
 
     Ok(Page {
@@ -380,10 +466,7 @@ pub fn list_visuals(
 /// Reading a page file size is the only archive work here, and it is off the main thread: the GTS
 /// that carries it is one file read, not a scan.
 #[tauri::command]
-pub async fn get_visual(
-    app: AppHandle,
-    id: String,
-) -> Result<Option<VisualAssetDetail>, String> {
+pub async fn get_visual(app: AppHandle, id: String) -> Result<Option<VisualAssetDetail>, String> {
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, String> {
@@ -412,7 +495,7 @@ pub async fn get_visual(
             } else {
                 st.vt_matches(&hashes)
             };
-            let detail = VisualAssetDetail::new(&asset, &matches, &st.materials);
+            let detail = VisualAssetDetail::new(&asset, &matches, &st.materials, &st.mod_sources);
 
             // The size cache travels with the detail and is put back at the end: it is only ever
             // touched here, and holding the state lock while the archives are read is what the
@@ -449,8 +532,8 @@ pub async fn get_visual(
 
         Ok(Some(detail))
     })
-        .await
-        .map_err(|err| format!("Detail task terminated unexpectedly: {err}"))?
+    .await
+    .map_err(|err| format!("Detail task terminated unexpectedly: {err}"))?
 }
 
 /// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview
@@ -459,10 +542,7 @@ pub async fn get_visual(
 /// The conversion (BitKnit decompression + parsing) can take several seconds, so it runs inside
 /// spawn_blocking to avoid freezing the UI
 #[tauri::command]
-pub async fn get_visual_preview(
-    app: AppHandle,
-    path: String,
-) -> Result<ModelPreview, String> {
+pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPreview, String> {
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ModelPreview, String> {
@@ -476,13 +556,12 @@ pub async fn get_visual_preview(
         // maclarian's own reader compares PAK entries with an exact `==` on the raw path, which
         // never matches on Windows (`\` vs `/`); the `Archives` pool normalizes separators and casing
         // instead.
-        let gr2_bytes =
-            lock_pool(&pool)?
-                .read_from(Pak::Models, &path)
-                .map_err(|err| {
-                    eprintln!("[maclarian] find gr2 {path} failed: {err}");
-                    err
-                })?;
+        let gr2_bytes = lock_pool(&pool)?
+            .read_from(Pak::Models, &path)
+            .map_err(|err| {
+                eprintln!("[maclarian] find gr2 {path} failed: {err}");
+                err
+            })?;
 
         let glb = convert_gr2_bytes_to_glb(&gr2_bytes).map_err(|err| {
             eprintln!("[maclarian] gr2 -> glb failed for {path}: {err}");
@@ -496,8 +575,8 @@ pub async fn get_visual_preview(
             base64: base64::engine::general_purpose::STANDARD.encode(&glb),
         })
     })
-        .await
-        .map_err(|err| format!("Preview task terminated unexpectedly: {err}"))?
+    .await
+    .map_err(|err| format!("Preview task terminated unexpectedly: {err}"))?
 }
 
 /// Export a single visual asset: GR2 → GLB (optionally embedded textures) + textures +
@@ -527,7 +606,7 @@ pub async fn export_visual_asset(
         // asset has no name yet (see `ensure_virtual_texture_parameters`).
         ensure_virtual_texture_parameters(&state, &id)?;
 
-        let (pool, asset, materials, vt_matches) = {
+        let (pool, asset, materials, sources, vt_matches) = {
             let mut st = lock(&state)?;
             let asset = st
                 .merged_db
@@ -545,22 +624,28 @@ pub async fn export_visual_asset(
             // Cut out of the cache while the state is held: the manifest names the materials of the
             // asset, and the cache they live in is not handed to the export
             let materials = materials_of(&asset.material_ids, &st.materials);
+            // Taken whole: unlike the material cache it only holds the resources the mods provide,
+            // and the manifest labels every row of the asset with it
+            let sources = st.mod_sources.clone();
             // Shared with the previews: the archives this export needs are usually open already
-            (st.pool()?, asset, materials, vt_matches)
+            (st.pool()?, asset, materials, sources, vt_matches)
         };
 
         run_export(
-            &asset,
-            &materials,
-            &pool,
+            &ExportContext {
+                asset: &asset,
+                materials: &materials,
+                sources: &sources,
+                vt_matches: &vt_matches,
+                pool: &pool,
+            },
             &dest_root,
             &options,
-            &vt_matches,
             &|progress| {
                 let _ = on_progress.send(progress);
             },
         )
     })
-        .await
-        .map_err(|err| format!("Export task terminated unexpectedly: {err}"))?
+    .await
+    .map_err(|err| format!("Export task terminated unexpectedly: {err}"))?
 }

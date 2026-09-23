@@ -13,6 +13,7 @@ import {
   getVisual,
   listVisuals,
   type VisualAsset,
+  type VisualOrigin,
   type VisualSort,
   type VisualSummary,
 } from '../api/tauri'
@@ -37,13 +38,21 @@ const ready = computed(() => stats.value !== null)
 const sortBy = ref<VisualSort>('name')
 const sortDesc = ref(false)
 
+/** The two halves of the index the page separates: the game's own resources and what mods add. Only
+ *  one is shown at a time, so they share the search box, the sort state and the pagination bar */
+const origin = ref<VisualOrigin>('base')
+const tabs: { origin: VisualOrigin; label: string }[] = [
+  {origin: 'base', label: 'browse.tabBase'},
+  {origin: 'mod', label: 'browse.tabMod'},
+]
+
 const searchTerm = ref('')
 const searchActive = computed(() => searchTerm.value.trim().length > 0)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 function load() {
   loading.value = true
-  listVisuals(offset.value, limit.value, searchTerm.value, sortBy.value, sortDesc.value)
+  listVisuals(offset.value, limit.value, searchTerm.value, sortBy.value, sortDesc.value, origin.value)
       .then((page) => {
         rows.value = page.items
         total.value = page.total
@@ -56,6 +65,17 @@ function load() {
       .finally(() => {
         loading.value = false
       })
+}
+
+/** Switch tables: the other half of the index has its own count, so the page starts over — and the
+ *  selected row belongs to the table that was on screen, so its detail is dropped with it */
+function selectTab(next: VisualOrigin) {
+  if (origin.value === next) return
+  origin.value = next
+  offset.value = 0
+  selected.value = null
+  asset.value = null
+  load()
 }
 
 function selectRow(id: string) {
@@ -178,15 +198,22 @@ onMounted(() => {
         @action="router.push('/database')"
     />
 
-    <EmptyState
-        v-else-if="searchActive && !loading && rows.length === 0"
-        :action-label="$t('browse.searchClearAction')"
-        :icon="Search"
-        :title="$t('browse.searchEmpty', {term: searchTerm})"
-        @action="clearSearch"
-    />
-
     <template v-else>
+      <!-- Table switcher: base-game resources and mod resources are separate indexes, so the page
+           keeps them in two tables rather than one mixed list -->
+      <div class="flex shrink-0 items-center gap-1 self-start rounded-md border border-hairline-strong bg-ink-700 p-1">
+        <button
+            v-for="tab in tabs"
+            :key="tab.origin"
+            :class="origin === tab.origin ? 'bg-tint text-fg' : 'text-muted hover:text-fg'"
+            class="rounded-sm px-3 py-1 text-sm transition-colors duration-150 ease-fluent"
+            type="button"
+            @click="selectTab(tab.origin)"
+        >
+          {{ $t(tab.label) }}
+        </button>
+      </div>
+
       <div
           v-if="errorMsg"
           class="flex items-start gap-3 rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
@@ -198,11 +225,22 @@ onMounted(() => {
       <!-- Fixed two columns: list on the left, detail on the right; the list fills the area and scrolls internally -->
       <div class="flex min-h-0 flex-1 gap-4">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+          <!-- A search with no hit in the table on screen replaces only that table, so the switcher
+               stays reachable for the other one -->
+          <EmptyState
+              v-if="searchActive && !loading && rows.length === 0"
+              :action-label="$t('browse.searchClearAction')"
+              :icon="Search"
+              :title="$t('browse.searchEmpty', {term: searchTerm})"
+              @action="clearSearch"
+          />
           <AssetTable
+              v-else
               :hide-empty="searchActive"
               :loading="loading"
               :rows="rows"
               :selected="selected"
+              :show-source="origin === 'mod'"
               :sort-by="sortBy"
               :sort-desc="sortDesc"
               @move="moveSelection"

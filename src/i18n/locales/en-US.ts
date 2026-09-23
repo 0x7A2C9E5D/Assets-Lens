@@ -100,16 +100,20 @@ const enUS = {
         emptyTitle: 'No assets scanned yet',
         emptyDescription: 'Go to Database, choose the game data folder and scan it.',
         emptyAction: 'Go to Database',
+        tabBase: 'Base game',
+        tabMod: 'Mods',
     },
 
     table: {
         headerName: 'Asset Name',
         headerUuid: 'ID',
+        headerSource: 'Source',
         headerMaterial: 'Materials',
         headerTexture: 'Textures',
         headerVirtual: 'Virtual Textures',
         sortByName: 'Sort by name',
         sortById: 'Sort by ID',
+        sortBySource: 'Sort by source',
         empty: 'No entries to display',
     },
 

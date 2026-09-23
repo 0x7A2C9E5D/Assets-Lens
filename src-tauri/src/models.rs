@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use serde::{Deserialize, Serialize};
 
-use crate::state::MaterialInfo;
+use crate::state::{source_of, MaterialInfo, ModSources};
 
 /// Build progress, pushed to the frontend through a Tauri Channel
 #[derive(Clone, Serialize)]
@@ -22,6 +22,9 @@ pub struct BuildProgress {
 pub struct TextureSummary {
     pub id: String,
     pub name: String,
+    /// Mod providing this texture; absent when it comes from the game (see `state::ModSources`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub path: String,
     pub width: u32,
     pub height: u32,
@@ -40,6 +43,8 @@ impl From<&TextureRef> for TextureSummary {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
+            // Settled by the caller, which is the only place holding the source map
+            source: None,
             path: value.dds_path.clone(),
             width: value.width,
             height: value.height,
@@ -58,6 +63,9 @@ pub struct MaterialSummary {
     /// Human-readable name from `MaterialBank`; empty when the material is unknown, in which case
     /// the detail panel falls back to the GUID
     pub name: String,
+    /// Mod providing this material; absent when it comes from the game (see `state::ModSources`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     /// Base material template (`.lsf`) the material is derived from
     pub source_file: String,
 }
@@ -65,10 +73,13 @@ pub struct MaterialSummary {
 impl MaterialSummary {
     /// `known` is the name cache entry for this GUID; an unknown material keeps an empty name
     /// rather than dropping the row
-    fn new(id: &str, known: Option<&MaterialInfo>) -> Self {
+    fn new(id: &str, known: Option<&MaterialInfo>, sources: &ModSources) -> Self {
         Self {
             id: id.to_string(),
-            name: known.map(|material| material.name.clone()).unwrap_or_default(),
+            name: known
+                .map(|material| material.name.clone())
+                .unwrap_or_default(),
+            source: source_of(sources, id),
             source_file: known
                 .map(|material| material.source_file.clone())
                 .unwrap_or_default(),
@@ -86,10 +97,11 @@ impl MaterialSummary {
 pub fn material_summaries(
     material_ids: &[String],
     materials: &HashMap<String, MaterialInfo>,
+    sources: &ModSources,
 ) -> Vec<MaterialSummary> {
     material_ids
         .iter()
-        .map(|id| MaterialSummary::new(id, materials.get(id)))
+        .map(|id| MaterialSummary::new(id, materials.get(id), sources))
         .collect()
 }
 
@@ -106,6 +118,9 @@ pub fn material_summaries(
 pub struct ExportMaterial {
     pub id: String,
     pub name: String,
+    /// Mod providing this material; absent when it comes from the game (see `state::ModSources`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub source_file: String,
     /// The textures this material binds, in parameter order
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -126,16 +141,19 @@ impl ExportMaterial {
         known: Option<&MaterialInfo>,
         textures: &HashMap<&str, &TextureSummary>,
         virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
+        sources: &ModSources,
     ) -> Self {
         let MaterialSummary {
             id,
             name,
+            source,
             source_file,
-        } = MaterialSummary::new(id, known);
+        } = MaterialSummary::new(id, known, sources);
 
         Self {
             id,
             name,
+            source,
             source_file,
             // In the material's own order (its parameter order); an id the asset's texture rows do
             // not carry contributes nothing
@@ -191,11 +209,10 @@ pub fn manifest_materials(
     materials: &HashMap<String, MaterialInfo>,
     textures: &[TextureSummary],
     virtual_textures: &[VirtualTextureSummary],
+    sources: &ModSources,
 ) -> Vec<ExportMaterial> {
-    let textures: HashMap<&str, &TextureSummary> = textures
-        .iter()
-        .map(|row| (row.id.as_str(), row))
-        .collect();
+    let textures: HashMap<&str, &TextureSummary> =
+        textures.iter().map(|row| (row.id.as_str(), row)).collect();
     let virtual_textures: HashMap<&str, &VirtualTextureSummary> = virtual_textures
         .iter()
         .map(|row| (row.id.as_str(), row))
@@ -204,14 +221,7 @@ pub fn manifest_materials(
     value
         .material_ids
         .iter()
-        .map(|id| {
-            ExportMaterial::new(
-                id,
-                materials.get(id),
-                &textures,
-                &virtual_textures,
-            )
-        })
+        .map(|id| ExportMaterial::new(id, materials.get(id), &textures, &virtual_textures, sources))
         .collect()
 }
 
@@ -227,7 +237,11 @@ pub fn materials_of(
 ) -> HashMap<String, MaterialInfo> {
     material_ids
         .iter()
-        .filter_map(|id| materials.get(id).map(|material| (id.clone(), material.clone())))
+        .filter_map(|id| {
+            materials
+                .get(id)
+                .map(|material| (id.clone(), material.clone()))
+        })
         .collect()
 }
 
@@ -282,6 +296,10 @@ fn virtual_texture_parameter(
 pub struct VirtualTextureSummary {
     pub id: String,
     pub name: String,
+    /// Mod providing this virtual texture; absent when it comes from the game (see
+    /// `state::ModSources`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub hash: String,
     /// Page file (`.gtp`) inside its archive; empty when no lookup was run or nothing matched
     pub path: String,
@@ -314,6 +332,8 @@ impl VirtualTextureSummary {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
+            // Settled by the caller, which is the only place holding the source map
+            source: None,
             hash: value.gtex_hash.clone(),
             path: matched.map(|m| m.gtp_path.clone()).unwrap_or_default(),
             // Settled later: reading the size needs the archives, which this constructor is not given
@@ -352,12 +372,14 @@ pub fn match_for_hash<'a>(matches: &'a [GtpMatch], hash: &str) -> Option<&'a Gtp
 pub fn texture_summaries(
     value: &VisualAsset,
     materials: &HashMap<String, MaterialInfo>,
+    sources: &ModSources,
 ) -> Vec<TextureSummary> {
     value
         .textures
         .iter()
         .map(|texture| {
             let mut summary = TextureSummary::from(texture);
+            summary.source = source_of(sources, &texture.id);
             summary.material_names = material_names_for(
                 |material| material.texture_ids.iter().any(|id| id == &texture.id),
                 &value.material_ids,
@@ -380,6 +402,7 @@ pub fn virtual_texture_summaries(
     value: &VisualAsset,
     matches: &[GtpMatch],
     materials: &HashMap<String, MaterialInfo>,
+    sources: &ModSources,
 ) -> Vec<VirtualTextureSummary> {
     value
         .virtual_textures
@@ -387,6 +410,7 @@ pub fn virtual_texture_summaries(
         .map(|vt| {
             let mut summary =
                 VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash));
+            summary.source = source_of(sources, &vt.id);
             summary.material_names = material_names_for(
                 |material| {
                     material
@@ -411,6 +435,9 @@ pub struct VisualAssetDetail {
     /// Visual resource ID (GUID) — the lookup key, since names are not unique
     pub id: String,
     pub name: String,
+    /// Mod providing this asset; absent when it comes from the game (see `state::ModSources`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub path: String,
     pub materials: Vec<MaterialSummary>,
     pub textures: Vec<TextureSummary>,
@@ -421,19 +448,22 @@ impl VisualAssetDetail {
     /// `matches` are the page files resolved for this asset's virtual textures; pass an empty
     /// slice to skip the lookup (the rows then show the hash without a page file).
     /// `materials` is the name cache built with the database: it labels the material rows and
-    /// decides which material each texture row belongs to
+    /// decides which material each texture row belongs to. `sources` labels every row with the mod
+    /// that provides it, and leaves the game's own rows unlabeled.
     pub fn new(
         value: &VisualAsset,
         matches: &[GtpMatch],
         materials: &HashMap<String, MaterialInfo>,
+        sources: &ModSources,
     ) -> Self {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
+            source: source_of(sources, &value.id),
             path: value.gr2_path.clone(),
-            materials: material_summaries(&value.material_ids, materials),
-            textures: texture_summaries(value, materials),
-            virtual_textures: virtual_texture_summaries(value, matches, materials),
+            materials: material_summaries(&value.material_ids, materials, sources),
+            textures: texture_summaries(value, materials, sources),
+            virtual_textures: virtual_texture_summaries(value, matches, materials, sources),
         }
     }
 }
@@ -456,16 +486,20 @@ pub struct VisualSummary {
     /// list cannot be keyed by name
     pub id: String,
     pub name: String,
+    /// Mod providing this asset; absent when it comes from the game (see `state::ModSources`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub material_count: usize,
     pub texture_count: usize,
     pub virtual_texture_count: usize,
 }
 
-impl From<&VisualAsset> for VisualSummary {
-    fn from(value: &VisualAsset) -> Self {
+impl VisualSummary {
+    pub fn of(value: &VisualAsset, sources: &ModSources) -> Self {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
+            source: source_of(sources, &value.id),
             material_count: value.material_ids.len(),
             texture_count: value.textures.len(),
             virtual_texture_count: value.virtual_textures.len(),
@@ -615,6 +649,9 @@ pub struct ExportManifest {
     /// is not unique
     pub id: String,
     pub name: String,
+    /// Mod providing this asset; absent when it comes from the game (see `state::ModSources`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub path: String,
     /// The asset's materials, in its own order. GUID plus name (and the template they derive from),
     /// each carrying the textures and virtual textures it binds — the manifest states the asset's
