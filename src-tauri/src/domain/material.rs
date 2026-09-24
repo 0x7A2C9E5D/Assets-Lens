@@ -40,7 +40,7 @@ pub struct VirtualTextureBinding {
     /// `ParameterName` of the binding node (e.g. `virtualtexture`, `overlayvirtualtexture`). Empty
     /// until a detail view resolves it: maclarian keeps only the GUID of a binding
     /// (see `virtual_texture_params`), so the name is read off the material's template on demand
-    /// (`commands::ensure_virtual_texture_parameters`) and stays empty only until then.
+    /// (`application::commands::ensure_virtual_texture_parameters`) and stays empty only until then.
     pub parameter_name: String,
 }
 

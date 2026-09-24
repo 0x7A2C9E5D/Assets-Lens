@@ -1,16 +1,14 @@
 mod application;
-mod commands;
 mod domain;
 pub mod infrastructure;
 
 use std::sync::{Arc, Mutex};
 
-use application::state::AppState;
-
-use commands::{
+use application::commands::{
     app_info, build_database, cache_status, db_stats, detect_game_path, export_visual_asset,
     get_visual, get_visual_preview, list_visuals, restore_state, set_game_path,
 };
+use application::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

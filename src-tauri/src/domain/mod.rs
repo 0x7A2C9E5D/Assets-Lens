@@ -15,10 +15,8 @@
 //! a deliberate narrowing of the earlier "no file system, no maclarian type" rule, which now holds
 //! only for `source` and `naming`.
 //!
-//! The archive / cache / mod plumbing and the export pipeline are not here but in `infrastructure`,
-//! and the app's own state and preferences in `application` (see their module docs); what is still
-//! flat at the crate root are the command handlers (`commands.rs`), which mix `application` and `ipc`
-//! concerns.
+//! The archive / mod plumbing and the export pipeline are not here but in `infrastructure`, and the
+//! app's own state, preferences and command handlers in `application` — see the module docs of each.
 
 pub mod app;
 pub mod export;

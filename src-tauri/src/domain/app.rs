@@ -75,8 +75,9 @@ impl CacheStatus {
 /// Everything a page needs to render without asking anything else: the game data directory this
 /// session works on, the statistics of the index held for it, and where that index came from.
 ///
-/// Returned once at startup (`commands::restore_state`) — the frontend used to assemble the same three
-/// facts itself, from Web storage plus a comparison against the backend's directory.
+/// Returned once at startup (`application::commands::restore_state`) — the frontend used to
+/// assemble the same three facts itself, from Web storage plus a comparison against the backend's
+/// directory.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSnapshot {

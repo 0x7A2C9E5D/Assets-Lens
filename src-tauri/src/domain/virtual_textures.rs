@@ -264,7 +264,7 @@ pub struct VirtualTextureSummary {
     /// Parameter the binding fills (e.g. `virtualtexture`), read off the asset's materials — it
     /// belongs to the binding, not to the resource. Absent from the JSON while unset: the names come
     /// from the materials' templates (see `domain::material::fill_virtual_texture_parameters`), which a detail view
-    /// and an export both read up front (`commands::ensure_virtual_texture_parameters`).
+    /// and an export both read up front (`application::commands::ensure_virtual_texture_parameters`).
     ///
     /// One name per row, so an asset that binds a virtual texture through several materials with
     /// different parameters shows only the first here; each material states its own name in its
@@ -316,9 +316,9 @@ pub fn match_for_hash<'a>(matches: &'a [GtpMatch], hash: &str) -> Option<&'a Gtp
 /// The virtual texture list of the detail panel, and the source the export manifest builds its material
 /// rows from (see `material::manifest_materials`). The parameter name is only ever filled once the caller
 /// resolved it — the templates carrying it are read by a detail view and by an export
-/// (`commands::ensure_virtual_texture_parameters`), not by this function — so a row stays without one
-/// until then. Which material binds a virtual texture is likewise stated on the material rows (see
-/// `material::fill_material_bindings`).
+/// (`application::commands::ensure_virtual_texture_parameters`), not by this function — so a row
+/// stays without one until then. Which material binds a virtual texture is likewise stated on the
+/// material rows (see `material::fill_material_bindings`).
 pub fn virtual_texture_summaries(
     value: &VisualAsset,
     matches: &[GtpMatch],
