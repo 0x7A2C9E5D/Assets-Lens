@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use maclarian::merged::GtpMatch;
 
 use crate::archives::{Archives, Pak};
+use crate::domain::naming::derive_gts_path;
 
 /// Files staged for one-page file, both already on disk
 pub struct StagedSources {
@@ -227,35 +228,6 @@ const GTS_MAGIC: u32 = 0x4750_5247;
 fn read_le<const N: usize>(data: &[u8], offset: usize) -> Option<[u8; N]> {
     let end = offset.checked_add(N)?;
     data.get(offset..end)?.try_into().ok()
-}
-
-/// GTP path → GTS path: strip the trailing `_<32 hex digits>` and swap the extension
-/// (`Generated/Public/VirtualTextures/Albedo_Normal_Physical_5_<hash>.gtp` →
-/// `Generated/Public/VirtualTextures/Albedo_Normal_Physical_5.gts`)
-///
-/// What remains is the tile set index, not a per-file name: every page file of that set (same index,
-/// its own hash) derives the same GTS, which is how one GTS comes to serve many GTPs. maclarian
-/// derives the name the same way (`virtual_texture/utils.rs::find_gts_path`).
-fn derive_gts_path(gtp_path: &str) -> String {
-    // The directory is split off first and put back at the end: only the file name loses its hash
-    // suffix, while the directory has to survive into the result (a GTS sits beside its page file)
-    let (dir, name) = gtp_path.rsplit_once('/').unwrap_or(("", gtp_path));
-    let stem = name
-        .strip_suffix(".gtp")
-        .or_else(|| name.strip_suffix(".GTP"))
-        .unwrap_or(name);
-
-    let stripped = stem.rfind('_').filter(|pos| {
-        let suffix = &stem[pos + 1..];
-        suffix.len() == 32 && suffix.chars().all(|c| c.is_ascii_hexdigit())
-    });
-    let stem = stripped.map_or(stem, |pos| &stem[..pos]);
-
-    if dir.is_empty() {
-        format!("{stem}.gts")
-    } else {
-        format!("{dir}/{stem}.gts")
-    }
 }
 
 /// Resolve GTS candidates and stage them into the `shared` directory, ordered by likelihood:

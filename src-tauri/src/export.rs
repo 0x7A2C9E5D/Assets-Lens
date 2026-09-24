@@ -21,12 +21,14 @@ use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::archives::{lock_pool, Archives, Pak};
+use crate::domain::material::MaterialInfo;
+use crate::domain::naming::{export_layer_name, sanitize_file_name};
+use crate::domain::source::{source_of, ModSources};
 use crate::models::{
     manifest_materials, match_for_hash, texture_summaries, virtual_texture_summaries,
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
     MeshFormat, VirtualTextureSummary,
 };
-use crate::state::{source_of, MaterialInfo, ModSources};
 use crate::virtual_textures::{self, PageFileSizes, StagedSources};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
@@ -41,7 +43,7 @@ const PHASE_DONE: &str = "done";
 
 /// The three layers exported from a virtual texture (order matches `VirtualTextureLayer`).
 /// Extractor output is `<name>_<layer>.dds`; export file names follow the engine's naming for split
-/// virtual textures (`BaseMap` → `Albedo`, see `export_layer_name`)
+/// virtual textures (`BaseMap` → `Albedo`, see `domain::naming::export_layer_name`)
 const VT_LAYERS: [&str; 3] = ["BaseMap", "NormalMap", "PhysicalMap"];
 
 /// Append a structured warning (code is localized by the frontend, detail keeps the raw message)
@@ -50,28 +52,6 @@ fn push_warning(warnings: &mut Vec<ExportWarning>, code: &str, detail: impl Into
         code: code.to_string(),
         detail: detail.into(),
     });
-}
-
-/// Sanitize a file/directory name: strip Windows-forbidden and control characters, cap the length
-fn sanitize_file_name(raw: &str) -> String {
-    let cleaned: String = raw
-        .chars()
-        .filter(|c| !c.is_control())
-        .map(|c| {
-            if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
-                '_'
-            } else {
-                c
-            }
-        })
-        .collect();
-
-    let trimmed = cleaned.trim().trim_matches('.').to_string();
-    if trimmed.is_empty() {
-        "asset".to_string()
-    } else {
-        trimmed.chars().take(80).collect()
-    }
 }
 
 /// Record one written artifact in the export result
@@ -246,8 +226,9 @@ pub struct ExportContext<'a> {
     /// The asset to export, already resolved by GUID
     pub asset: &'a VisualAsset,
     /// Material cache entries of this asset's materials, taken by the command that holds the cache
-    /// (see `models::materials_of`). The manifest names the material rows with them and reads every
-    /// resource's bindings from them, so they are the one piece of state that cannot be missing.
+    /// (see `domain::material::materials_of`). The manifest names the material rows with them and
+    /// reads every resource's bindings from them, so they are the one piece of state that cannot be
+    /// missing.
     pub materials: &'a HashMap<String, MaterialInfo>,
     /// Labels each manifest row with the mod providing it; the game's own rows stay unlabeled
     pub sources: &'a ModSources,
@@ -659,16 +640,6 @@ fn collect_vt_layers(
     }
 
     Ok(())
-}
-
-/// The name a layer takes in the export. The extractor calls the base layer `BaseMap` while the engine
-/// calls it Albedo — the export follows the engine, so `BaseMap` → `Albedo`; the other two layers just
-/// drop the trailing `Map` (`NormalMap` → `Normal`)
-fn export_layer_name(layer: &str) -> &str {
-    match layer {
-        "BaseMap" => "Albedo",
-        other => other.trim_end_matches("Map"),
-    }
 }
 
 /// Move one extracted layer into `vt_dir` under its export name and record the artifact

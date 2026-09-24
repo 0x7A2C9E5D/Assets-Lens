@@ -9,13 +9,15 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::archives::{lock_pool, Pak};
 use crate::cache::{self, Loaded};
+use crate::domain::material::{fill_virtual_texture_parameters, materials_of};
+use crate::domain::source::ModSources;
 use crate::export::{run_export, ExportContext};
 use crate::models::{
-    match_for_hash, materials_of, AppInfo, BuildProgress, CacheStatus, DatabaseStats, ExportOptions,
+    match_for_hash, AppInfo, BuildProgress, CacheStatus, DatabaseStats, ExportOptions,
     ExportProgress, ExportResult, ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
 use crate::mods;
-use crate::state::{extract_materials, fill_virtual_texture_parameters, AppState, ModSources};
+use crate::state::{extract_materials, AppState};
 use crate::virtual_texture_params;
 use crate::virtual_textures;
 

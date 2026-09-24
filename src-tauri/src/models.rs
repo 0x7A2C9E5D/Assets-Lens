@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use serde::{Deserialize, Serialize};
 
-use crate::state::{source_of, MaterialInfo, ModSources};
+use crate::domain::material::{material_names_for, virtual_texture_parameter, MaterialInfo};
+use crate::domain::source::{source_of, ModSources};
 
 /// Build progress, pushed to the frontend through a Tauri Channel
 #[derive(Clone, Serialize)]
@@ -22,7 +23,7 @@ pub struct BuildProgress {
 pub struct TextureSummary {
     pub id: String,
     pub name: String,
-    /// Mod providing this texture; absent when it comes from the game (see `state::ModSources`)
+    /// Mod providing this texture; absent when it comes from the game (see `domain::source::ModSources`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub path: String,
@@ -63,7 +64,7 @@ pub struct MaterialSummary {
     /// Human-readable name from `MaterialBank`; empty when the material is unknown, in which case
     /// the detail panel falls back to the GUID
     pub name: String,
-    /// Mod providing this material; absent when it comes from the game (see `state::ModSources`)
+    /// Mod providing this material; absent when it comes from the game (see `domain::source::ModSources`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// Base material template (`.lsf`) the material is derived from
@@ -118,7 +119,7 @@ pub fn material_summaries(
 pub struct ExportMaterial {
     pub id: String,
     pub name: String,
-    /// Mod providing this material; absent when it comes from the game (see `state::ModSources`)
+    /// Mod providing this material; absent when it comes from the game (see `domain::source::ModSources`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub source_file: String,
@@ -225,66 +226,6 @@ pub fn manifest_materials(
         .collect()
 }
 
-/// The entries of the material cache that `material_ids` reference, as an owned subset.
-///
-/// A material row of the export manifest reads the resources it binds out of these entries (see
-/// `manifest_materials`), and the cache they live in is not handed to the export task — so the export
-/// takes the handful of entries it needs rather than the whole cache (one entry per material of the
-/// game, each holding its own texture lists).
-pub fn materials_of(
-    material_ids: &[String],
-    materials: &HashMap<String, MaterialInfo>,
-) -> HashMap<String, MaterialInfo> {
-    material_ids
-        .iter()
-        .filter_map(|id| {
-            materials
-                .get(id)
-                .map(|material| (id.clone(), material.clone()))
-        })
-        .collect()
-}
-
-/// Names of the materials of one asset that bind the resource `id`. More than one is possible (two
-/// materials of the same mesh may share a mask), so this is a list; a material with no name
-/// contributes nothing, because a bare GUID would only repeat what the material section already
-/// shows.
-///
-/// `is_bound` decides whether a material binds the resource — a regular texture is one of its
-/// `texture_ids`, a virtual texture one of its `virtual_textures`, and both are asked the same way.
-fn material_names_for(
-    is_bound: impl Fn(&MaterialInfo) -> bool,
-    material_ids: &[String],
-    materials: &HashMap<String, MaterialInfo>,
-) -> Vec<String> {
-    material_ids
-        .iter()
-        .filter_map(|material_id| materials.get(material_id))
-        .filter(|material| is_bound(material))
-        .map(|material| material.name.clone())
-        .filter(|name| !name.is_empty())
-        .collect()
-}
-
-/// Parameter the asset's materials bind the virtual texture `id` with.
-///
-/// The name belongs to the binding rather than to the resource, so it is taken from the first
-/// material that binds it — in the shipped data a virtual texture is bound once and with the same
-/// name everywhere, which is what makes one name per row enough.
-fn virtual_texture_parameter(
-    id: &str,
-    material_ids: &[String],
-    materials: &HashMap<String, MaterialInfo>,
-) -> Option<String> {
-    material_ids
-        .iter()
-        .filter_map(|material_id| materials.get(material_id))
-        .flat_map(|material| material.virtual_textures.as_slice())
-        .find(|binding| binding.id == id)
-        .map(|binding| binding.parameter_name.clone())
-        .filter(|name| !name.is_empty())
-}
-
 /// Streaming virtual texture reference (GTex).
 ///
 /// A row of the asset's virtual texture list (the detail panel), and — copied, without
@@ -297,7 +238,7 @@ pub struct VirtualTextureSummary {
     pub id: String,
     pub name: String,
     /// Mod providing this virtual texture; absent when it comes from the game (see
-    /// `state::ModSources`)
+    /// `domain::source::ModSources`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub hash: String,
@@ -319,7 +260,7 @@ pub struct VirtualTextureSummary {
     pub material_names: Vec<String>,
     /// Parameter the binding fills (e.g. `virtualtexture`), read off the asset's materials — it
     /// belongs to the binding, not to the resource. Absent from the JSON while unset: the names come
-    /// from the materials' templates (see `state::fill_virtual_texture_parameters`), which a detail view
+    /// from the materials' templates (see `domain::material::fill_virtual_texture_parameters`), which a detail view
     /// and an export both read up front (`commands::ensure_virtual_texture_parameters`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameter_name: Option<String>,
@@ -435,7 +376,7 @@ pub struct VisualAssetDetail {
     /// Visual resource ID (GUID) — the lookup key, since names are not unique
     pub id: String,
     pub name: String,
-    /// Mod providing this asset; absent when it comes from the game (see `state::ModSources`)
+    /// Mod providing this asset; absent when it comes from the game (see `domain::source::ModSources`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub path: String,
@@ -486,7 +427,7 @@ pub struct VisualSummary {
     /// list cannot be keyed by name
     pub id: String,
     pub name: String,
-    /// Mod providing this asset; absent when it comes from the game (see `state::ModSources`)
+    /// Mod providing this asset; absent when it comes from the game (see `domain::source::ModSources`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub material_count: usize,
@@ -701,7 +642,7 @@ pub struct ExportManifest {
     /// is not unique
     pub id: String,
     pub name: String,
-    /// Mod providing this asset; absent when it comes from the game (see `state::ModSources`)
+    /// Mod providing this asset; absent when it comes from the game (see `domain::source::ModSources`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub path: String,

@@ -24,7 +24,8 @@ use maclarian::formats::lsx::{parse_lsx, LsxDocument, LsxNode, LsxRegion};
 use maclarian::merged::{MergedDatabase, TextureRef, VirtualTextureRef, VisualAsset};
 
 use crate::archives::Archives;
-use crate::state::{MaterialInfo, ModSources, VirtualTextureBinding};
+use crate::domain::material::{MaterialInfo, VirtualTextureBinding};
+use crate::domain::source::ModSources;
 
 /// A texture a mod material binds, read from its `MaterialBank`.
 ///
@@ -362,7 +363,7 @@ pub fn merge_into(
                     .collect(),
                 // Names stay empty, exactly as they do for the game's own materials read out of the
                 // database: the parameter of a binding belongs to the material's template and is read
-                // per detail view (see `state::fill_virtual_texture_parameters`)
+                // per detail view (see `domain::material::fill_virtual_texture_parameters`)
                 virtual_textures: material
                     .virtual_textures
                     .into_iter()

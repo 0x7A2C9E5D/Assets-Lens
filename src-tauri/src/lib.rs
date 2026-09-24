@@ -1,6 +1,7 @@
 pub mod archives;
 mod cache;
 mod commands;
+mod domain;
 pub mod export;
 mod models;
 pub mod mods;

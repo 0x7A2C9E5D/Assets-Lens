@@ -17,7 +17,9 @@ use maclarian::merged::MergedDatabase;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::state::{default_mods_path, mod_paks, MaterialInfo, ModSources};
+use crate::domain::material::MaterialInfo;
+use crate::domain::source::ModSources;
+use crate::state::{default_mods_path, mod_paks};
 
 /// Bumped whenever the written shape or what a build puts in it changes: a file from another format
 /// version is refused instead of misread.
