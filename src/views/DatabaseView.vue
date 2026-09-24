@@ -16,6 +16,7 @@ import {
 import ProgressBar from '../components/ProgressBar.vue'
 import StatCard from '../components/StatCard.vue'
 import {
+  type AppSnapshot,
   buildDatabase,
   type BuildProgress,
   type CacheStatus,
@@ -23,11 +24,10 @@ import {
   type DatabaseStats,
   dbStats,
   detectGamePath,
-  getGamePath,
   pickDirectory,
+  restoreState,
   setGamePath,
 } from '../api/tauri'
-import {clearGamePath, readGamePath, writeGamePath} from '../utils/settings'
 
 const {t, te} = useI18n()
 
@@ -66,11 +66,11 @@ function formatTime(seconds: number): string {
 }
 
 /**
- * Read what the backend holds right now: the statistics and where they came from.
+ * Re-read the statistics and the cache report.
  *
- * Only ever called once a game directory has been handed over. Until then the backend has neither a
- * directory nor an index, so both answers would come back empty — which is why the page restores the
- * directory first and asks afterwards.
+ * Only called once a build of this session's own has finished: the directory has not moved, but the
+ * index both answers describe has just been replaced. A directory switch is covered by `syncState`,
+ * which brings back all three values at once.
  */
 function refreshStatus() {
   dbStats()
@@ -86,49 +86,49 @@ function refreshStatus() {
       .catch((err) => console.error('[cache_status]', err))
 }
 
-/**
- * Compare two directories: the backend returns `PathBuf::display()` output while localStorage
- * keeps the raw user input, so the two may only differ in separators or casing. Normalize before
- * comparing, otherwise an unchanged directory is mistaken for a new one.
- */
-function isSamePath(a: string | null, b: string | null): boolean {
-  if (!a || !b) return false
-  const normalize = (value: string) => value.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
-  return normalize(a) === normalize(b)
+/** Take what the backend reports about the directory in use: the directory itself and its index */
+function applySnapshot(snapshot: AppSnapshot) {
+  gamePath.value = snapshot.gamePath
+  stats.value = snapshot.stats
+  cache.value = snapshot.cache
 }
 
 /**
- * Hand a directory to the backend (it validates Shared.pak and rebuilds the resolver) and remember
- * it in localStorage on success. Returns whether it took effect; a failure clears the stale record.
+ * Re-read the session state from the backend, which is the only side that knows which directory is in
+ * use and what index was persisted for it. Called when the page opens and after a directory switch.
+ */
+function syncState(): Promise<void> {
+  return restoreState()
+      .then(applySnapshot)
+      .catch((err) => console.error('[restore_state]', err))
+}
+
+/**
+ * Hand a directory to the backend — it validates `Shared.pak`, rebuilds the resolver and records the
+ * choice for the next launch — and read back what it makes of it. Returns whether it took effect; the
+ * caller is the one that reports the failure.
  */
 async function applyGamePath(path: string): Promise<boolean> {
   try {
-    const confirmed = await setGamePath(path)
-    gamePath.value = confirmed
-    // The directory changed, so neither the built database nor anything the backend had to say
-    // about the index on disk for the previous directory still applies
-    stats.value = null
-    cache.value = null
-    writeGamePath(confirmed)
-    return true
+    await setGamePath(path)
   } catch (err) {
     console.error('[set_game_path]', err)
-    clearGamePath()
     return false
   }
+  await syncState()
+  return true
 }
 
 /**
- * Ask the backend for an auto-detected directory. Nothing is written to the UI before it answers:
- * the busy flag is only raised for a manual click, and the result is applied only when it differs
- * from what the page already shows — a silent probe on startup therefore never repaints or clears
- * anything of its own accord.
+ * Ask the backend for an auto-detected directory. Nothing is written to the UI before it answers: the
+ * busy flag is only raised for a manual click, and an accepted directory is recorded by the backend
+ * itself, so the state is re-read rather than guessed here.
  */
 function runDetect(manual = false) {
   if (manual) detecting.value = true
 
   detectGamePath()
-      .then((path) => {
+      .then(async (path) => {
         if (!path) {
           // Auto-detection failed (no game at the default locations): keep the existing path and only
           // show a hint, so a manually chosen directory is never wiped out
@@ -136,14 +136,7 @@ function runDetect(manual = false) {
           return
         }
         errorMsg.value = ''
-        if (isSamePath(gamePath.value, path)) return
-        gamePath.value = path
-        stats.value = null
-        // Auto-detected directories are remembered too, so the next launch reuses them
-        writeGamePath(path)
-        // The backend looked for this directory's persisted index while detecting it, so its answer
-        // is read here — this call is also what fetches the statistics it just restored
-        refreshStatus()
+        await syncState()
       })
       .catch((err) => {
         console.error('[detect_game_path]', err)
@@ -163,13 +156,7 @@ function chooseDirectory() {
         return false
       })
       .then((ok) => {
-        if (!ok) {
-          errorMsg.value = t('errors.directoryFailed')
-          return
-        }
-        // A directory was accepted, so the backend has just looked for its persisted index: what it
-        // found, and the statistics it restored from it, are read here
-        refreshStatus()
+        if (!ok) errorMsg.value = t('errors.directoryFailed')
       })
 }
 
@@ -206,33 +193,17 @@ function build() {
 }
 
 onMounted(() => {
-  // The game directory is restored first: handing it to the backend is what makes it look for the
-  // index a previous build persisted for that directory, so the statistics and the cache report can
-  // only be read once it is there. Read before, they would always come back empty.
+  // One call brings back everything the page renders: the directory the backend works on — its own
+  // record, restored together with the index persisted for that directory — the statistics of that
+  // index and where it came from.
   //
-  // The localStorage record wins (remembered across sessions); when the backend already uses the
-  // same directory just reuse it instead of calling set again (set reloads the index, so doing it on
-  // every page visit would pay for a read that changes nothing). Auto-detection only runs when
-  // neither is available, so a manually chosen directory is safe.
-  const stored = readGamePath()
-  getGamePath()
-      .then((current) => {
-        if (isSamePath(current, stored)) {
-          gamePath.value = current
-          return true
-        }
-        return stored ? applyGamePath(stored) : false
-      })
-      .catch((err) => {
-        console.error('[get_game_path]', err)
-        return stored ? applyGamePath(stored) : false
-      })
-      .then((restored) => {
-        // Detection refreshes the status itself once it has a directory; this branch is the one that
-        // already had one
-        if (restored) refreshStatus()
-        else runDetect()
-      })
+  // Detection is only worth running with no directory set at all: the first launch is the case the
+  // backend cannot answer for, since it was never told about a game. A record it had to refuse (the
+  // directory moved, say) lands here too, where the probe is as harmless as on a first launch — it
+  // only ever adopts a directory it actually found.
+  syncState().then(() => {
+    if (!gamePath.value) runDetect()
+  })
 })
 </script>
 

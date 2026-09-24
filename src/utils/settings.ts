@@ -1,44 +1,15 @@
 /**
- * Web-side persistence for app settings: the game data directory, the language preference and the
- * window rectangle all live in localStorage.
+ * Web-side persistence for the UI preferences: the language choice, the palette and the window
+ * rectangle all live in localStorage.
  *
- * The backend no longer writes settings.json — the frontend remembers the directory and hands it
- * back for validation on startup, so all setting reads/writes stay in the Web layer while the
- * backend only validates and uses it.
+ * These are pure display preferences, so they are the frontend's own business. The game data
+ * directory is not one of them: the backend records it (`settings.json`) and restores it through
+ * `restoreState`, because every command depends on it before the first render.
  */
 
-const GAME_PATH_KEY = 'assets-lens.game-path'
 const LOCALE_KEY = 'assets-lens.locale'
 const THEME_KEY = 'assets-lens.theme'
 const WINDOW_KEY = 'assets-lens.window'
-
-/** Read the remembered game data directory; returns null when localStorage is unavailable (private mode, etc.) */
-export function readGamePath(): string | null {
-    try {
-        const raw = localStorage.getItem(GAME_PATH_KEY)
-        return raw && raw.trim() ? raw : null
-    } catch {
-        return null
-    }
-}
-
-/** Remember the current game data directory */
-export function writeGamePath(path: string): void {
-    try {
-        localStorage.setItem(GAME_PATH_KEY, path)
-    } catch {
-        // A failed write only costs the memory for the next launch; this session is unaffected
-    }
-}
-
-/** Drop the record when the directory no longer exists, so the next launch does not retry it */
-export function clearGamePath(): void {
-    try {
-        localStorage.removeItem(GAME_PATH_KEY)
-    } catch {
-        // Same as above: safe to ignore
-    }
-}
 
 /**
  * Stored language preference. `manual` marks an explicit user choice, which is kept forever;

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {computed, defineAsyncComponent, ref} from 'vue'
+import {defineAsyncComponent, ref} from 'vue'
 import {ChevronDown, Download, FileBox, Grid2x2, Image as ImageIcon, MousePointerClick, Palette,} from 'lucide-vue-next'
 import type {VisualAsset} from '../api/tauri'
 import ExportDialog from './ExportDialog.vue'
@@ -11,67 +11,11 @@ import ExportDialog from './ExportDialog.vue'
  */
 const ModelPreview = defineAsyncComponent(() => import('./ModelPreview.vue'))
 
-const props = defineProps<{ asset: VisualAsset | null; loading: boolean }>()
+// The asset and its loading flag are read straight from the template, so the props are declared
+// without binding them to a name
+defineProps<{ asset: VisualAsset | null; loading: boolean }>()
 
 const exportOpen = ref(false)
-
-/**
- * One resource a material binds. Regular and virtual textures arrive in separate lists while a
- * material row shows them as one run of chips, so the kind is carried along: it picks the icon.
- */
-interface MaterialBinding {
-  kind: 'texture' | 'virtual'
-  id: string
-  name: string
-  parameterName?: string | null
-}
-
-/**
- * Material → bindings. The payload only carries the relation one way round: every texture row
- * lists the material names that bind it, regular and virtual alike, so the material section has to
- * invert both. A name is the only key available (that is what the backend fills in), which also
- * means an unnamed material shows no bindings. Both lists are walked once per asset instead of
- * rescanning them for every material.
- */
-const bindingsByMaterial = computed(() => {
-  const byMaterial = new Map<string, MaterialBinding[]>()
-  const bind = (materialNames: string[] | undefined, binding: MaterialBinding) => {
-    for (const name of materialNames ?? []) {
-      const bound = byMaterial.get(name)
-      if (bound) {
-        bound.push(binding)
-      } else {
-        byMaterial.set(name, [binding])
-      }
-    }
-  }
-
-  for (const texture of props.asset?.textures ?? []) {
-    bind(texture.materialNames, {
-      kind: 'texture',
-      id: texture.id,
-      name: texture.name || texture.id,
-      parameterName: texture.parameterName,
-    })
-  }
-  for (const virtualTexture of props.asset?.virtualTextures ?? []) {
-    bind(virtualTexture.materialNames, {
-      kind: 'virtual',
-      id: virtualTexture.id,
-      name: virtualTexture.name || virtualTexture.id,
-      parameterName: virtualTexture.parameterName,
-    })
-  }
-  return byMaterial
-})
-
-/** Material rows, each paired with the bindings it has (empty when none are named) */
-const materialsWithBindings = computed(() =>
-    (props.asset?.materials ?? []).map((material) => ({
-      ...material,
-      bindings: bindingsByMaterial.value.get(material.name) ?? [],
-    })),
-)
 
 /**
  * Section collapsing: every section starts folded, so the panel opens as a compact summary — the
@@ -165,7 +109,7 @@ function toggle(section: SectionKey) {
           </button>
           <div v-show="!collapsed.materials" class="mt-2 space-y-2">
             <div
-                v-for="material in materialsWithBindings"
+                v-for="material in asset.materials"
                 :key="material.id"
                 class="card-well"
             >
@@ -193,7 +137,7 @@ function toggle(section: SectionKey) {
               <!-- The chip block keeps the card's row step (6px) on both sides of the divider, so the
                    gap above it reads like every other gap in the card instead of a section break -->
               <ul
-                  v-if="material.bindings.length"
+                  v-if="material.bindings?.length"
                   class="mt-1.5 flex flex-wrap gap-1.5 border-t border-hairline pt-1.5"
               >
                 <li
@@ -209,7 +153,7 @@ function toggle(section: SectionKey) {
                       class="h-3 w-3 shrink-0 text-muted"
                   />
                   <Grid2x2 v-else class="h-3 w-3 shrink-0 text-muted"/>
-                  <span class="break-all font-mono text-[11px] text-muted">{{ binding.name }}</span>
+                  <span class="break-all font-mono text-[11px] text-muted">{{ binding.name || binding.id }}</span>
                   <span v-if="binding.parameterName" class="shrink-0 text-[10px] text-subtle">
                     {{ binding.parameterName }}
                   </span>

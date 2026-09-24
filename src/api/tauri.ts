@@ -21,12 +21,26 @@ export interface TextureRef {
     width: number
     height: number
     parameterName: string | null
-    /** Names of this asset's materials that bind this texture; absent when there are none to name.
-     *  The material section inverts this relation (material name → the textures under it); a
-     *  texture row itself carries no material reference */
-    materialNames?: string[]
     /** Mod that supplies this resource; absent for resources from the base game */
     source?: string
+}
+
+/** Which list of the asset a material binding points into */
+export type BindingKind = 'texture' | 'virtual'
+
+/**
+ * One resource a material binds, listed under that material in the detail panel. The backend states
+ * the relation per material and keyed by GUID: material names are not unique, so inverting a texture
+ * list by name would mix same-named materials up and drop the bindings of an unnamed one.
+ */
+export interface MaterialBinding {
+    kind: BindingKind
+    /** GUID of the resource — the same value its row in `textures` / `virtualTextures` carries */
+    id: string
+    /** Name of that row; empty when the resource has none, so show `id` instead */
+    name: string
+    /** Parameter the binding fills (e.g. `virtualtexture`), for a virtual texture */
+    parameterName?: string
 }
 
 /** Material reference: the GUID stays the identity, the name is the readable label */
@@ -35,6 +49,8 @@ export interface MaterialRef {
     name: string
     /** Base material template (`.lsf`) the material is derived from */
     sourceFile: string
+    /** The resources this material binds; absent when the material is not in the backend's cache */
+    bindings?: MaterialBinding[]
     /** Mod that supplies this material; absent for materials from the base game */
     source?: string
 }
@@ -49,13 +65,11 @@ export interface VirtualTextureRef {
      *  GTS could not be read */
     width: number | null
     height: number | null
-    /** Names of this asset's materials that bind this virtual texture; absent when there are none
-     *  to name. Inverted the same way as `TextureRef.materialNames`, so the material section can
-     *  list a material's virtual textures alongside its regular ones */
-    materialNames?: string[]
     /** Parameter the binding fills (e.g. `virtualtexture`, `overlayvirtualtexture`), read off the
      *  template of the material that binds it; absent when that template could not be read, so the
-     *  chip renders without it */
+     *  chip renders without it. One name per row: an asset binding the same virtual texture through
+     *  several materials with different parameters shows only the first here, while each material
+     *  carries its own in its `bindings` */
     parameterName?: string
     /** Mod that supplies this resource; absent for resources from the base game */
     source?: string
@@ -108,12 +122,32 @@ export function detectGamePath(): Promise<string | null> {
     return invoke<string | null>('detect_game_path')
 }
 
-export function getGamePath(): Promise<string | null> {
-    return invoke<string | null>('get_game_path')
-}
-
 export function setGamePath(path: string): Promise<string> {
     return invoke<string>('set_game_path', {path})
+}
+
+/**
+ * What a page needs to render on open, in one call: the game data directory the backend works on, the
+ * statistics of the index it holds for that directory, and where that index came from.
+ *
+ * The directory is the backend's own record (`settings.json`, kept next to the index cache) rather
+ * than something the frontend hands over, so a page only has to display it.
+ */
+export interface AppSnapshot {
+    /** Directory in use; null while none is set */
+    gamePath: string | null
+    /** Statistics of the index held; null when nothing is built yet */
+    stats: DatabaseStats | null
+    cache: CacheStatus
+}
+
+/**
+ * Restore the session: the backend adopts the directory it recorded on a previous launch (with the
+ * index persisted for it) and reports the three values above. Also used after a directory switch, to
+ * re-read what the backend makes of the new one.
+ */
+export function restoreState(): Promise<AppSnapshot> {
+    return invoke<AppSnapshot>('restore_state')
 }
 
 export function buildDatabase(onProgress: Channel<BuildProgress>): Promise<DatabaseStats> {
@@ -130,8 +164,8 @@ export function dbStats(): Promise<DatabaseStats | null> {
  * from disk — `builtAt` is the unix time it was built at), or `stale` (a file is there but was
  * refused, `code` saying why).
  *
- * Read after the game directory has been handed to the backend, never before: selecting a directory
- * is what starts the lookup.
+ * Part of `AppSnapshot`: adopting a directory is what starts the lookup for its index, so the report
+ * always describes the directory the snapshot carries.
  */
 export interface CacheStatus {
     state: 'idle' | 'loaded' | 'stale'
