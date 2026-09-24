@@ -1,4 +1,4 @@
-//! What a material is, which resources it binds, and which material binds a given resource.
+//! What a material is and which resources it binds.
 
 use std::collections::HashMap;
 
@@ -78,27 +78,6 @@ pub fn materials_of(
                 .get(id)
                 .map(|material| (id.clone(), material.clone()))
         })
-        .collect()
-}
-
-/// Names of the materials of one asset that bind the resource `id`. More than one is possible (two
-/// materials of the same mesh may share a mask), so this is a list; a material with no name
-/// contributes nothing, because a bare GUID would only repeat what the material section already
-/// shows.
-///
-/// `is_bound` decides whether a material binds the resource — a regular texture is one of its
-/// `texture_ids`, a virtual texture one of its `virtual_textures`, and both are asked the same way.
-pub(crate) fn material_names_for(
-    is_bound: impl Fn(&MaterialInfo) -> bool,
-    material_ids: &[String],
-    materials: &HashMap<String, MaterialInfo>,
-) -> Vec<String> {
-    material_ids
-        .iter()
-        .filter_map(|material_id| materials.get(material_id))
-        .filter(|material| is_bound(material))
-        .map(|material| material.name.clone())
-        .filter(|name| !name.is_empty())
         .collect()
 }
 

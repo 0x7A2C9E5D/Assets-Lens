@@ -746,7 +746,7 @@ fn build_manifest(
 ) -> ExportManifest {
     // Built once and handed to the material rows, which carry these very rows for their own resources
     // (see `manifest_materials`); the manifest lists the resources nowhere else
-    let textures = texture_summaries(asset, materials, sources);
+    let textures = texture_summaries(asset, sources);
     let virtual_textures = virtual_texture_summaries(asset, vt_matches, materials, sources);
 
     ExportManifest {

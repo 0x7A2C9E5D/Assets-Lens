@@ -5,6 +5,7 @@ mod domain;
 pub mod export;
 mod models;
 pub mod mods;
+mod settings;
 mod state;
 mod virtual_texture_params;
 mod virtual_textures;
@@ -15,7 +16,7 @@ use state::AppState;
 
 use commands::{
     app_info, build_database, cache_status, db_stats, detect_game_path, export_visual_asset,
-    get_game_path, get_visual, get_visual_preview, list_visuals, set_game_path,
+    get_visual, get_visual_preview, list_visuals, restore_state, set_game_path,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,15 +25,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Opens the project's external links (GitHub / Nexus Mods) in the system browser
         .plugin(tauri_plugin_opener::init())
-        // The game directory lives in the frontend's Web storage and is handed back through
-        // `set_game_path` on startup; the index built from it is persisted separately, and comes back
-        // with that same call (see `cache`)
+        // The game directory is recorded by the backend itself (`settings`) and comes back with
+        // `restore_state`; the index built from it is persisted separately, and comes back with it
         .manage(Arc::new(Mutex::new(AppState::new())))
         .invoke_handler(tauri::generate_handler![
             app_info,
             detect_game_path,
-            get_game_path,
             set_game_path,
+            restore_state,
             build_database,
             db_stats,
             cache_status,

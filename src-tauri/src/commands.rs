@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use base64::Engine;
@@ -13,10 +13,11 @@ use crate::domain::material::{fill_virtual_texture_parameters, materials_of};
 use crate::domain::source::ModSources;
 use crate::export::{run_export, ExportContext};
 use crate::models::{
-    match_for_hash, AppInfo, BuildProgress, CacheStatus, DatabaseStats, ExportOptions,
+    match_for_hash, AppInfo, AppSnapshot, BuildProgress, CacheStatus, DatabaseStats, ExportOptions,
     ExportProgress, ExportResult, ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
 use crate::mods;
+use crate::settings;
 use crate::state::{extract_materials, AppState};
 use crate::virtual_texture_params;
 use crate::virtual_textures;
@@ -34,6 +35,20 @@ const NOT_CONFIGURED: &str =
     "BG3 Data directory is not set. Please use auto-detect or select a directory first.";
 const NOT_BUILT: &str =
     "Resource database has not been built. Please go to the Database page and build it first.";
+
+/// The statistics of the index currently held, or `None` when nothing has been built yet.
+///
+/// Read off the merged maps rather than `db.stats()`: maclarian keeps the material map to itself, so
+/// the material count can only come from the cache filled at build time.
+fn current_stats(st: &AppState) -> Option<DatabaseStats> {
+    st.merged_db.as_ref().map(|db| DatabaseStats {
+        // One entry per visual GUID, so the dashboard always matches the browse list
+        visual_count: st.visual_ids.len(),
+        material_count: st.materials.len(),
+        texture_count: db.textures.len(),
+        virtual_texture_count: db.virtual_textures.len(),
+    })
+}
 
 /// Share of the build progress the mods are given, when there are any. The game data is one huge
 /// archive and the mods are a handful of files, so the split is fixed rather than measured: it keeps
@@ -112,8 +127,9 @@ fn sorted_visual_ids(
 /// Auto-detect the BG3 Data directory (default Steam install location).
 ///
 /// Off the main thread like every other command that touches the disk: the probe walks the default
-/// install locations and, once a directory is found, the index a previous build left for it is read
-/// back (see `restore_cached_database`).
+/// install locations and, once a directory is found, adopts it — and records it, so the next launch
+/// comes back to it without a probe (see `restore_state`) — before the index a previous build left
+/// for it is read back (`restore_cached_database`).
 #[tauri::command]
 pub async fn detect_game_path(app: AppHandle) -> Result<Option<String>, String> {
     let state = app.state::<SharedState>().inner().clone();
@@ -134,12 +150,8 @@ pub async fn detect_game_path(app: AppHandle) -> Result<Option<String>, String> 
             }
         };
 
-        {
-            let mut st = lock(&state)?;
-            st.game_path = Some(path.clone());
-            st.resolver = Some(Arc::new(resolver));
-            st.reset_index();
-        }
+        adopt_directory(&state, path.clone(), resolver)?;
+        record_directory(&app, &path);
 
         // The directory has just been (re)selected, which is where the index for it can come back
         restore_cached_database(&app, &state);
@@ -150,12 +162,49 @@ pub async fn detect_game_path(app: AppHandle) -> Result<Option<String>, String> 
     .map_err(|err| format!("Auto-detect task terminated unexpectedly: {err}"))?
 }
 
-/// Read the BG3 Data directory currently recorded by the backend
-/// (used to restore the UI state after switching pages)
-#[tauri::command]
-pub fn get_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
-    let st = lock(&state)?;
-    Ok(st.game_path.as_ref().map(|p| p.display().to_string()))
+/// Take `dir` and the resolver opened on it as this session's game data directory, dropping whatever
+/// index the previous one left.
+///
+/// The lock is held around the switch alone: a build running concurrently has to find the new
+/// directory rather than the old one, and a directory change is the one moment the index is dead.
+fn adopt_directory(
+    state: &SharedState,
+    dir: PathBuf,
+    resolver: GameDataResolver,
+) -> Result<(), String> {
+    let mut st = lock(state)?;
+    st.game_path = Some(dir);
+    st.resolver = Some(Arc::new(resolver));
+    st.reset_index();
+    Ok(())
+}
+
+/// Adopt `dir` after checking it is a game data directory, opening its resolver.
+///
+/// Both a directory the user picked and one a previous launch recorded come through here, so a
+/// recorded path that has since moved stops at the same check a wrong pick does.
+fn open_directory(state: &SharedState, dir: &Path) -> Result<(), String> {
+    if !dir.exists() {
+        return Err(format!("Directory does not exist: {}", dir.display()));
+    }
+    if !dir.join("Shared.pak").exists() {
+        return Err(format!(
+            "Shared.pak not found in this directory. Please select the BG3 Data directory: {}",
+            dir.display()
+        ));
+    }
+
+    let resolver = GameDataResolver::new(dir)
+        .map_err(|err| format!("Failed to initialize resource parser: {err}"))?;
+    adopt_directory(state, dir.to_path_buf(), resolver)
+}
+
+/// Record `dir` for the next launch. A failed write costs the record and nothing else — the directory
+/// is set for this session either way — so it is logged rather than handed to the caller.
+fn record_directory(app: &AppHandle, dir: &Path) {
+    if let Err(err) = settings::save(app, dir) {
+        eprintln!("[settings] game directory not recorded: {err}");
+    }
 }
 
 /// Manually set the BG3 Data directory (must contain Shared.pak)
@@ -165,27 +214,8 @@ pub async fn set_game_path(app: AppHandle, path: String) -> Result<String, Strin
 
     tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
         let dir = PathBuf::from(&path);
-
-        if !dir.exists() {
-            return Err(format!("Directory does not exist: {path}"));
-        }
-        if !dir.join("Shared.pak").exists() {
-            return Err(format!(
-                "Shared.pak not found in this directory. Please select the BG3 Data directory: {path}"
-            ));
-        }
-
-        let resolver = GameDataResolver::new(&dir)
-            .map_err(|err| format!("Failed to initialize resource parser: {err}"))?;
-
-        // Held only around the switch: the read below does not want the state lock, and a build
-        // running concurrently has to find the new directory rather than the old one
-        {
-            let mut st = lock(&state)?;
-            st.game_path = Some(dir);
-            st.resolver = Some(Arc::new(resolver));
-            st.reset_index();
-        }
+        open_directory(&state, &dir)?;
+        record_directory(&app, &dir);
 
         // The directory has just been (re)selected, which is where the index for it can come back
         restore_cached_database(&app, &state);
@@ -194,6 +224,46 @@ pub async fn set_game_path(app: AppHandle, path: String) -> Result<String, Strin
     })
     .await
     .map_err(|err| format!("Directory change terminated unexpectedly: {err}"))?
+}
+
+/// Put the session back where the previous one left it, and report what it knows.
+///
+/// Called once when a page opens. The game data directory comes from the record a previous launch left
+/// behind (`settings`) rather than from the frontend, and with it comes the index persisted for that
+/// directory: the statistics and the cache status of the `AppSnapshot` are read after it, so the page
+/// needs no further call to render.
+///
+/// A directory already adopted in this session (a build that ran before the page opened) is left as it
+/// is, and a recorded directory that has since moved or stopped holding game data is reported and
+/// dropped — the session then starts unset, exactly as on a first launch, instead of failing.
+#[tauri::command]
+pub async fn restore_state(app: AppHandle) -> Result<AppSnapshot, String> {
+    let state = app.state::<SharedState>().inner().clone();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
+        // The lock is taken and released per question rather than held: `open_directory` and
+        // `restore_cached_database` each take it themselves
+        let adopted = lock(&state)?.game_path.is_some();
+
+        if !adopted {
+            if let Some(dir) = settings::load(&app) {
+                match open_directory(&state, &dir) {
+                    // Only a directory that was actually adopted has an index to read back
+                    Ok(()) => restore_cached_database(&app, &state),
+                    Err(err) => eprintln!("[settings] {} not restored: {err}", dir.display()),
+                }
+            }
+        }
+
+        let st = lock(&state)?;
+        Ok(AppSnapshot {
+            game_path: st.game_path.as_ref().map(|path| path.display().to_string()),
+            stats: current_stats(&st),
+            cache: st.cache_status.clone(),
+        })
+    })
+    .await
+    .map_err(|err| format!("State restore task terminated unexpectedly: {err}"))?
 }
 
 /// Fill the index for the current directory out of the file a previous build left for it.
@@ -493,20 +563,7 @@ fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Re
 #[tauri::command]
 pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, String> {
     let st = lock(&state)?;
-
-    match st.merged_db.as_ref() {
-        Some(db) => {
-            let stats = DatabaseStats {
-                // Same as build_database: the dashboard should reflect what the UI can actually browse
-                visual_count: st.visual_ids.len(),
-                material_count: st.materials.len(),
-                texture_count: db.textures.len(),
-                virtual_texture_count: db.virtual_textures.len(),
-            };
-            Ok(Some(stats))
-        }
-        None => Ok(None),
-    }
+    Ok(current_stats(&st))
 }
 
 /// Where the index the statistics above describe came from: read back from disk, or built here.

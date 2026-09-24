@@ -100,12 +100,12 @@ pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
 /// Global application state: BG3 data directory, the resource resolver, the built database, and a
 /// stable name cache for consistent pagination order.
 ///
-/// The game data directory is not persisted here: the frontend remembers it (Web storage) and hands
-/// it back through `set_game_path` on startup, so this state only lives for the current session. What
-/// the session *can* get back from disk is the built index itself: selecting a directory looks for
-/// the file a previous build left for that directory (`cache`) and fills the fields below from it,
-/// which is what spares the next launch a scan. The mod directory is not settable at all — it is
-/// always the game's own default location.
+/// The game data directory does not survive in here: it is recorded on disk by `settings` and adopted
+/// again on the next launch (`commands::restore_state`), so this state only lives for the current
+/// session. What the session *can* get back from disk along with it is the built index itself: adopting
+/// a directory looks for the file a previous build left for that directory (`cache`) and fills the
+/// fields below from it, which is what spares the next launch a scan. The mod directory is not
+/// settable at all — it is always the game's own default location.
 pub struct AppState {
     /// Shared rather than owned: building the database runs for minutes, and the build has to keep
     /// working on the resolver after the state lock has been released (see `build_database`).

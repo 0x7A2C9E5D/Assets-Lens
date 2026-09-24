@@ -230,7 +230,10 @@ fn stamps(game_path: &Path) -> (Vec<PakStamp>, Vec<PakStamp>) {
 
 /// Serialize `value` into `path` and flush it all the way to the platter, so the rename that follows
 /// cannot publish a file whose contents are still sitting in a buffer.
-fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
+///
+/// Shared with `settings`, which writes its own small file the same way rather than keeping a second
+/// copy of the pattern.
+pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
     let describe = |err: &dyn std::fmt::Display| format!("{}: {err}", path.display());
 
     let file = File::create(path).map_err(|err| describe(&err))?;
