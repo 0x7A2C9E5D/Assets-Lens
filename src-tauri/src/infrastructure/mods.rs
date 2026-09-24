@@ -13,7 +13,7 @@
 //! `MaterialPresetBank` files are presets that point at visuals and materials the game already has,
 //! so indexing them would only add rows with no mesh and no material of their own. And a mod's virtual
 //! textures are indexed but not extracted: the page file lookup searches the game's own archive (see
-//! `state::vt_pak`), so those rows stay without a path and a size.
+//! `application::state::vt_pak`), so those rows stay without a path and a size.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -382,8 +382,8 @@ pub fn merge_into(
 /// dropping the ones that name a resource the index does not hold.
 ///
 /// A material the mod ships brings the parameter name of every binding. A material the game already
-/// had does not: the cache keeps GUIDs only (see `state::extract_materials`), so those texture rows
-/// come out without a parameter — they are still listed under their material.
+/// had does not: the cache keeps GUIDs only (see `application::state::extract_materials`), so those
+/// texture rows come out without a parameter — they are still listed under their material.
 fn resolve(
     visual: &mut VisualAsset,
     mod_materials: &HashMap<String, ModMaterial>,

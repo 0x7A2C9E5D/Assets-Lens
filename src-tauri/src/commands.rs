@@ -7,6 +7,8 @@ use maclarian::merged::{GameDataResolver, MergedDatabase, VisualAsset};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
+use crate::application::settings;
+use crate::application::state::{extract_materials, AppState};
 use crate::domain::app::{AppInfo, AppSnapshot, BuildProgress, CacheStatus, DatabaseStats, Page};
 use crate::domain::export::{ExportOptions, ExportProgress, ExportResult};
 use crate::domain::material::{fill_virtual_texture_parameters, materials_of};
@@ -18,8 +20,6 @@ use crate::infrastructure::archives::{lock_pool, Pak};
 use crate::infrastructure::cache::{self, Loaded};
 use crate::infrastructure::export::{run_export, ExportContext};
 use crate::infrastructure::mods;
-use crate::settings;
-use crate::state::{extract_materials, AppState};
 
 pub type SharedState = Arc<Mutex<AppState>>;
 

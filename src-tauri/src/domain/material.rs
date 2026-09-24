@@ -16,8 +16,8 @@ use crate::domain::virtual_textures::VirtualTextureSummary;
 /// `Clone` so a command can hand the entries of one asset to an export task without copying the whole
 /// cache (see `materials_of`). Serialized because the whole map is persisted to disk with the
 /// database it came out of (`crate::infrastructure::cache`), which is what saves a build on the
-/// next launch: the names are not in the database itself (see `crate::state::extract_materials`),
-/// so they have to travel with it.
+/// next launch: the names are not in the database itself (see
+/// `crate::application::state::extract_materials`), so they have to travel with it.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MaterialInfo {
     /// Human-readable name from `MaterialBank` (e.g. `BEAR_Body_A`); empty when the resource has none

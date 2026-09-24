@@ -235,7 +235,8 @@ pub struct ExportContext<'a> {
     pub materials: &'a HashMap<String, MaterialInfo>,
     /// Labels each manifest row with the mod providing it; the game's own rows stay unlabeled
     pub sources: &'a ModSources,
-    /// Page files resolved for this asset's virtual textures (see `state::AppState::vt_matches`)
+    /// Page files resolved for this asset's virtual textures (see
+    /// `application::state::AppState::vt_matches`)
     pub vt_matches: &'a [GtpMatch],
     /// The archives every read above goes through
     pub pool: &'a Arc<Mutex<Archives>>,

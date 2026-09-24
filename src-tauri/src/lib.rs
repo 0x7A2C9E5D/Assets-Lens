@@ -1,12 +1,11 @@
+mod application;
 mod commands;
 mod domain;
 pub mod infrastructure;
-mod settings;
-mod state;
 
 use std::sync::{Arc, Mutex};
 
-use state::AppState;
+use application::state::AppState;
 
 use commands::{
     app_info, build_database, cache_status, db_stats, detect_game_path, export_visual_asset,
