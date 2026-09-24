@@ -172,7 +172,7 @@ pub async fn build_database(
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<DatabaseStats, String> {
-        // Take what the build needs, then release the lock immediately: parsing the game's paks runs
+        // Take what the build needs, then release the lock immediately: parsing the game's packs runs
         // for minutes, and every other command needs that lock to answer. The pool is taken here too,
         // so it is built from the mod directory this build belongs to.
         let (resolver, game_path, pool) = {
@@ -198,7 +198,7 @@ pub async fn build_database(
         let mod_weight = if mod_count == 0 { 0.0 } else { MOD_WEIGHT };
         let game_weight = 1.0 - mod_weight;
 
-        // The paks maclarian builds its own database from, in its own order: `Shared.pak` first, then
+        // The packs maclarian builds its own database from, in its own order: `Shared.pak` first, then
         // `GustavX.pak`. A directory without the expansion pak builds from `Shared.pak` alone, the
         // same way the library's own build does.
         let paks: Vec<PathBuf> = ["Shared.pak", "GustavX.pak"]
@@ -211,7 +211,7 @@ pub async fn build_database(
         // A second handle for the parse callbacks, which take their channel by value: the mods below
         // keep reporting through this one
         let parse_channel = channel.clone();
-        // Both paks report through the game's single progress segment, and neither file count is
+        // Both packs report through the game's single progress segment, and neither file count is
         // known before it is read, so the segment is split evenly. The pieces never overlap, so the
         // bar only ever moves forward.
         let share = game_weight / paks.len().max(1) as f32;
@@ -231,7 +231,7 @@ pub async fn build_database(
             }
         }
         if db.stats().visual_count == 0 {
-            eprintln!("[maclarian] no visuals parsed from the game paks");
+            eprintln!("[maclarian] no visuals parsed from the game packs");
         }
 
         // Materials and textures only become reachable from their visuals once the whole database
