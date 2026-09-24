@@ -172,9 +172,9 @@ pub async fn build_database(
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<DatabaseStats, String> {
-        // Take what the build needs, then release the lock immediately: parsing Shared.pak runs for
-        // minutes, and every other command needs that lock to answer. The pool is taken here too, so
-        // it is built from the mod directory this build belongs to.
+        // Take what the build needs, then release the lock immediately: parsing the game's paks runs
+        // for minutes, and every other command needs that lock to answer. The pool is taken here too,
+        // so it is built from the mod directory this build belongs to.
         let (resolver, game_path, pool) = {
             let mut st = lock(&state)?;
             (
@@ -198,25 +198,40 @@ pub async fn build_database(
         let mod_weight = if mod_count == 0 { 0.0 } else { MOD_WEIGHT };
         let game_weight = 1.0 - mod_weight;
 
-        let pak_path = game_path.join("Shared.pak");
+        // The paks maclarian builds its own database from, in its own order: `Shared.pak` first, then
+        // `GustavX.pak`. A directory without the expansion pak builds from `Shared.pak` alone, the
+        // same way the library's own build does.
+        let paks: Vec<PathBuf> = ["Shared.pak", "GustavX.pak"]
+            .iter()
+            .map(|name| game_path.join(name))
+            .filter(|path| path.is_file())
+            .collect();
+
         let mut db = MergedDatabase::new(game_path.display().to_string());
-        // A second handle for the parse callback, which takes its channel by value: the mods below
+        // A second handle for the parse callbacks, which take their channel by value: the mods below
         // keep reporting through this one
         let parse_channel = channel.clone();
-        let parsed =
-            resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, _| {
-                let _ = parse_channel.send(BuildProgress {
-                    percent: game_weight * parse_fraction(current, total),
+        // Both paks report through the game's single progress segment, and neither file count is
+        // known before it is read, so the segment is split evenly. The pieces never overlap, so the
+        // bar only ever moves forward.
+        let share = game_weight / paks.len().max(1) as f32;
+        for (index, pak_path) in paks.iter().enumerate() {
+            let base = share * index as f32;
+            let progress = parse_channel.clone();
+            let parsed =
+                resolver.parse_pak_with_progress(pak_path, &mut db, move |current, total, _| {
+                    let _ = progress.send(BuildProgress {
+                        percent: base + share * parse_fraction(current, total),
+                    });
                 });
-            });
-
-        match parsed {
-            Ok(()) if db.stats().visual_count > 0 => {}
-            Ok(()) => db = resolver.database().clone(),
-            Err(err) => {
-                eprintln!("[maclarian] per-file parse failed, falling back to lazy build: {err}");
-                db = resolver.database().clone();
+            if let Err(err) = parsed {
+                // A pak that fails to parse costs only the resources it holds: the build carries on
+                // with the others, so a broken `GustavX.pak` never costs the game's own data
+                eprintln!("[maclarian] {} failed to parse: {err}", pak_path.display());
             }
+        }
+        if db.stats().visual_count == 0 {
+            eprintln!("[maclarian] no visuals parsed from the game paks");
         }
 
         // Materials and textures only become reachable from their visuals once the whole database
