@@ -7,8 +7,6 @@ use maclarian::merged::{GameDataResolver, MergedDatabase, VisualAsset};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
-use crate::archives::{lock_pool, Pak};
-use crate::cache::{self, Loaded};
 use crate::domain::app::{AppInfo, AppSnapshot, BuildProgress, CacheStatus, DatabaseStats, Page};
 use crate::domain::export::{ExportOptions, ExportProgress, ExportResult};
 use crate::domain::material::{fill_virtual_texture_parameters, materials_of};
@@ -16,8 +14,10 @@ use crate::domain::source::ModSources;
 use crate::domain::virtual_texture_params;
 use crate::domain::virtual_textures::{self, match_for_hash};
 use crate::domain::visual::{ModelPreview, VisualAssetDetail, VisualSummary};
-use crate::export::{run_export, ExportContext};
-use crate::mods;
+use crate::infrastructure::archives::{lock_pool, Pak};
+use crate::infrastructure::cache::{self, Loaded};
+use crate::infrastructure::export::{run_export, ExportContext};
+use crate::infrastructure::mods;
 use crate::settings;
 use crate::state::{extract_materials, AppState};
 

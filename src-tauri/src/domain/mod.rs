@@ -10,14 +10,14 @@
 //!    state (`export`, `app`).
 //!
 //! The game's formats are this application's subject matter, so working with them is model work: the
-//! modules that parse one (`virtual_textures`, `virtual_texture_params`) do use the file system, and
-//! the row builders take maclarian's own types. That is a deliberate narrowing of the earlier "no
-//! file system, no maclarian type" rule, which now holds only for `source` and `naming`.
+//! modules that parse one (`virtual_textures`, `virtual_texture_params`) do use the file system and
+//! read through `infrastructure::archives`, and the row builders take maclarian's own types. That is
+//! a deliberate narrowing of the earlier "no file system, no maclarian type" rule, which now holds
+//! only for `source` and `naming`.
 //!
-//! Still missing from the layer is the split of the files left flat — the runtime state and the
-//! command handlers (`state.rs`, `commands.rs`), the archive / cache / mod plumbing (`archives.rs`,
-//! `cache.rs`, `mods.rs`) and the export workflow (`export.rs`) each mix `infrastructure`,
-//! `application` and `ipc` concerns.
+//! The archive / cache / mod plumbing and the export pipeline are not here but in `infrastructure`
+//! (see its module docs); still flat at the crate root are the run-time state and the command
+//! handlers (`state.rs`, `commands.rs`), which mix `application` and `ipc` concerns.
 
 pub mod app;
 pub mod export;

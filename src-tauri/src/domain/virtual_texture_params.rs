@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use maclarian::formats::lsf::parse_lsf_bytes;
 
-use crate::archives::{Archives, Pak};
+use crate::infrastructure::archives::{Archives, Pak};
 
 /// The parameter every binding fills, keyed by material GUID, in binding order — for the materials
 /// named by `materials`, each paired with its `SourceFile` template.

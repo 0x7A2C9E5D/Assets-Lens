@@ -1,7 +1,8 @@
 //! What an export is asked for and what it reports back: the formats, the progress, the artifacts
 //! written, and the `asset.json` manifest that describes the asset.
 //!
-//! The workflow itself is `crate::export`; these are the shapes it takes in and hands out.
+//! The workflow itself is `crate::infrastructure::export`; these are the shapes it takes in and
+//! hands out.
 
 use serde::{Deserialize, Serialize};
 

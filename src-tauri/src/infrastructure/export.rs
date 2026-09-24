@@ -6,8 +6,8 @@
 //! - `dds_bytes_to_png_bytes`: DDS → PNG (direct in-memory conversion, no intermediate files)
 //! - `VirtualTextureExtractor`: GTP + GTS → three layer DDS files (BaseMap / NormalMap / PhysicalMap)
 //!
-//! Reaching into the archives is not this module's job: `crate::archives` owns the PAK read pool and
-//! `crate::domain::virtual_textures` stages the page files the extractor consumes.
+//! Reaching into the archives is not this module's job: `archives` beside it owns the PAK read pool
+//! and `crate::domain::virtual_textures` stages the page files the extractor consumes.
 
 use std::collections::HashMap;
 use std::fs;
@@ -20,7 +20,6 @@ use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
 use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
-use crate::archives::{lock_pool, Archives, Pak};
 use crate::domain::export::{
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
     MeshFormat,
@@ -33,6 +32,7 @@ use crate::domain::virtual_textures::{
     self, match_for_hash, virtual_texture_summaries, PageFileSizes, StagedSources,
     VirtualTextureSummary,
 };
+use crate::infrastructure::archives::{lock_pool, Archives, Pak};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
 const PHASE_PREPARE: &str = "prepare";

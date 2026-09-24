@@ -2,7 +2,8 @@
 //! texture layer is called, and which GTS file belongs to a page file.
 //!
 //! These are naming conventions rather than archive work: each one takes a string and gives a string
-//! back, with no file ever touched. `export.rs` and `virtual_textures.rs` are the ones that write.
+//! back, with no file ever touched. `crate::infrastructure::export` and `virtual_textures.rs` are the
+//! ones that write.
 
 /// Sanitize a file/directory name: strip Windows-forbidden and control characters, cap the length
 pub(crate) fn sanitize_file_name(raw: &str) -> String {

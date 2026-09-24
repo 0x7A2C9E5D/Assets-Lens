@@ -6,11 +6,11 @@ use std::sync::{Arc, Mutex};
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
 use serde::Deserialize;
 
-use crate::archives::{Archives, Pak};
 use crate::domain::app::CacheStatus;
 use crate::domain::material::{MaterialInfo, VirtualTextureBinding};
 use crate::domain::source::ModSources;
 use crate::domain::virtual_textures::PageFileSizes;
+use crate::infrastructure::archives::{Archives, Pak};
 
 /// One material as it appears in the serialized database, carrying only what the panel needs.
 ///

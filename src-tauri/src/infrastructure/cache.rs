@@ -2,10 +2,10 @@
 //! paks again (a full build runs for minutes).
 //!
 //! One file per game data directory, named after the directory itself (see `digest`): several
-//! installs can each keep their index, and switching between them costs no scan. A file is only used
+//! installations can each keep their index, and switching between them costs no scan. A file is only used
 //! while it still matches the sources it was built from — the app version, the game's own paks and
 //! the mod paks, each by size and modification time — so a changed source is reported (see
-//! `models::CacheStatus`) rather than silently answered with a stale index.
+//! `domain::app::CacheStatus`) rather than silently answered with a stale index.
 
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -68,7 +68,7 @@ impl PakStamp {
 }
 
 /// The cache file, as read back. `PersistedDatabaseRef` is the same file as written — the two must
-/// stay in step, which is why each carries only the derive its own direction needs.
+/// stay in step, which is why each carries only to derive its own direction needs.
 #[derive(Deserialize)]
 pub struct PersistedDatabase {
     /// See `FORMAT_VERSION`

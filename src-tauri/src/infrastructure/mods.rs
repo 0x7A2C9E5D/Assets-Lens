@@ -23,9 +23,9 @@ use maclarian::formats::lsf::parse_lsf_bytes;
 use maclarian::formats::lsx::{parse_lsx, LsxDocument, LsxNode, LsxRegion};
 use maclarian::merged::{MergedDatabase, TextureRef, VirtualTextureRef, VisualAsset};
 
-use crate::archives::Archives;
 use crate::domain::material::{MaterialInfo, VirtualTextureBinding};
 use crate::domain::source::ModSources;
+use crate::infrastructure::archives::Archives;
 
 /// A texture a mod material binds, read from its `MaterialBank`.
 ///

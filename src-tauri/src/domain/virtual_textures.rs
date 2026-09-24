@@ -10,7 +10,8 @@
 //!
 //! Both live inside the archives as raw blocks, while `VirtualTextureExtractor` takes file paths, so
 //! they are written to a staging directory first. Finding them is archive work rather than export
-//! work: this module only produces paths, and `export.rs` turns them into exported artifacts.
+//! work: this module only produces paths, and `infrastructure::export` turns them into exported
+//! artifacts.
 
 use std::collections::HashMap;
 use std::fs;
@@ -19,10 +20,10 @@ use std::path::{Path, PathBuf};
 use maclarian::merged::{GtpMatch, VirtualTextureRef, VisualAsset};
 use serde::Serialize;
 
-use crate::archives::{Archives, Pak};
 use crate::domain::material::{virtual_texture_parameter, MaterialInfo};
 use crate::domain::naming::derive_gts_path;
 use crate::domain::source::{source_of, ModSources};
+use crate::infrastructure::archives::{Archives, Pak};
 
 /// Files staged for one-page file, both already on disk
 pub struct StagedSources {
@@ -76,7 +77,7 @@ pub type PageFileSizes = Vec<(String, Option<(u32, u32)>)>;
 /// `Albedo_Normal_Physical_2` claims 512 x 512 tiles = 65536 px, far beyond anything the
 /// game ever stores, because a set is sparse. What a single page file holds is the bounding box of
 /// its own tiles, and that box times a tile's content area is exactly the DDS size the extractor
-/// writes out (`export.rs` sizes it the same way), so that is what is reported here.
+/// writes out (`infrastructure::export` sizes it the same way), so that is what is reported here.
 ///
 /// The bytes are parsed here rather than through `GtsFile`: that type exposes the per-tile content
 /// size but keeps its tile tables crate-private, and a detail view must not stage anything to disk.
@@ -345,9 +346,9 @@ pub fn virtual_texture_summaries(
 ///    mismatched GTS/GTP naming); the longer the GTS name, the higher the priority
 ///
 /// More than one candidate is staged because a GTS outlives the page file that led here — tile sets
-/// do not always share the index spelling of their page files — and `export.rs` tries them in order
-/// until one accepts the page file. Staged files are reused by file name, so the GTS of a tile set is
-/// read once no matter how many of its page files this export touches.
+/// do not always share the index spelling of their page files — and `infrastructure::export` tries
+/// them in order until one accepts the page file. Staged files are reused by file name, so the GTS
+/// of a tile set is read once no matter how many of its page files this export touches.
 fn stage_gts_candidates(
     pak: &mut Archives,
     matched: &GtpMatch,
