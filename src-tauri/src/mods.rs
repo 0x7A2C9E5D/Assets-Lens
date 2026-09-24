@@ -282,7 +282,7 @@ fn module_name(node: &LsxNode) -> Option<String> {
 
 /// XML entities decoded in a value read out of an attribute: the LSX reader hands the text over as it
 /// stands in the file, and mod names do use escapes (`PixellBytes&apos; Adjustable Party Limit`),
-/// which would otherwise reach the UI as markup. `&amp;` goes last so an escaped escape survives.
+/// which would otherwise reach the UI as markup. `&amp;` goes last so an escaped survives.
 fn decode_entities(value: &str) -> String {
     if !value.contains('&') {
         return value.to_string();
