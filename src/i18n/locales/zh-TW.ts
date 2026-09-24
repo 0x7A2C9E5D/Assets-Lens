@@ -82,6 +82,17 @@ const zhTW = {
             actionRebuild: '重新掃描',
             actionBuild: '開始掃描',
         },
+        cache: {
+            loaded: '已從磁碟快取載入（建立於 {time}）',
+            staleTitle: '快取已失效，未自動掃描，請點選「重新掃描」',
+            stale: {
+                version: '應用程式已更新（快取由 {version} 寫入）',
+                game_paks: '遊戲資源檔案已變更',
+                mod_paks: '模組檔案已變更',
+                unreadable: '快取檔案無法讀取',
+                unknown: '快取與目前資源不相符',
+            },
+        },
     },
 
     stats: {

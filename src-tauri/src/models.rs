@@ -517,6 +517,58 @@ pub struct DatabaseStats {
     pub virtual_texture_count: usize,
 }
 
+/// What the session knows about the index persisted on disk, so the Database page can say where its
+/// statistics came from.
+///
+/// `state` is one of:
+/// - `idle` — nothing to report: no directory selected yet, or the index was built in this session
+/// - `loaded` — the index was read back from disk; `builtAt` is the unix time it was built at
+/// - `stale` — a file is there but was refused; `code` says why
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheStatus {
+    pub state: String,
+    /// Unix seconds the persisted index was built at (only for `loaded`)
+    pub built_at: Option<u64>,
+    /// Stable reason a file was refused, for the frontend to map to copy: one of `version`,
+    /// `game_paks`, `mod_paks`, `unreadable`
+    pub code: Option<String>,
+    /// Raw detail behind a `code` that needs one: the versions that wrote the file, or the parse error
+    pub detail: Option<String>,
+}
+
+impl CacheStatus {
+    /// Nothing to report
+    pub fn idle() -> Self {
+        Self {
+            state: "idle".to_string(),
+            built_at: None,
+            code: None,
+            detail: None,
+        }
+    }
+
+    /// The index came back from disk
+    pub fn loaded(built_at: u64) -> Self {
+        Self {
+            state: "loaded".to_string(),
+            built_at: Some(built_at),
+            code: None,
+            detail: None,
+        }
+    }
+
+    /// A persisted index was found but could not be used
+    pub fn stale(code: &str, detail: Option<String>) -> Self {
+        Self {
+            state: "stale".to_string(),
+            built_at: None,
+            code: Some(code.to_string()),
+            detail,
+        }
+    }
+}
+
 /// App metadata for the About page
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

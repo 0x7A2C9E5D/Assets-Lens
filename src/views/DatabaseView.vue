@@ -18,6 +18,8 @@ import StatCard from '../components/StatCard.vue'
 import {
   buildDatabase,
   type BuildProgress,
+  type CacheStatus,
+  cacheStatus,
   type DatabaseStats,
   dbStats,
   detectGamePath,
@@ -27,12 +29,13 @@ import {
 } from '../api/tauri'
 import {clearGamePath, readGamePath, writeGamePath} from '../utils/settings'
 
-const {t} = useI18n()
+const {t, te} = useI18n()
 
 const gamePath = ref<string | null>(null)
 const detecting = ref(false)
 const building = ref(false)
 const stats = ref<DatabaseStats | null>(null)
+const cache = ref<CacheStatus | null>(null)
 const errorMsg = ref('')
 const elapsed = ref(0)
 const progress = ref<BuildProgress>({percent: 0})
@@ -44,6 +47,44 @@ const status = computed(() => {
   if (gamePath.value) return {text: t('database.status.pending'), class: 'border-accent text-accent'}
   return {text: t('database.status.unset'), class: 'border-hairline-strong text-muted'}
 })
+
+/**
+ * Why a persisted index on disk was not used, in the reader's language. The backend sends a stable
+ * code and the copy lives here — the same split the export warnings use — so an unknown code (a
+ * newer backend, an older page) falls back to a generic line instead of rendering a raw key.
+ */
+const staleReason = computed(() => {
+  const code = cache.value?.code
+  if (!code) return ''
+  const key = `database.cache.stale.${code}`
+  return te(key) ? t(key, {version: cache.value?.detail ?? ''}) : t('database.cache.stale.unknown')
+})
+
+/** When a persisted index was built, in the reader's own locale */
+function formatTime(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleString()
+}
+
+/**
+ * Read what the backend holds right now: the statistics and where they came from.
+ *
+ * Only ever called once a game directory has been handed over. Until then the backend has neither a
+ * directory nor an index, so both answers would come back empty — which is why the page restores the
+ * directory first and asks afterwards.
+ */
+function refreshStatus() {
+  dbStats()
+      .then((result) => {
+        stats.value = result
+      })
+      .catch((err) => console.error('[db_stats]', err))
+
+  cacheStatus()
+      .then((result) => {
+        cache.value = result
+      })
+      .catch((err) => console.error('[cache_status]', err))
+}
 
 /**
  * Compare two directories: the backend returns `PathBuf::display()` output while localStorage
@@ -64,8 +105,10 @@ async function applyGamePath(path: string): Promise<boolean> {
   try {
     const confirmed = await setGamePath(path)
     gamePath.value = confirmed
-    // The directory changed, so any built database no longer matches it
+    // The directory changed, so neither the built database nor anything the backend had to say
+    // about the index on disk for the previous directory still applies
     stats.value = null
+    cache.value = null
     writeGamePath(confirmed)
     return true
   } catch (err) {
@@ -98,6 +141,9 @@ function runDetect(manual = false) {
         stats.value = null
         // Auto-detected directories are remembered too, so the next launch reuses them
         writeGamePath(path)
+        // The backend looked for this directory's persisted index while detecting it, so its answer
+        // is read here — this call is also what fetches the statistics it just restored
+        refreshStatus()
       })
       .catch((err) => {
         console.error('[detect_game_path]', err)
@@ -117,7 +163,13 @@ function chooseDirectory() {
         return false
       })
       .then((ok) => {
-        if (!ok) errorMsg.value = t('errors.directoryFailed')
+        if (!ok) {
+          errorMsg.value = t('errors.directoryFailed')
+          return
+        }
+        // A directory was accepted, so the backend has just looked for its persisted index: what it
+        // found, and the statistics it restored from it, are read here
+        refreshStatus()
       })
 }
 
@@ -140,6 +192,9 @@ function build() {
       .then((result) => {
         stats.value = result
         elapsed.value = Date.now() - started
+        // A build of this session's own supersedes whatever the disk had: the backend clears its
+        // report, and the notice above the button goes with it
+        refreshStatus()
       })
       .catch((err) => {
         console.error('[build_database]', err)
@@ -151,17 +206,14 @@ function build() {
 }
 
 onMounted(() => {
-  // 1) Restore the database build state
-  dbStats()
-      .then((result) => {
-        stats.value = result
-      })
-      .catch((err) => console.error('[db_stats]', err))
-
-  // 2) Restore the game directory: the localStorage record wins (remembered across sessions); when
-  //    the backend already uses the same directory just reuse it instead of calling set again
-  //    (set clears the built database, so doing it on every page visit would force a rescan).
-  //    Auto-detection only runs when neither is available, so a manually chosen directory is safe
+  // The game directory is restored first: handing it to the backend is what makes it look for the
+  // index a previous build persisted for that directory, so the statistics and the cache report can
+  // only be read once it is there. Read before, they would always come back empty.
+  //
+  // The localStorage record wins (remembered across sessions); when the backend already uses the
+  // same directory just reuse it instead of calling set again (set reloads the index, so doing it on
+  // every page visit would pay for a read that changes nothing). Auto-detection only runs when
+  // neither is available, so a manually chosen directory is safe.
   const stored = readGamePath()
   getGamePath()
       .then((current) => {
@@ -176,7 +228,10 @@ onMounted(() => {
         return stored ? applyGamePath(stored) : false
       })
       .then((restored) => {
-        if (!restored) runDetect()
+        // Detection refreshes the status itself once it has a directory; this branch is the one that
+        // already had one
+        if (restored) refreshStatus()
+        else runDetect()
       })
 })
 </script>
@@ -257,6 +312,33 @@ onMounted(() => {
             }}
           </button>
         </div>
+      </div>
+
+      <!-- Where the statistics came from. A match is worth saying out loud (it is what saved a
+           scan); a mismatch is worth saying louder, because nothing but the button above it clears
+           it — the page never scans on its own -->
+      <div
+          v-if="cache && cache.state === 'loaded'"
+          class="mt-4 rounded-md border border-accent/40 bg-tint px-4 py-3 text-sm text-accent"
+      >
+        {{ $t('database.cache.loaded', {time: cache.builtAt ? formatTime(cache.builtAt) : ''}) }}
+      </div>
+      <div
+          v-else-if="cache && cache.state === 'stale'"
+          class="mt-4 flex items-start gap-3 rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+      >
+        <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0"/>
+        <span class="min-w-0">
+          <span class="font-semibold">{{ $t('database.cache.staleTitle') }}</span>
+          <span class="mt-1 block break-all text-danger">{{ staleReason }}</span>
+          <!-- Already named inside the sentence above when the reason is a version -->
+          <span
+              v-if="cache.detail && cache.code !== 'version'"
+              class="mt-1 block break-all font-mono text-xs opacity-80"
+          >
+            {{ cache.detail }}
+          </span>
+        </span>
       </div>
 
       <div v-if="building" class="mt-5">

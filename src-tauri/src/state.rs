@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolver};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::archives::{Archives, Pak};
+use crate::models::CacheStatus;
 use crate::virtual_textures::PageFileSizes;
 
 /// The resources a mod provides, by resource GUID. Everything the game itself provides is absent, so a
@@ -22,8 +23,10 @@ pub fn source_of(sources: &ModSources, id: &str) -> Option<String> {
 /// binds (GUIDs, in parameter order).
 ///
 /// `Clone` so a command can hand the entries of one asset to an export task without copying the whole
-/// cache (see `models::materials_of`).
-#[derive(Clone)]
+/// cache (see `models::materials_of`). Serialized because the whole map is persisted to disk with the
+/// database it came out of (`cache`), which is what saves a build on the next launch: the names are
+/// not in the database itself (see `extract_materials`), so they have to travel with it.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MaterialInfo {
     /// Human-readable name from `MaterialBank` (e.g. `BEAR_Body_A`); empty when the resource has none
     pub name: String,
@@ -38,7 +41,7 @@ pub struct MaterialInfo {
 }
 
 /// A virtual texture one material binds, together with the parameter that binding fills.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct VirtualTextureBinding {
     /// GUID of the virtual texture resource (`VirtualTextureBank`)
     pub id: String,
@@ -161,8 +164,11 @@ pub fn fill_virtual_texture_parameters(
 /// stable name cache for consistent pagination order.
 ///
 /// The game data directory is not persisted here: the frontend remembers it (Web storage) and hands
-/// it back through `set_game_path` on startup, so this state only lives for the current session. The
-/// mod directory is not settable at all — it is always the game's own default location.
+/// it back through `set_game_path` on startup, so this state only lives for the current session. What
+/// the session *can* get back from disk is the built index itself: selecting a directory looks for
+/// the file a previous build left for that directory (`cache`) and fills the fields below from it,
+/// which is what spares the next launch a scan. The mod directory is not settable at all — it is
+/// always the game's own default location.
 pub struct AppState {
     /// Shared rather than owned: building the database runs for minutes, and the build has to keep
     /// working on the resolver after the state lock has been released (see `build_database`).
@@ -188,6 +194,10 @@ pub struct AppState {
     /// provides are in here (see `ModSources`), and it labels them in the list, the detail panel and
     /// `asset.json` alike.
     pub mod_sources: ModSources,
+    /// What this session knows about the index persisted on disk (see `CacheStatus`): set when a
+    /// directory is selected, and reset by a build of this session's own. Only a report — the page is
+    /// what shows it, and nothing in the backend branches on it.
+    pub cache_status: CacheStatus,
     /// PAK read pool shared by every command: opening an archive parses its whole file table, so the
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
     /// reading an archive needs `&mut` on its reader.
@@ -217,6 +227,7 @@ impl AppState {
             visual_ids_by_source: Vec::new(),
             materials: HashMap::new(),
             mod_sources: ModSources::new(),
+            cache_status: CacheStatus::idle(),
             archives: None,
             page_file_sizes: HashMap::new(),
         }
@@ -232,6 +243,8 @@ impl AppState {
         self.materials.clear();
         // The sources belong to the database that was just dropped
         self.mod_sources.clear();
+        // Whatever the previous directory's cache file had to say is about an index that is gone
+        self.cache_status = CacheStatus::idle();
         // The archives still open belong to the previous directory
         self.archives = None;
         // Page file sizes were read from those archives
@@ -324,7 +337,10 @@ impl AppState {
 /// anything else would index resources the game never loads. `None` on a machine that has never run
 /// the game — and a `Mods` directory holding no `.pak` is just as valid — leaves the database built
 /// from the game alone.
-fn default_mods_path() -> Option<PathBuf> {
+///
+/// Shared with `cache`, which fingerprints the same list: a persisted index may only be reused while
+/// the mods it was built from are unchanged, so both sides have to enumerate them identically.
+pub(crate) fn default_mods_path() -> Option<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     let path = PathBuf::from(base)
         .join("Larian Studios")
@@ -339,7 +355,10 @@ fn default_mods_path() -> Option<PathBuf> {
 /// when two of them provide the same resource: a read walks the list backwards, so the last file name
 /// takes precedence. A directory that cannot be listed contributes no mods rather than an error —
 /// mods are optional, and the game's own data is read either way.
-fn mod_paks(dir: &Path) -> Vec<PathBuf> {
+///
+/// Shared with `cache` for the same reason as `default_mods_path`: the fingerprint has to see exactly
+/// the mods a build would read, in the order it would read them.
+pub(crate) fn mod_paks(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
     };

@@ -124,6 +124,29 @@ export function dbStats(): Promise<DatabaseStats | null> {
     return invoke<DatabaseStats | null>('db_stats')
 }
 
+/**
+ * Where the index behind the statistics came from. `state` is one of:
+ * `idle` (nothing to report: no directory chosen yet, or built in this session), `loaded` (read back
+ * from disk — `builtAt` is the unix time it was built at), or `stale` (a file is there but was
+ * refused, `code` saying why).
+ *
+ * Read after the game directory has been handed to the backend, never before: selecting a directory
+ * is what starts the lookup.
+ */
+export interface CacheStatus {
+    state: 'idle' | 'loaded' | 'stale'
+    /** Unix seconds the persisted index was built at (only for `loaded`) */
+    builtAt: number | null
+    /** Why a file was refused: version / game_paks / mod_paks / unreadable */
+    code: string | null
+    /** Raw detail behind `code`: the versions that wrote the file, or the parse error */
+    detail: string | null
+}
+
+export function cacheStatus(): Promise<CacheStatus> {
+    return invoke<CacheStatus>('cache_status')
+}
+
 /** Sort columns the browse list offers; each maps to an order cached by the backend */
 export type VisualSort = 'name' | 'id' | 'source'
 

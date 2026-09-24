@@ -81,6 +81,17 @@ const enUS = {
             actionRebuild: 'Scan Again',
             actionBuild: 'Scan',
         },
+        cache: {
+            loaded: 'Loaded from the disk cache (built {time})',
+            staleTitle: 'Cache out of date — nothing was scanned automatically; use “Scan Again”',
+            stale: {
+                version: 'The app was updated (cache written by {version})',
+                game_paks: 'The game asset files changed',
+                mod_paks: 'The mod files changed',
+                unreadable: 'The cache file could not be read',
+                unknown: 'The cache does not match the assets it was built from',
+            },
+        },
     },
 
     stats: {

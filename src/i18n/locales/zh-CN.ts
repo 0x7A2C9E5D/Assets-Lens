@@ -82,6 +82,17 @@ const zhCN = {
             actionRebuild: '重新扫描',
             actionBuild: '开始扫描',
         },
+        cache: {
+            loaded: '已从磁盘缓存载入（构建于 {time}）',
+            staleTitle: '缓存已失效，未自动扫描，请点击“重新扫描”',
+            stale: {
+                version: '应用已更新（缓存由 {version} 写入）',
+                game_paks: '游戏资源文件已变化',
+                mod_paks: '模组文件已变化',
+                unreadable: '缓存文件无法读取',
+                unknown: '缓存与当前资源不匹配',
+            },
+        },
     },
 
     stats: {
