@@ -153,8 +153,9 @@ pub fn save(
     // Written beside the target and renamed over it: a full disk or a process killed mid-write then
     // leaves the previous cache untouched, instead of a truncated file that reads as corrupt.
     let temp = file.with_extension("json.tmp");
-    let saved = write_json(&temp, &payload)
-        .and_then(|()| fs::rename(&temp, &file).map_err(|err| format!("{}: {err}", file.display())));
+    let saved = write_json(&temp, &payload).and_then(|()| {
+        fs::rename(&temp, &file).map_err(|err| format!("{}: {err}", file.display()))
+    });
     if saved.is_err() {
         // A half-written file must not be left lying around for the next launch to trip over
         let _ = fs::remove_file(&temp);
@@ -202,7 +203,10 @@ pub fn load(app: &AppHandle, game_path: &Path) -> Loaded {
     // The one invariant worth checking on the way back in: an empty index would look like a built
     // database to every command that asks for one, and the page would report zero of everything
     if persisted.database.visuals_by_id.is_empty() {
-        return stale(CODE_UNREADABLE, Some("the persisted index holds no visual".into()));
+        return stale(
+            CODE_UNREADABLE,
+            Some("the persisted index holds no visual".into()),
+        );
     }
 
     Loaded::Cache(Box::new(persisted))
