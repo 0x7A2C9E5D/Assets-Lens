@@ -8,9 +8,9 @@ use serde::Deserialize;
 
 use crate::archives::{Archives, Pak};
 use crate::domain::material::{MaterialInfo, VirtualTextureBinding};
+use crate::domain::models::CacheStatus;
 use crate::domain::source::ModSources;
-use crate::models::CacheStatus;
-use crate::virtual_textures::PageFileSizes;
+use crate::domain::virtual_textures::PageFileSizes;
 
 /// One material as it appears in the serialized database, carrying only what the panel needs.
 ///

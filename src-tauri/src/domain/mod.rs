@@ -1,20 +1,26 @@
-//! The application's own concepts and rules, kept free of everything that is not ours.
+//! The application's own model and the rules that go with it.
 //!
-//! Three things hold for every item below, and they are the whole point of the layer:
+//! Two kinds of things live here, and both are ours:
 //!
-//! 1. it is ours — not maclarian's, not the game's archive layout;
-//! 2. it is a plain structure or a pure function: no file system, no archive reads, no `AppHandle`;
-//! 3. no maclarian type appears in its signature.
+//! 1. plain structures and pure functions — the sources a resource comes from, the material cache,
+//!    the naming rules (`source`, `material`, `naming`);
+//! 2. what this app defines for the game data it reads — the asset model and its serialization
+//!    (`models`), the tile set layout behind a virtual texture page file (`virtual_textures`), and
+//!    the parameter names of a material template (`virtual_texture_params`).
 //!
-//! Being pure is not enough on its own: `parse_page_file_sizes`, `bank_dir` and `find_entry` are pure
-//! too, but they encode the layout of an external format, so they stay where they are.
+//! The game's formats are this application's subject matter, so reading them is model work: the two
+//! format modules do use the file system and maclarian types. That is a deliberate narrowing of the
+//! earlier "no file system, no maclarian type" rule, which now holds only for the modules that are
+//! purely about our own concepts.
 //!
-//! The rest of the crate is still flat — `infrastructure`, `application` and `ipc` do not exist yet.
-//! What is left behind in `state.rs`, `models.rs`, `mods.rs` and `export.rs` is a mix of those three
-//! concerns, and pulling them apart is the next round's work. Cheaper first, since it unblocks the
-//! most: an anti-corruption layer at the maclarian boundary, which is what would let the merge and
-//! parsing rules of `mods.rs` move in here as well.
+//! Still missing from the layer is the split of the files left flat — the runtime state and the
+//! command handlers (`state.rs`, `commands.rs`), the archive / cache / mod plumbing (`archives.rs`,
+//! `cache.rs`, `mods.rs`) and the export workflow (`export.rs`) each mix `infrastructure`,
+//! `application` and `ipc` concerns.
 
 pub mod material;
+pub mod models;
 pub mod naming;
 pub mod source;
+pub mod virtual_texture_params;
+pub mod virtual_textures;

@@ -3,12 +3,9 @@ mod cache;
 mod commands;
 mod domain;
 pub mod export;
-mod models;
 pub mod mods;
 mod settings;
 mod state;
-mod virtual_texture_params;
-mod virtual_textures;
 
 use std::sync::{Arc, Mutex};
 

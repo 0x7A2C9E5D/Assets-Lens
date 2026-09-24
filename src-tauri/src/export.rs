@@ -7,7 +7,7 @@
 //! - `VirtualTextureExtractor`: GTP + GTS → three layer DDS files (BaseMap / NormalMap / PhysicalMap)
 //!
 //! Reaching into the archives is not this module's job: `crate::archives` owns the PAK read pool and
-//! `crate::virtual_textures` stages the page files the extractor consumes.
+//! `crate::domain::virtual_textures` stages the page files the extractor consumes.
 
 use std::collections::HashMap;
 use std::fs;
@@ -22,14 +22,14 @@ use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::archives::{lock_pool, Archives, Pak};
 use crate::domain::material::MaterialInfo;
-use crate::domain::naming::{export_layer_name, sanitize_file_name};
-use crate::domain::source::{source_of, ModSources};
-use crate::models::{
+use crate::domain::models::{
     manifest_materials, match_for_hash, texture_summaries, virtual_texture_summaries,
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
     MeshFormat, VirtualTextureSummary,
 };
-use crate::virtual_textures::{self, PageFileSizes, StagedSources};
+use crate::domain::naming::{export_layer_name, sanitize_file_name};
+use crate::domain::source::{source_of, ModSources};
+use crate::domain::virtual_textures::{self, PageFileSizes, StagedSources};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
 const PHASE_PREPARE: &str = "prepare";

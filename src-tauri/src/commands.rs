@@ -10,17 +10,17 @@ use tauri::{AppHandle, Manager, State};
 use crate::archives::{lock_pool, Pak};
 use crate::cache::{self, Loaded};
 use crate::domain::material::{fill_virtual_texture_parameters, materials_of};
-use crate::domain::source::ModSources;
-use crate::export::{run_export, ExportContext};
-use crate::models::{
+use crate::domain::models::{
     match_for_hash, AppInfo, AppSnapshot, BuildProgress, CacheStatus, DatabaseStats, ExportOptions,
     ExportProgress, ExportResult, ModelPreview, Page, VisualAssetDetail, VisualSummary,
 };
+use crate::domain::source::ModSources;
+use crate::domain::virtual_texture_params;
+use crate::domain::virtual_textures;
+use crate::export::{run_export, ExportContext};
 use crate::mods;
 use crate::settings;
 use crate::state::{extract_materials, AppState};
-use crate::virtual_texture_params;
-use crate::virtual_textures;
 
 pub type SharedState = Arc<Mutex<AppState>>;
 

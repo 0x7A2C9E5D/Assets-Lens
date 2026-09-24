@@ -64,7 +64,7 @@ pub fn fill_virtual_texture_parameters(
 /// The entries of the material cache that `material_ids` reference, as an owned subset.
 ///
 /// A material row of the export manifest reads the resources it binds out of these entries (see
-/// `crate::models::manifest_materials`), and the cache they live in is not handed to the export task
+/// `crate::domain::models::manifest_materials`), and the cache they live in is not handed to the export task
 /// — so the export takes the handful of entries it needs rather than the whole cache (one entry per
 /// material of the game, each holding its own texture lists).
 pub fn materials_of(
