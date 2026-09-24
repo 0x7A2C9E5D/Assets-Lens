@@ -7,8 +7,8 @@ use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolv
 use serde::Deserialize;
 
 use crate::archives::{Archives, Pak};
+use crate::domain::app::CacheStatus;
 use crate::domain::material::{MaterialInfo, VirtualTextureBinding};
-use crate::domain::models::CacheStatus;
 use crate::domain::source::ModSources;
 use crate::domain::virtual_textures::PageFileSizes;
 

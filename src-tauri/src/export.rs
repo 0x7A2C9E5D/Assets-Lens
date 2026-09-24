@@ -21,15 +21,18 @@ use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use maclarian::virtual_texture::VirtualTextureExtractor;
 
 use crate::archives::{lock_pool, Archives, Pak};
-use crate::domain::material::MaterialInfo;
-use crate::domain::models::{
-    manifest_materials, match_for_hash, texture_summaries, virtual_texture_summaries,
+use crate::domain::export::{
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
-    MeshFormat, VirtualTextureSummary,
+    MeshFormat,
 };
+use crate::domain::material::{manifest_materials, MaterialInfo};
 use crate::domain::naming::{export_layer_name, sanitize_file_name};
 use crate::domain::source::{source_of, ModSources};
-use crate::domain::virtual_textures::{self, PageFileSizes, StagedSources};
+use crate::domain::texture::texture_summaries;
+use crate::domain::virtual_textures::{
+    self, match_for_hash, virtual_texture_summaries, PageFileSizes, StagedSources,
+    VirtualTextureSummary,
+};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
 const PHASE_PREPARE: &str = "prepare";
@@ -66,7 +69,7 @@ fn record_file(files: &mut Vec<ExportedFile>, path: &Path, kind: &str, size_byte
 /// Write a PNG; on success remove the intermediate DDS and record an export entry, on failure push
 /// a `pngWriteFailed` warning. Returns `true` when the PNG has been written (callers then skip the
 /// DDS fallback entry).
-fn try_write_png_and_record(
+pub fn try_write_png_and_record(
     png: &[u8],
     png_path: &Path,
     dds_path: &Path,
