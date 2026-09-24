@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::infrastructure::cache;
+use crate::application::cache;
 
 /// The settings file. One field so far; serde keeps it readable and extensible.
 #[derive(Deserialize, Serialize)]
