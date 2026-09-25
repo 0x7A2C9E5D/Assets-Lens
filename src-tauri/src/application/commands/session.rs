@@ -3,15 +3,16 @@
 //! reads back when it opens.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, MutexGuard};
 
 use maclarian::merged::GameDataResolver;
 use tauri::{AppHandle, Manager};
 
 use super::build::sorted_visual_ids;
 use super::{current_stats, lock, SharedState};
-use crate::application::cache::{self, Loaded};
+use crate::application::cache::{self, Loaded, PersistedDatabase};
 use crate::application::settings;
+use crate::application::state::AppState;
 use crate::domain::app::{AppSnapshot, CacheStatus};
 
 /// Auto-detect the BG3 Data directory (default Steam install location).
@@ -25,31 +26,39 @@ pub async fn detect_game_path(app: AppHandle) -> Result<Option<String>, String> 
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, String> {
-        if !GameDataResolver::is_available() {
+        let Some((path, resolver)) = detected_directory() else {
             return Ok(None);
-        }
-
-        let (path, resolver) = match GameDataResolver::auto_detect() {
-            Ok(resolver) => {
-                let path = resolver.game_data_path().to_path_buf();
-                (path, resolver)
-            }
-            Err(err) => {
-                eprintln!("[maclarian] auto-detect failed: {err}");
-                return Ok(None);
-            }
         };
-
         adopt_directory(&state, path.clone(), resolver)?;
-        record_directory(&app, &path);
-
-        // The directory has just been (re)selected, which is where the index for it can come back
-        restore_cached_database(&app, &state);
-
+        finish_selection(&app, &state, &path);
         Ok(Some(path.display().to_string()))
     })
     .await
     .map_err(|err| format!("Auto-detect task terminated unexpectedly: {err}"))?
+}
+
+/// The directory the default install locations point at, with the resolver opened on it.
+///
+/// `None` when maclarian is unavailable at all or finds nothing there: an absent game is not an error,
+/// only a session that starts unconfigured.
+fn detected_directory() -> Option<(PathBuf, GameDataResolver)> {
+    if !GameDataResolver::is_available() {
+        return None;
+    }
+    match GameDataResolver::auto_detect() {
+        Ok(resolver) => Some((resolver.game_data_path().to_path_buf(), resolver)),
+        Err(err) => {
+            eprintln!("[maclarian] auto-detect failed: {err}");
+            None
+        }
+    }
+}
+
+/// What follows a directory having been adopted: record it for the next launch, and bring back
+/// whatever index a previous build left for it (see `restore_cached_database`).
+fn finish_selection(app: &AppHandle, state: &SharedState, dir: &Path) {
+    record_directory(app, dir);
+    restore_cached_database(app, state);
 }
 
 /// Take `dir` and the resolver opened on it as this session's game data directory, dropping whatever
@@ -105,11 +114,7 @@ pub async fn set_game_path(app: AppHandle, path: String) -> Result<String, Strin
     tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
         let dir = PathBuf::from(&path);
         open_directory(&state, &dir)?;
-        record_directory(&app, &dir);
-
-        // The directory has just been (re)selected, which is where the index for it can come back
-        restore_cached_database(&app, &state);
-
+        finish_selection(&app, &state, &dir);
         Ok(path)
     })
     .await
@@ -131,29 +136,45 @@ pub async fn restore_state(app: AppHandle) -> Result<AppSnapshot, String> {
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<AppSnapshot, String> {
-        // The lock is taken and released per question rather than held: `open_directory` and
-        // `restore_cached_database` each take it themselves
-        let adopted = lock(&state)?.game_path.is_some();
-
-        if !adopted {
-            if let Some(dir) = settings::load(&app) {
-                match open_directory(&state, &dir) {
-                    // Only a directory that was actually adopted has an index to read back
-                    Ok(()) => restore_cached_database(&app, &state),
-                    Err(err) => eprintln!("[settings] {} not restored: {err}", dir.display()),
-                }
-            }
-        }
-
+        // The lock is taken and released per question rather than held: every helper called here
+        // takes it itself
+        restore_recorded_directory(&app, &state)?;
         let st = lock(&state)?;
-        Ok(AppSnapshot {
-            game_path: st.game_path.as_ref().map(|path| path.display().to_string()),
-            stats: current_stats(&st),
-            cache: st.cache_status.clone(),
-        })
+        Ok(snapshot(&st))
     })
     .await
     .map_err(|err| format!("State restore task terminated unexpectedly: {err}"))?
+}
+
+/// Adopt the directory a previous launch recorded, when this session has not adopted one yet.
+///
+/// A directory already adopted in this session (a build that ran before the page opened) is left as it
+/// is, and a recorded one that has since moved or stopped holding game data is reported and dropped —
+/// the session then starts unset, exactly as on a first launch, instead of failing.
+fn restore_recorded_directory(app: &AppHandle, state: &SharedState) -> Result<(), String> {
+    if lock(state)?.game_path.is_some() {
+        return Ok(());
+    }
+    let Some(dir) = settings::load(app) else {
+        return Ok(());
+    };
+
+    match open_directory(state, &dir) {
+        // Only a directory that was actually adopted has an index to read back
+        Ok(()) => restore_cached_database(app, state),
+        Err(err) => eprintln!("[settings] {} not restored: {err}", dir.display()),
+    }
+    Ok(())
+}
+
+/// What the page gets to render from: the directory in use (if any), the statistics of whatever index
+/// is there, and where that index came from
+fn snapshot(st: &AppState) -> AppSnapshot {
+    AppSnapshot {
+        game_path: st.game_path.as_ref().map(|path| path.display().to_string()),
+        stats: current_stats(st),
+        cache: st.cache_status.clone(),
+    }
 }
 
 /// Fill the index for the current directory out of the file a previous build left for it.
@@ -167,29 +188,13 @@ pub async fn restore_state(app: AppHandle) -> Result<AppSnapshot, String> {
 /// built from, only means there is nothing to restore — a scan is still there to be clicked — and the
 /// reason is reported through the state for the page to show (see `CacheStatus`).
 pub(super) fn restore_cached_database(app: &AppHandle, state: &SharedState) {
-    let game_path = match lock(state) {
-        Ok(st) => st.game_path.clone(),
-        Err(err) => {
-            eprintln!("[cache] {err}");
-            return;
-        }
-    };
-    let Some(game_path) = game_path else {
+    let Some(game_path) = current_game_path(state) else {
         return;
     };
+    let (status, persisted) = read_cache(app, &game_path);
 
-    let (status, persisted) = match cache::load(app, &game_path) {
-        Loaded::Cache(persisted) => (CacheStatus::loaded(persisted.built_at), Some(*persisted)),
-        Loaded::Missing => (CacheStatus::idle(), None),
-        Loaded::Stale { code, detail } => (CacheStatus::stale(code, detail), None),
-    };
-
-    let mut st = match lock(state) {
-        Ok(st) => st,
-        Err(err) => {
-            eprintln!("[cache] {err}");
-            return;
-        }
+    let Some(mut st) = locked_state(state) else {
+        return;
     };
     // A directory switch can land while the file is read: what came out of it then belongs to
     // resources that are no longer current
@@ -197,26 +202,65 @@ pub(super) fn restore_cached_database(app: &AppHandle, state: &SharedState) {
         return;
     }
 
-    if let Some(code) = status.code.as_deref() {
-        eprintln!(
-            "[cache] {} not restored ({code}): {}",
-            game_path.display(),
-            status.detail.as_deref().unwrap_or("no detail")
-        );
-    }
-
-    if let Some(persisted) = persisted {
-        // The three orders are derived rather than persisted: they are a sort of the ids that are in
-        // the database anyway, and recomputing them here keeps them consistent with the source map
-        let (visual_ids, visual_ids_by_id, visual_ids_by_source) =
-            sorted_visual_ids(&persisted.database, &persisted.mod_sources);
-        st.visual_ids = visual_ids;
-        st.visual_ids_by_id = visual_ids_by_id;
-        st.visual_ids_by_source = visual_ids_by_source;
-        st.materials = persisted.materials;
-        st.mod_sources = persisted.mod_sources;
-        st.merged_db = Some(persisted.database);
-    }
-
+    report_stale(&game_path, &status);
+    publish_index(&mut st, persisted);
     st.cache_status = status;
+}
+
+/// The directory this session is on, or `None` when none has been chosen yet — and when the state lock
+/// cannot be taken, which is logged as any other failed lock there
+fn current_game_path(state: &SharedState) -> Option<PathBuf> {
+    locked_state(state)?.game_path.clone()
+}
+
+/// The state lock, or `None` when it cannot be taken (a poisoned mutex, which is logged here because
+/// every caller answers the same way)
+fn locked_state(state: &SharedState) -> Option<MutexGuard<'_, AppState>> {
+    match lock(state) {
+        Ok(st) => Some(st),
+        Err(err) => {
+            eprintln!("[cache] {err}");
+            None
+        }
+    }
+}
+
+/// What the file for `game_path` says, as the status the page reports and the index to publish (when
+/// one came back)
+fn read_cache(app: &AppHandle, game_path: &Path) -> (CacheStatus, Option<PersistedDatabase>) {
+    match cache::load(app, game_path) {
+        Loaded::Cache(persisted) => (CacheStatus::loaded(persisted.built_at), Some(*persisted)),
+        Loaded::Missing => (CacheStatus::idle(), None),
+        Loaded::Stale { code, detail } => (CacheStatus::stale(code, detail), None),
+    }
+}
+
+/// Report a file that was refused, with the reason it was refused for
+fn report_stale(game_path: &Path, status: &CacheStatus) {
+    let Some(code) = status.code.as_deref() else {
+        return;
+    };
+    eprintln!(
+        "[cache] {} not restored ({code}): {}",
+        game_path.display(),
+        status.detail.as_deref().unwrap_or("no detail")
+    );
+}
+
+/// Put a loaded index in place of whatever `reset_index` emptied.
+///
+/// The three orders are derived rather than persisted: they are a sort of the ids that are in the
+/// database anyway, and recomputing them here keeps them consistent with the source map.
+fn publish_index(st: &mut AppState, persisted: Option<PersistedDatabase>) {
+    let Some(persisted) = persisted else {
+        return;
+    };
+    let (visual_ids, visual_ids_by_id, visual_ids_by_source) =
+        sorted_visual_ids(&persisted.database, &persisted.mod_sources);
+    st.visual_ids = visual_ids;
+    st.visual_ids_by_id = visual_ids_by_id;
+    st.visual_ids_by_source = visual_ids_by_source;
+    st.materials = persisted.materials;
+    st.mod_sources = persisted.mod_sources;
+    st.merged_db = Some(persisted.database);
 }

@@ -49,20 +49,9 @@ pub fn load(app: &AppHandle) -> Option<PathBuf> {
 /// cut short then leaves the previous record intact instead of a truncated file.
 pub fn save(app: &AppHandle, path: &Path) -> Result<(), String> {
     let file = settings_file(app)?;
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
-    }
-
+    cache::ensure_parent(&file)?;
     let settings = Settings {
         game_path: Some(path.display().to_string()),
     };
-    let temp = file.with_extension("json.tmp");
-    let saved = cache::write_json(&temp, &settings).and_then(|()| {
-        std::fs::rename(&temp, &file).map_err(|err| format!("{}: {err}", file.display()))
-    });
-    if saved.is_err() {
-        // A half-written file must not be left lying around for the next launch to trip over
-        let _ = std::fs::remove_file(&temp);
-    }
-    saved
+    cache::write_atomic(&file, &settings)
 }

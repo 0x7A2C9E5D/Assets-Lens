@@ -19,19 +19,24 @@ pub fn run() {
         // The game directory is recorded by the backend itself (`settings`) and comes back with
         // `restore_state`; the index built from it is persisted separately, and comes back with it
         .manage(Arc::new(Mutex::new(AppState::new())))
-        .invoke_handler(tauri::generate_handler![
-            app_info,
-            detect_game_path,
-            set_game_path,
-            restore_state,
-            build_database,
-            db_stats,
-            cache_status,
-            list_visuals,
-            get_visual,
-            get_visual_preview,
-            export_visual_asset,
-        ])
+        .invoke_handler(handlers())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Every command the frontend can invoke
+fn handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    tauri::generate_handler![
+        app_info,
+        detect_game_path,
+        set_game_path,
+        restore_state,
+        build_database,
+        db_stats,
+        cache_status,
+        list_visuals,
+        get_visual,
+        get_visual_preview,
+        export_visual_asset,
+    ]
 }

@@ -134,49 +134,39 @@ pub fn save(
     mod_sources: &ModSources,
 ) -> Result<(), String> {
     let file = cache_file(app, game_path)?;
-    if let Some(dir) = file.parent() {
-        fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
-    }
-
+    ensure_parent(&file)?;
     let (game_paks, mod_paks) = stamps(game_path);
-    let payload = PersistedDatabaseRef {
+    let payload = payload(database, materials, mod_sources, (&game_paks, &mod_paks));
+    write_atomic(&file, &payload)
+}
+
+/// The written shape of one build, borrowed from the values the build still owns.
+///
+/// Over the line limit deliberately: this is one struct literal, and moving any field out would only
+/// separate it from the name it states without shortening anything.
+fn payload<'a>(
+    database: &'a MergedDatabase,
+    materials: &'a HashMap<String, MaterialInfo>,
+    mod_sources: &'a ModSources,
+    (game_paks, mod_paks): (&'a [PakStamp], &'a [PakStamp]),
+) -> PersistedDatabaseRef<'a> {
+    PersistedDatabaseRef {
         format_version: FORMAT_VERSION,
         app_version: env!("CARGO_PKG_VERSION"),
         built_at: now(),
-        game_paks: &game_paks,
-        mod_paks: &mod_paks,
+        game_paks,
+        mod_paks,
         database,
         materials,
         mod_sources,
-    };
-
-    // Written beside the target and renamed over it: a full disk or a process killed mid-write then
-    // leaves the previous cache untouched, instead of a truncated file that reads as corrupt.
-    let temp = file.with_extension("json.tmp");
-    let saved = write_json(&temp, &payload).and_then(|()| {
-        fs::rename(&temp, &file).map_err(|err| format!("{}: {err}", file.display()))
-    });
-    if saved.is_err() {
-        // A half-written file must not be left lying around for the next launch to trip over
-        let _ = fs::remove_file(&temp);
     }
-    saved
 }
 
 /// Read the index persisted for `game_path`, if one matches the sources as they are now.
 pub fn load(app: &AppHandle, game_path: &Path) -> Loaded {
-    let file = match cache_file(app, game_path) {
-        Ok(file) => file,
-        Err(err) => return stale(CODE_UNREADABLE, Some(err)),
-    };
-
-    let bytes = match fs::read(&file) {
+    let bytes = match read_bytes(app, game_path) {
         Ok(bytes) => bytes,
-        // No file is the ordinary first-run case, not a reason to report anything
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Loaded::Missing,
-        Err(err) => {
-            return stale(CODE_UNREADABLE, Some(format!("{}: {err}", file.display())));
-        }
+        Err(loaded) => return loaded,
     };
 
     let persisted: PersistedDatabase = match serde_json::from_slice(&bytes) {
@@ -184,14 +174,42 @@ pub fn load(app: &AppHandle, game_path: &Path) -> Loaded {
         Err(err) => return stale(CODE_UNREADABLE, Some(err.to_string())),
     };
 
-    // One branch for both: a format version only changes alongside an app version, and the version
-    // that wrote the file is what the page needs to name either way
-    if persisted.format_version != FORMAT_VERSION
-        || persisted.app_version != env!("CARGO_PKG_VERSION")
-    {
+    if !written_by_this_build(&persisted) {
         return stale(CODE_VERSION, Some(persisted.app_version));
     }
 
+    verify_sources(persisted, game_path)
+}
+
+/// The cache file's bytes, or the answer to give instead: a file that is not there at all is the
+/// ordinary first-run case, not a reason to report anything.
+fn read_bytes(app: &AppHandle, game_path: &Path) -> Result<Vec<u8>, Loaded> {
+    let file = match cache_file(app, game_path) {
+        Ok(file) => file,
+        Err(err) => return Err(stale(CODE_UNREADABLE, Some(err))),
+    };
+
+    match fs::read(&file) {
+        Ok(bytes) => Ok(bytes),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Err(Loaded::Missing),
+        Err(err) => Err(stale(
+            CODE_UNREADABLE,
+            Some(format!("{}: {err}", file.display())),
+        )),
+    }
+}
+
+/// Whether the file was written by this very build. One test for both: a format version only changes
+/// alongside an app version, and the version that wrote the file is what the page needs to name
+/// either way.
+fn written_by_this_build(persisted: &PersistedDatabase) -> bool {
+    persisted.format_version == FORMAT_VERSION && persisted.app_version == env!("CARGO_PKG_VERSION")
+}
+
+/// Check the file against the sources as they are now, and the one invariant worth checking on the way
+/// back in: an empty index would look like a built database to every command that asks for one, and
+/// the page would report zero of everything.
+fn verify_sources(persisted: PersistedDatabase, game_path: &Path) -> Loaded {
     let (game_paks, mod_paks) = stamps(game_path);
     if persisted.game_paks != game_paks {
         return stale(CODE_GAME_PAKS, None);
@@ -199,9 +217,6 @@ pub fn load(app: &AppHandle, game_path: &Path) -> Loaded {
     if persisted.mod_paks != mod_paks {
         return stale(CODE_MOD_PAKS, None);
     }
-
-    // The one invariant worth checking on the way back in: an empty index would look like a built
-    // database to every command that asks for one, and the page would report zero of everything
     if persisted.database.visuals_by_id.is_empty() {
         return stale(
             CODE_UNREADABLE,
@@ -234,9 +249,6 @@ fn stamps(game_path: &Path) -> (Vec<PakStamp>, Vec<PakStamp>) {
 
 /// Serialize `value` into `path` and flush it all the way to the platter, so the rename that follows
 /// cannot publish a file whose contents are still sitting in a buffer.
-///
-/// Shared with `settings`, which writes its own small file the same way rather than keeping a second
-/// copy of the pattern.
 pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
     let describe = |err: &dyn std::fmt::Display| format!("{}: {err}", path.display());
 
@@ -246,6 +258,31 @@ pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> Result<(), Stri
     writer.flush().map_err(|err| describe(&err))?;
     let file = writer.into_inner().map_err(|err| describe(&err))?;
     file.sync_all().map_err(|err| describe(&err))
+}
+
+/// Write `value` to `file` beside it and rename it over the target: a full disk or a process killed
+/// mid-write then leaves the previous file untouched, instead of a truncated one that reads as
+/// corrupt.
+///
+/// Shared with `settings`, which writes its own small file the same way rather than keeping a second
+/// copy of the pattern.
+pub(crate) fn write_atomic(file: &Path, value: &impl Serialize) -> Result<(), String> {
+    let temp = file.with_extension("json.tmp");
+    let saved = write_json(&temp, value)
+        .and_then(|()| fs::rename(&temp, file).map_err(|err| format!("{}: {err}", file.display())));
+    if saved.is_err() {
+        // A half-written file must not be left lying around for the next launch to trip over
+        let _ = fs::remove_file(&temp);
+    }
+    saved
+}
+
+/// Make sure the directory holding `file` exists, so the write beside it can land
+pub(crate) fn ensure_parent(file: &Path) -> Result<(), String> {
+    match file.parent() {
+        Some(dir) => fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display())),
+        None => Ok(()),
+    }
 }
 
 /// A directory as a stable string: lowercased, `/` separators, no trailing one.

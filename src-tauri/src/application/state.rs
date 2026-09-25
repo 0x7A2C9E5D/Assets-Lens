@@ -48,51 +48,62 @@ struct RawMaterials {
 
 /// Read every material out of an already-built database, keyed by material GUID.
 ///
-/// maclarian keeps `MaterialDef` — and the map holding it — crate-private, so serializing the
-/// database is the only door out. This runs once per build, where the cost disappears next to the
-/// parse itself; nothing is cached on disk, so a rebuilt database pays it again.
+/// This runs once per build, where the cost disappears next to the parse itself; nothing is cached on
+/// disk, so a rebuilt database pays it again.
 pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
+    let Some(raw) = raw_materials(db) else {
+        return HashMap::new();
+    };
+    raw.materials
+        .into_iter()
+        .map(|(id, material)| (id, material_info(material)))
+        .collect()
+}
+
+/// The `materials` map of the database as serde sees it, or `None` when it cannot be read.
+///
+/// maclarian keeps `MaterialDef` — and the map holding it — crate-private, so serializing the
+/// database is the only door out; parsing the JSON back is the second half of that door.
+fn raw_materials(db: &MergedDatabase) -> Option<RawMaterials> {
     let json = match serde_json::to_string(db) {
         Ok(json) => json,
-        Err(err) => {
-            eprintln!("[maclarian] material names unavailable: {err}");
-            return HashMap::new();
-        }
+        Err(err) => return unavailable(err),
     };
-    let parsed: RawMaterials = match serde_json::from_str(&json) {
-        Ok(parsed) => parsed,
-        Err(err) => {
-            eprintln!("[maclarian] material names unavailable: {err}");
-            return HashMap::new();
-        }
-    };
+    match serde_json::from_str(&json) {
+        Ok(parsed) => Some(parsed),
+        Err(err) => unavailable(err),
+    }
+}
 
-    parsed
-        .materials
-        .into_iter()
-        .map(|(id, material)| {
-            (
-                id,
-                MaterialInfo {
-                    name: material.name,
-                    source_file: material.source_file,
-                    texture_ids: material
-                        .texture_ids
-                        .into_iter()
-                        .map(|param| param.texture_id)
-                        .collect(),
-                    // The parameter name is not in the serialized database either — the field below
-                    // is a bare GUID, so `fill_virtual_texture_parameters` supplies the name later
-                    virtual_textures: material
-                        .virtual_texture_ids
-                        .into_iter()
-                        .map(|id| VirtualTextureBinding {
-                            id,
-                            parameter_name: String::new(),
-                        })
-                        .collect(),
-                },
-            )
+/// Answer a read that failed, in the one shape the caller has for it
+fn unavailable(err: serde_json::Error) -> Option<RawMaterials> {
+    eprintln!("[maclarian] material names unavailable: {err}");
+    None
+}
+
+/// One serialized material as the panel's own shape
+fn material_info(material: RawMaterial) -> MaterialInfo {
+    MaterialInfo {
+        name: material.name,
+        source_file: material.source_file,
+        texture_ids: material
+            .texture_ids
+            .into_iter()
+            .map(|param| param.texture_id)
+            .collect(),
+        // The parameter name is not in the serialized database either — the field below is a bare
+        // GUID, so `fill_virtual_texture_parameters` supplies the name later
+        virtual_textures: virtual_texture_bindings(material.virtual_texture_ids),
+    }
+}
+
+/// A serialized material's virtual texture bindings, as bare GUIDs: the parameter name is not in the
+/// serialized database, so `fill_virtual_texture_parameters` supplies it later
+fn virtual_texture_bindings(ids: Vec<String>) -> Vec<VirtualTextureBinding> {
+    ids.into_iter()
+        .map(|id| VirtualTextureBinding {
+            id,
+            parameter_name: String::new(),
         })
         .collect()
 }
@@ -243,28 +254,33 @@ impl AppState {
         let Some(db) = self.merged_db.take() else {
             return Vec::new();
         };
-        let pak = self.vt_pak();
         let resolver = MergedResolver::from_database(db);
-
-        let matches = match pak {
-            Ok(pak) => {
-                let hashes: Vec<&str> = hashes.iter().map(String::as_str).collect();
-                resolver
-                    .find_gtp_by_hashes_in_pak(&hashes, &pak)
-                    .unwrap_or_else(|err| {
-                        eprintln!("[maclarian] virtual texture lookup failed: {err}");
-                        Vec::new()
-                    })
-            }
-            Err(err) => {
-                eprintln!("[maclarian] {err}");
-                Vec::new()
-            }
+        let matches = match self.vt_pak() {
+            Ok(pak) => gtps_in_pak(&resolver, hashes, &pak),
+            Err(err) => vt_unavailable(err),
         };
-
         self.merged_db = Some(resolver.into_database());
         matches
     }
+}
+
+/// Resolve `hashes` through the archive `pak` names, degrading to an empty list on a failed lookup:
+/// virtual textures are optional, and a lookup must not abort a detail view or an export.
+fn gtps_in_pak(resolver: &MergedResolver, hashes: &[String], pak: &Path) -> Vec<GtpMatch> {
+    let hashes: Vec<&str> = hashes.iter().map(String::as_str).collect();
+    resolver
+        .find_gtp_by_hashes_in_pak(&hashes, pak)
+        .unwrap_or_else(|err| {
+            eprintln!("[maclarian] virtual texture lookup failed: {err}");
+            Vec::new()
+        })
+}
+
+/// Report an archive that is not there and answer with no virtual textures, the same way a failed
+/// lookup does
+fn vt_unavailable(err: String) -> Vec<GtpMatch> {
+    eprintln!("[maclarian] {err}");
+    Vec::new()
 }
 
 /// Where the game installs its mods: `%LOCALAPPDATA%\Larian Studios\Baldur's Gate 3\Mods`, which is

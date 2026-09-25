@@ -39,8 +39,7 @@ pub fn stage_sources(
 /// Stage the page file at `gtp_rel` into `shared`, reuse the copy already there. Page files are read
 /// from the virtual texture archive and nowhere else.
 fn stage_page_file(pak: &mut Archives, gtp_rel: &str, shared: &Path) -> Result<PathBuf, String> {
-    let path =
-        staged_path(gtp_rel, shared).ok_or_else(|| format!("Invalid GTP path: {gtp_rel}"))?;
+    let path = staged_path(gtp_rel, shared).ok_or_else(|| format!("Invalid GTP path: {gtp_rel}"))?;
     if path.exists() {
         return Ok(path);
     }
@@ -154,7 +153,12 @@ fn parent_dir_lowercase(rel: &str) -> String {
 }
 
 /// Stage one GTS to disk; reuse it directly when already staged (shared with another GTP)
-fn stage_gts_file(pak: &mut Archives, rel: &str, shared: &Path, staged: &mut Vec<PathBuf>) -> bool {
+fn stage_gts_file(
+    pak: &mut Archives,
+    rel: &str,
+    shared: &Path,
+    staged: &mut Vec<PathBuf>,
+) -> bool {
     let Some(path) = staged_path(rel, shared) else {
         return false;
     };
