@@ -116,7 +116,7 @@ pub(crate) fn fill_material_bindings(
 }
 
 /// What one material binds, in binding order: its textures first, then its virtual textures. A
-/// material the cache does not know binds nothing.
+/// material the cache does not know binds anything.
 fn material_bindings(
     known: Option<&MaterialInfo>,
     textures: &HashMap<&str, &TextureSummary>,

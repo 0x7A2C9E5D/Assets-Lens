@@ -277,7 +277,7 @@ pub(crate) fn write_atomic(file: &Path, value: &impl Serialize) -> Result<(), St
     saved
 }
 
-/// Make sure the directory holding `file` exists, so the write beside it can land
+/// Make sure the directory holding `file` exists, so to write beside it can land
 pub(crate) fn ensure_parent(file: &Path) -> Result<(), String> {
     match file.parent() {
         Some(dir) => fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display())),

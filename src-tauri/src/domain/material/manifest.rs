@@ -80,7 +80,7 @@ impl ExportMaterial {
 }
 
 /// The asset's texture rows for the textures a material binds, in the material's own (parameter)
-/// order. An id the rows do not carry contributes nothing.
+/// order. An id the rows do not carry contributes anything.
 fn bound_textures(
     known: Option<&MaterialInfo>,
     textures: &HashMap<&str, &TextureSummary>,
@@ -97,7 +97,7 @@ fn bound_textures(
 }
 
 /// The asset's virtual texture rows for the resources a material binds, in binding order. An id the
-/// rows do not carry contributes nothing.
+/// rows do not carry contributes anything.
 fn bound_virtual_textures(
     known: Option<&MaterialInfo>,
     virtual_textures: &HashMap<&str, &VirtualTextureSummary>,

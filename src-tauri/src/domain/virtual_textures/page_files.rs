@@ -210,7 +210,7 @@ fn page_file_table(data: &[u8], header: &GtsHeader, bounds: &[Option<[u16; 4]>])
     sizes
 }
 
-/// The highest resolution one page file stores, in pixels; `None` when it holds no layer 0 tile.
+/// The highest resolution one-page file stores, in pixels; `None` when it holds no layer 0 tile.
 /// maclarian picks the levels the same way, since a page file does not have to store level 0
 /// (material maps are often stored lower).
 fn stored_size(

@@ -96,7 +96,7 @@ fn missing_gts_error(gts_rel: &str) -> String {
     )
 }
 
-/// Stage the fallback candidates of one page file: the closest GTS name first, since the closer it is
+/// Stage the fallback candidates of one-page file: the closest GTS name first, since the closer it is
 /// to the GTP name, the more likely it is the one that accepts the page file
 fn stage_fallbacks(
     pak: &mut Archives,

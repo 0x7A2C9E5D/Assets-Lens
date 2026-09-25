@@ -34,7 +34,7 @@ pub fn try_write_png_and_record(
 
 /// Write the PNG form of the DDS at `dds_path` and drop the DDS once the PNG is in place. Returns
 /// `true` when the PNG replaced the DDS (callers then skip the DDS entry), `false` when the DDS has
-/// to stay: either the conversion or the write failed, each reporting its own warning
+/// to stay: either the conversion or to write failed, each reporting its own warning
 pub(crate) fn replace_dds_with_png(
     dds_bytes: &[u8],
     png_path: &Path,

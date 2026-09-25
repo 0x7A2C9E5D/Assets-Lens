@@ -116,7 +116,7 @@ fn export_vt_target(
     extract_vt_target(ctx, &job, staging, plan, output)
 }
 
-/// Extract one resolved target in its own staging directory, releasing the archive pool afterwards
+/// Extract one resolved target in its own staging directory, releasing the archive pool afterward
 /// so a long export keeps interleaving with previews. Reaching the archives is not optional —
 /// nothing can be written without them — while a failed extraction is only a warning
 fn extract_vt_target(
@@ -134,7 +134,7 @@ fn extract_vt_target(
     Ok(())
 }
 
-/// Extract one page file into its staging directory and move the layer files into the export dir
+/// Extract one-page file into its staging directory and move the layer files into the export dir
 fn extract_vt(
     archive: &mut Archives,
     job: &VtJob<'_>,
