@@ -1,5 +1,5 @@
-//! The regular-texture step: pulls each DDS out of the archives, optionally converts it to PNG, and
-//! records (or warns about) every artifact along with the shared PNG-writing helpers.
+//! Regular-texture step: pulls each DDS out of the archives, optionally converts it to PNG, and
+//! records or warns about every artifact, plus the shared PNG-writing helpers.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,9 +13,8 @@ use super::{ExportOutput, PHASE_TEXTURES};
 use crate::domain::naming::sanitize_file_name;
 use crate::infrastructure::archives::{lock_pool, Archives, Pak};
 
-/// Write a PNG; on success remove the intermediate DDS and record an export entry, on failure push
-/// a `pngWriteFailed` warning. Returns `true` when the PNG has been written (callers then skip the
-/// DDS fallback entry).
+/// Write a PNG; on success remove the intermediate DDS and record an export entry, on failure push a
+/// `pngWriteFailed` warning. Returns `true` when the PNG was written, so callers skip the DDS entry
 pub fn try_write_png_and_record(
     png: &[u8],
     png_path: &Path,
@@ -32,9 +31,8 @@ pub fn try_write_png_and_record(
     true
 }
 
-/// Write the PNG form of the DDS at `dds_path` and drop the DDS once the PNG is in place. Returns
-/// `true` when the PNG replaced the DDS (callers then skip the DDS entry), `false` when the DDS has
-/// to stay: either the conversion or to write failed, each reporting its own warning
+// Write the PNG form of the DDS at `dds_path` and drop the DDS once the PNG is in place; `false`
+// when the DDS has to stay, because the conversion or the write failed, each warning on its own
 pub(crate) fn replace_dds_with_png(
     dds_bytes: &[u8],
     png_path: &Path,
@@ -51,8 +49,8 @@ pub(crate) fn replace_dds_with_png(
     }
 }
 
-/// Pull every regular texture of the asset out of the archives, optionally converting it to PNG.
-/// A missing texture is a warning: the rest of the export carries on
+// Pull every regular texture of the asset out of the archives, optionally converting it to PNG; a
+// missing texture is a warning and the rest of the export carries on
 pub(super) fn export_textures(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
@@ -69,14 +67,14 @@ pub(super) fn export_textures(
     export_texture_list(asset, pool, plan, &tex_dir, output, progress)
 }
 
-/// Create the directory the regular textures go into
+// Create the directory the regular textures go into
 fn textures_dir(plan: &ExportPlan<'_>) -> Result<PathBuf, String> {
     let dir = plan.out_dir.join("textures");
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create textures directory: {e}"))?;
     Ok(dir)
 }
 
-/// Export every texture of the asset into `tex_dir`, counting one progress item each
+// Export every texture of the asset into `tex_dir`, counting one progress item each
 fn export_texture_list(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
@@ -92,7 +90,7 @@ fn export_texture_list(
     Ok(())
 }
 
-/// Read one texture out of the archives and write it into `tex_dir`
+// Read one texture out of the archives and write it into `tex_dir`
 pub(super) fn export_texture(
     tex: &TextureRef,
     pool: &Arc<Mutex<Archives>>,
@@ -110,7 +108,7 @@ pub(super) fn export_texture(
     Ok(())
 }
 
-/// Write one texture into `tex_dir`: its DDS, or only the PNG when converting
+// Write one texture into `tex_dir`: its DDS, or only the PNG when converting
 pub(super) fn write_texture(
     tex: &TextureRef,
     dds: &[u8],
@@ -125,10 +123,17 @@ pub(super) fn write_texture(
         return;
     }
     let png_path = tex_dir.join(format!("{stem}.png"));
-    keep_dds_or_png(dds, &png_path, &dds_path, convert_to_png, &tex.dds_path, output);
+    keep_dds_or_png(
+        dds,
+        &png_path,
+        &dds_path,
+        convert_to_png,
+        &tex.dds_path,
+        output,
+    );
 }
 
-/// Write the DDS; a failure is a warning rather than the end of the export. `true` when written
+// Write the DDS; a failure is a warning rather than the end of the export. `true` when written
 fn write_dds(dds: &[u8], dds_path: &Path, source_label: &str, output: &mut ExportOutput) -> bool {
     if let Err(err) = fs::write(dds_path, dds) {
         output.warn("textureWriteFailed", format!("{source_label}: {err}"));
@@ -137,7 +142,7 @@ fn write_dds(dds: &[u8], dds_path: &Path, source_label: &str, output: &mut Expor
     true
 }
 
-/// Keep the DDS, or replace it with its PNG form when conversion was asked for and worked
+// Keep the DDS, or replace it with its PNG form when conversion was asked for and worked
 fn keep_dds_or_png(
     dds: &[u8],
     png_path: &Path,
@@ -153,8 +158,8 @@ fn keep_dds_or_png(
     }
 }
 
-/// File stem of a texture: named after the actual DDS resource in the archive (e.g. `Body_BM`),
-/// never after the material parameter slot (e.g. `ColorTexture`) or the bank display name
+// File stem of a texture: named after the actual DDS resource in the archive (e.g. `Body_BM`), never
+// after the material parameter slot (e.g. `ColorTexture`) or the bank display name
 pub(super) fn texture_stem(tex: &TextureRef) -> String {
     sanitize_file_name(
         Path::new(&tex.dds_path)

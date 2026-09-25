@@ -61,10 +61,8 @@ impl TextureFormat {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportOptions {
-    /// Mesh output format: raw GR2 or converted GLB
     #[serde(default)]
     pub mesh_format: MeshFormat,
-    /// Texture output format for separate files — covers both regular textures and virtual textures
     #[serde(default)]
     pub texture_format: TextureFormat,
 }
@@ -89,9 +87,9 @@ pub struct ExportedFile {
     pub size_bytes: usize,
 }
 
-/// Export warning: `code` is a stable enum (mapped to i18n copy on the frontend) while `detail`
-/// carries the raw detail (path / error); the frontend shows `detail` directly for unknown codes,
-/// so warnings passed through from maclarian never end up as a missing-copy gap
+/// Export warning: `code` is a stable enum (mapped to i18n copy on the frontend), while `detail`
+/// carries the raw path or error and is shown as-is for unknown codes — so a warning passed through
+/// from maclarian never ends up as a missing-copy gap
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportWarning {
@@ -111,23 +109,19 @@ pub struct ExportResult {
 }
 
 /// Content of asset.json: the asset and the resources it is made of — not a listing of the export
-/// directory. Which files a run wrote, and how large they came out, is the export result's business
-/// (`ExportResult`), so it stays out of here: those paths only mean anything on the machine that
-/// exported them, and everything else about them follows from the resource rows below.
+/// directory. Which files a run wrote is the export result's business (`ExportResult`)
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportManifest {
-    /// Visual resource ID (GUID): the asset's identity, and the key to look it up by — the name below
-    /// is not unique
+    /// Visual resource GUID: the asset's identity and lookup key, since the name is not unique
     pub id: String,
     pub name: String,
-    /// Mod providing this asset; absent when it comes from the game (see `domain::source::ModSources`)
+    /// Mod providing this asset; absent for the game's own
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub path: String,
-    /// The asset's materials, in its own order. GUID plus name (and the template they derive from),
-    /// each carrying the textures and virtual textures it binds — the manifest states the asset's
-    /// resources there and nowhere else, so this is the list to read them from
+    /// The asset's materials, in its own order. The manifest states the asset's resources here and
+    /// nowhere else, so this is the list to read them from
     pub materials: Vec<ExportMaterial>,
     pub exported_at_unix: u64,
     pub maclarian_version: String,

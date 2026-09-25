@@ -14,12 +14,11 @@ use crate::domain::source::{source_of, ModSources};
 use crate::domain::texture::texture_summaries;
 use crate::domain::virtual_textures::virtual_texture_summaries;
 
-/// Assemble the `asset.json` content of one export.
-///
-/// The resource rows are built once and handed to the material rows, which carry these very rows for
-/// their own resources (see `manifest_materials`); the manifest lists the resources nowhere else.
-/// `manifest_base` states the fields that need no resource list, and the two lists override them
-/// here.
+// Assemble the `asset.json` content of one export.
+//
+// The resource rows are built once and handed to the material rows, which carry these very rows for
+// their own resources (see `manifest_materials`); the manifest lists the resources nowhere else, so
+// `manifest_base` states the fields that need no resource list and the two lists override them here
 pub(super) fn build_manifest(
     asset: &VisualAsset,
     materials: &HashMap<String, MaterialInfo>,
@@ -34,7 +33,7 @@ pub(super) fn build_manifest(
     }
 }
 
-/// The manifest fields that need no resource list: the asset's identity and where it came from
+// The manifest fields that need no resource list: the asset's identity and where it came from
 fn manifest_base(asset: &VisualAsset, sources: &ModSources) -> ExportManifest {
     ExportManifest {
         id: asset.id.clone(),
@@ -47,7 +46,7 @@ fn manifest_base(asset: &VisualAsset, sources: &ModSources) -> ExportManifest {
     }
 }
 
-/// Seconds since the Unix epoch, or 0 for a clock before it
+// Seconds since the Unix epoch, or 0 for a clock before it
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -55,13 +54,9 @@ fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Write `asset.json`; the artifacts are already on disk by then, so a manifest failure is recorded
-/// as a warning instead of failing the whole export
-pub(super) fn write_manifest(
-    manifest: &ExportManifest,
-    out_dir: &Path,
-    output: &mut ExportOutput,
-) {
+// Write `asset.json`; the artifacts are already on disk by then, so a manifest failure is recorded as
+// a warning instead of failing the whole export
+pub(super) fn write_manifest(manifest: &ExportManifest, out_dir: &Path, output: &mut ExportOutput) {
     let manifest_path = out_dir.join("asset.json");
     match serde_json::to_string_pretty(manifest) {
         Ok(json) => {

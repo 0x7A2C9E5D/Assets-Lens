@@ -2,11 +2,10 @@
 
 use std::collections::HashMap;
 
-/// The resources a mod provides, by resource GUID. Everything the game itself provides is absent, so a
-/// GUID missing here reads as the base game.
+/// The resources a mod provides, by resource GUID; a GUID absent here comes from the game itself
 pub type ModSources = HashMap<String, String>;
 
-/// The mod that provides a resource, or `None` when it comes from the game
+/// The mod that provides a resource, or `None` for the game's own
 pub fn source_of(sources: &ModSources, id: &str) -> Option<String> {
     sources.get(id).cloned()
 }

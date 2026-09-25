@@ -33,15 +33,15 @@ pub fn app_info() -> AppInfo {
     }
 }
 
-/// The filter side of a browse query, resolved before the list is walked: the origin split, and the
-/// direction the page is read in.
+// The filter side of a browse query, resolved before the list is walked: the origin split, and the
+// direction the page is read in
 struct Filter<'a> {
     origin: Option<&'a str>,
     descending: bool,
 }
 
 impl<'a> Filter<'a> {
-    /// The filter as the query states it, with the direction a missing value gets
+    // The filter as the query states it, with the direction a missing value gets
     fn of(origin: Option<&'a str>, descending: Option<bool>) -> Self {
         Self {
             origin,
@@ -50,11 +50,11 @@ impl<'a> Filter<'a> {
     }
 }
 
-/// Browse visual assets page by page. `keyword` is an optional filter matched against the asset
-/// name or its GUID (so a pasted ID finds its row); `sort` picks the column and `descending` the
-/// direction, both resolved against the orders cached when the database was built. `origin` splits
-/// the index in two: "mod" keeps only what a mod provides, "base" only the game's own resources,
-/// and anything else (including a missing value) keeps both.
+/// Browse visual assets page by page. `keyword` is an optional filter matched against the asset name
+/// or its GUID (so a pasted ID finds its row); `sort` picks the column and `descending` the direction,
+/// both resolved against the orders cached when the database was built. `origin` splits the index in
+/// two: "mod" keeps only what a mod provides, "base" only the game's own resources, anything else keeps
+/// both.
 #[tauri::command]
 pub fn list_visuals(
     state: State<'_, SharedState>,
@@ -72,8 +72,8 @@ pub fn list_visuals(
     Ok(browse_page(&st, db, ids, keyword, &filter, offset, limit))
 }
 
-/// The cached order `sort` picks: the GUID order, the mod-name order, or — for anything else,
-/// including a missing value — the name order
+// The cached order `sort` picks: the GUID order, the mod-name order, or — for anything else, including
+// a missing value — the name order
 fn ordered_ids<'a>(st: &'a AppState, sort: Option<&str>) -> &'a [String] {
     match sort {
         Some("id") => &st.visual_ids_by_id,
@@ -82,8 +82,8 @@ fn ordered_ids<'a>(st: &'a AppState, sort: Option<&str>) -> &'a [String] {
     }
 }
 
-/// One page of the browse list: `ids` in the order `sort` picked, filtered by the keyword — trimmed
-/// and folded for comparison — and by `filter`, and sliced from `offset` for `limit` rows
+// One page of the browse list: `ids` in the order `sort` picked, filtered by the keyword — trimmed and
+// folded for comparison — and by `filter`, then sliced from `offset` for `limit` rows
 fn browse_page(
     st: &AppState,
     db: &MergedDatabase,
@@ -100,10 +100,9 @@ fn browse_page(
     page_of(db, st, &matched, offset, limit)
 }
 
-/// The ids that pass both filters, in the direction `filter` asks for.
-///
-/// The cached sequences are ascending and a page is sliced out of the matches, so a descending request
-/// flips the whole match set rather than the page.
+// The ids that pass both filters, in the direction `filter` asks for. The cached sequences are
+// ascending and a page is sliced out of the matches, so a descending request flips the whole match set
+// rather than the page
 fn matched_ids<'a>(
     st: &AppState,
     db: &MergedDatabase,
@@ -118,7 +117,7 @@ fn matched_ids<'a>(
     in_direction(matched, filter.descending)
 }
 
-/// `matched` flipped when the page is read in descending order
+// `matched` flipped when the page is read in descending order
 fn in_direction(mut matched: Vec<&String>, descending: bool) -> Vec<&String> {
     if descending {
         matched.reverse();
@@ -126,7 +125,7 @@ fn in_direction(mut matched: Vec<&String>, descending: bool) -> Vec<&String> {
     matched
 }
 
-/// Whether one id of the sorted list is in the page: both filters pass
+// Whether one id of the sorted list is in the page: both filters pass
 fn keeps(
     st: &AppState,
     db: &MergedDatabase,
@@ -138,11 +137,8 @@ fn keeps(
     keyword_ok && passes_origin(st, id, origin)
 }
 
-/// Whether an id passes the `origin` split: "mod" keeps only what a mod provides, "base" only the
-/// game's own resources, and anything else (including a missing value) keeps both.
-///
-/// Mod-provided ids are exactly the ones the source table lists, so membership in it is the whole
-/// test; the game's own resources are never written there.
+// Whether an id passes the `origin` split. Mod-provided ids are exactly the ones the source table
+// lists, so membership in it is the whole test; the game's own resources are never written there
 fn passes_origin(st: &AppState, id: &str, origin: Option<&str>) -> bool {
     let from_mod = st.mod_sources.contains_key(id);
     match origin {
@@ -152,8 +148,8 @@ fn passes_origin(st: &AppState, id: &str, origin: Option<&str>) -> bool {
     }
 }
 
-/// Whether `id` carries `keyword`: in its GUID — folded the cheap ASCII way, since a GUID is ASCII —
-/// or in the name of the visual it names, which the cached order does not hold
+// Whether `id` carries `keyword`: in its GUID — folded the cheap ASCII way, since a GUID is ASCII — or
+// in the name of the visual it names, which the cached order does not hold
 fn matches_keyword(db: &MergedDatabase, id: &str, keyword: &str) -> bool {
     id.to_ascii_lowercase().contains(keyword)
         || db
@@ -162,7 +158,7 @@ fn matches_keyword(db: &MergedDatabase, id: &str, keyword: &str) -> bool {
             .is_some_and(|visual| visual.name.to_lowercase().contains(keyword))
 }
 
-/// The window of matches the page shows, as the list rows the frontend renders
+// The window of matches the page shows, as the list rows the frontend renders
 fn page_of(
     db: &MergedDatabase,
     st: &AppState,
@@ -180,7 +176,7 @@ fn page_of(
     }
 }
 
-/// The rows of one page: the matched GUIDs of its window, as the list items the frontend renders
+// The rows of one page: the matched GUIDs of its window, as the list items the frontend renders
 fn page_items(db: &MergedDatabase, st: &AppState, window: &[&String]) -> Vec<VisualSummary> {
     window
         .iter()

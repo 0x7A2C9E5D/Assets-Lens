@@ -20,10 +20,10 @@ use crate::domain::virtual_textures::{virtual_texture_summaries, VirtualTextureS
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualAssetDetail {
-    /// Visual resource ID (GUID) — the lookup key, since names are not unique
+    /// Visual resource GUID — the lookup key, since names are not unique
     pub id: String,
     pub name: String,
-    /// Mod providing this asset; absent when it comes from the game (see `domain::source::ModSources`)
+    /// Mod providing this asset; absent for the game's own
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub path: String,
@@ -33,12 +33,9 @@ pub struct VisualAssetDetail {
 }
 
 impl VisualAssetDetail {
-    /// `matches` are the page files resolved for this asset's virtual textures; pass an empty
-    /// slice to skip the lookup (the rows then show the hash without a page file).
-    /// `materials` is the name cache built with the database: it labels the material rows and lists,
-    /// per material, the resources of this asset that material binds (see `fill_material_bindings`).
-    /// `sources` labels every row with the mod that provides it, and leaves the game's own rows
-    /// unlabeled.
+    /// `matches` are the page files resolved for this asset's virtual textures; an empty slice skips
+    /// the lookup. `materials` is the name cache built with the database, and `sources` labels every
+    /// row with the mod that provides it.
     pub fn new(
         value: &VisualAsset,
         matches: &[GtpMatch],
@@ -67,24 +64,22 @@ impl VisualAssetDetail {
 }
 
 /// 3D preview payload: the GR2 mesh converted to GLB.
-/// Stored as a Base64 string instead of `Vec<u8>`: a byte vector would serialize through serde into
-/// a JSON array of numbers (one per byte), inflating a multi-MB model to tens of MB of JSON;
-/// Base64 only grows by ~33% and keeps everything in memory without temp files
+/// Base64 instead of `Vec<u8>` because serde would turn a byte vector into a JSON array of numbers,
+/// inflating a multi-MB model to tens of MB of JSON; Base64 grows by ~33% and needs no temp files
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelPreview {
     pub base64: String,
 }
 
-/// Visual asset list item: highlights the composition of the visual itself
+/// Visual asset list row, with the counts of what the visual is made of
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualSummary {
-    /// Visual resource ID (GUID): the row identity — one name can belong to several visuals, so the
-    /// list cannot be keyed by name
+    /// Visual resource GUID: the row identity, since one name can belong to several visuals
     pub id: String,
     pub name: String,
-    /// Mod providing this asset; absent when it comes from the game (see `domain::source::ModSources`)
+    /// Mod providing this asset; absent for the game's own
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub material_count: usize,

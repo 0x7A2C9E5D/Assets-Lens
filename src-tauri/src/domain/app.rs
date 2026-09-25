@@ -20,10 +20,7 @@ pub struct DatabaseStats {
     pub virtual_texture_count: usize,
 }
 
-/// What the session knows about the index persisted on disk, so the Database page can say where its
-/// statistics came from.
-///
-/// `state` is one of:
+/// What the session knows about the index persisted on disk. `state` is one of:
 /// - `idle` — nothing to report: no directory selected yet, or the index was built in this session
 /// - `loaded` — the index was read back from disk; `builtAt` is the unix time it was built at
 /// - `stale` — a file is there but was refused; `code` says why
@@ -73,11 +70,7 @@ impl CacheStatus {
 }
 
 /// Everything a page needs to render without asking anything else: the game data directory this
-/// session works on, the statistics of the index held for it, and where that index came from.
-///
-/// Returned once at startup (`application::commands::restore_state`) — the frontend used to
-/// assemble the same three facts itself, from Web storage plus a comparison against the backend's
-/// directory.
+/// session works on, the statistics of the index held for it, and where that index came from
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSnapshot {

@@ -16,7 +16,7 @@ use crate::domain::virtual_textures::{self, match_for_hash, PageFileSizes};
 use crate::domain::visual::{ModelPreview, VisualAssetDetail};
 use crate::infrastructure::archives::{lock_pool, Archives, Pak};
 
-/// What one detail view reads out of the state in a single pass
+// What one detail view reads out of the state in a single pass
 type DetailParts = (
     VisualAssetDetail,
     Vec<GtpMatch>,
@@ -26,8 +26,8 @@ type DetailParts = (
 
 /// Query the detail of a single visual asset by its GUID (names are not unique).
 ///
-/// Reading a page file size is the only archive work here, and it is off the main thread: the GTS
-/// that carries it is one file read, not a scan.
+/// Reading a page file size is the only archive work here, and it is off the main thread: the GTS that
+/// carries it is one file read, not a scan.
 #[tauri::command]
 pub async fn get_visual(app: AppHandle, id: String) -> Result<Option<VisualAssetDetail>, String> {
     let state = app.state::<SharedState>().inner().clone();
@@ -44,11 +44,9 @@ pub async fn get_visual(app: AppHandle, id: String) -> Result<Option<VisualAsset
     .map_err(|err| format!("Detail task terminated unexpectedly: {err}"))?
 }
 
-/// The detail of `id` with the page file size of every virtual texture it binds, or `None` when the
-/// index holds no such visual.
-///
-/// The sizes are read with the state lock released, then the size cache is put back for the next
-/// detail view of this game directory.
+// The detail of `id` with the page file size of every virtual texture it binds, or `None` when the
+// index holds no such visual. The sizes are read with the state lock released, then the size cache is
+// put back for the next detail view of this game directory
 fn detail_with_sizes(state: &SharedState, id: &str) -> Result<Option<VisualAssetDetail>, String> {
     let Some((mut detail, matches, pool, mut page_file_sizes)) = take_detail(state, id)? else {
         return Ok(None);
@@ -60,11 +58,11 @@ fn detail_with_sizes(state: &SharedState, id: &str) -> Result<Option<VisualAsset
     Ok(Some(detail))
 }
 
-/// Everything one detail view reads out of the state, in one pass under one lock.
-///
-/// Owned rather than borrowed: the GTex lookup below needs `&mut` state (it hands the database to a
-/// resolver and takes it back), which no borrow of the database outlives. `pool()` takes `&mut` as
-/// well, so it runs last.
+// Everything one detail view reads out of the state, in one pass under one lock.
+//
+// Owned rather than borrowed: the GTex lookup below needs `&mut` state (it hands the database to a
+// resolver and takes it back), which no borrow of the database outlives. `pool()` takes `&mut` as well,
+// so it runs last.
 fn take_detail(state: &SharedState, id: &str) -> Result<Option<DetailParts>, String> {
     let mut st = lock(state)?;
     let asset = st
@@ -77,15 +75,15 @@ fn take_detail(state: &SharedState, id: &str) -> Result<Option<DetailParts>, Str
 
     let matches = resolved_matches(&mut st, &asset);
     let detail = VisualAssetDetail::new(&asset, &matches, &st.materials, &st.mod_sources);
-    // The size cache travels with the detail and is put back at the end: it is only ever touched
-    // here, and holding the state lock while the archives are read is what the caller avoids
+    // The size cache travels with the detail and is put back at the end: it is only ever touched here,
+    // and holding the state lock while the archives are read is what the caller avoids
     let page_file_sizes = std::mem::take(&mut st.page_file_sizes);
     let pool = st.pool().ok();
     Ok(Some((detail, matches, pool, page_file_sizes)))
 }
 
-/// The page files resolved for `asset`'s virtual textures. An asset that binds none is not looked up
-/// at all, so maclarian is not asked for an empty answer.
+// The page files resolved for `asset`'s virtual textures. An asset that binds none is not looked up at
+// all, so maclarian is not asked for an empty answer
 fn resolved_matches(st: &mut AppState, asset: &VisualAsset) -> Vec<GtpMatch> {
     let hashes = vt_hashes(asset);
     if hashes.is_empty() {
@@ -94,10 +92,8 @@ fn resolved_matches(st: &mut AppState, asset: &VisualAsset) -> Vec<GtpMatch> {
     st.vt_matches(&hashes)
 }
 
-/// Fill in the page file size of every virtual texture of `detail`.
-///
-/// A size is decoration: a pool that cannot be locked leaves the rows without one rather than failing
-/// the detail view.
+// Fill in the page file size of every virtual texture of `detail`. A size is decoration: a pool that
+// cannot be locked leaves the rows without one rather than failing the detail view
 fn fill_page_sizes(
     pool: &Arc<Mutex<Archives>>,
     detail: &mut VisualAssetDetail,
@@ -112,8 +108,8 @@ fn fill_page_sizes(
     }
 }
 
-/// The archives pool, locked for one read, or `None` when it cannot be locked — which is logged here
-/// because the answer is the same as a failed lookup: a row without a size
+// The archives pool, locked for one read, or `None` when it cannot be locked — which is logged here
+// because the answer is the same as a failed lookup: a row without a size
 fn locked_archives(pool: &Arc<Mutex<Archives>>) -> Option<MutexGuard<'_, Archives>> {
     match lock_pool(pool) {
         Ok(archives) => Some(archives),
@@ -124,7 +120,7 @@ fn locked_archives(pool: &Arc<Mutex<Archives>>) -> Option<MutexGuard<'_, Archive
     }
 }
 
-/// The size of the page file `hash` resolves to, or `None` when no page file matches it
+// The size of the page file `hash` resolves to, or `None` when no page file matches it
 fn page_size(
     archives: &mut Archives,
     page_file_sizes: &mut HashMap<String, PageFileSizes>,
@@ -137,10 +133,9 @@ fn page_size(
 }
 
 /// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview
-/// (geometry only, no textures). Everything stays in memory: Shared.pak bytes → GLB → Base64, with
-/// no intermediate files.
-/// The conversion (BitKnit decompression + parsing) can take several seconds, so it runs inside
-/// spawn_blocking to avoid freezing the UI
+/// (geometry only, no textures). Everything stays in memory — Shared.pak bytes → GLB → Base64, with no
+/// intermediate files — and the conversion (BitKnit decompression + parsing) runs inside
+/// spawn_blocking, since it can take several seconds and would otherwise freeze the UI
 #[tauri::command]
 pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPreview, String> {
     let state = app.state::<SharedState>().inner().clone();
@@ -158,16 +153,15 @@ pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPre
     .map_err(|err| format!("Preview task terminated unexpectedly: {err}"))?
 }
 
-/// The PAK pool this session shares, taken with the state lock released before anything is read
+// The PAK pool this session shares, taken with the state lock released before anything is read
 fn shared_pool(state: &SharedState) -> Result<Arc<Mutex<Archives>>, String> {
     let mut st = lock(state)?;
     st.pool()
 }
 
-/// The raw GR2 bytes of `path` out of the model archive.
-///
-/// maclarian's own reader compares PAK entries with an exact `==` on the raw path, which never matches
-/// on Windows (`\` vs `/`); the `Archives` pool normalizes separators and casing instead.
+// The raw GR2 bytes of `path` out of the model archive. maclarian's own reader compares PAK entries
+// with an exact `==` on the raw path, which never matches on Windows (`\` vs `/`); the `Archives` pool
+// normalizes separators and casing instead
 fn mesh_bytes(pool: &Arc<Mutex<Archives>>, path: &str) -> Result<Vec<u8>, String> {
     lock_pool(pool)?
         .read_from(Pak::Models, path)
@@ -177,9 +171,9 @@ fn mesh_bytes(pool: &Arc<Mutex<Archives>>, path: &str) -> Result<Vec<u8>, String
         })
 }
 
-/// `bytes` as GLB. A mesh-less GR2 fails here, with maclarian's own message passed through unchanged:
-/// the frontend maps "No meshes found in GR2 file (...)" to dedicated copy, and anything else falls
-/// through to the generic failure message.
+// `bytes` as GLB. A mesh-less GR2 fails here, with maclarian's own message passed through unchanged:
+// the frontend maps "No meshes found in GR2 file (...)" to dedicated copy, and anything else falls
+// through to the generic failure message
 fn glb_of(bytes: &[u8], path: &str) -> Result<Vec<u8>, String> {
     convert_gr2_bytes_to_glb(bytes).map_err(|err| {
         eprintln!("[maclarian] gr2 -> glb failed for {path}: {err}");

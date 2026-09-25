@@ -1,14 +1,13 @@
-//! PAK archive access: the four game archives plus any mod archive the app was pointed at, opened
-//! on demand.
+//! PAK archive access: the four game archives plus any mod archive the app was pointed at, opened on
+//! demand.
 //!
-//! Opening an archive parses its whole file table, so each one is opened once and kept resident.
-//! The game's four are fixed by resource kind — a GR2 comes out of `Models.pak`, a DDS out of
-//! `Textures.pak`, a material template out of `Materials.pak` and a virtual texture page file out of
+//! Opening an archive parses its whole file table, so each one is opened once and kept resident. The
+//! game's four are fixed by resource kind — a GR2 comes out of `Models.pak`, a DDS out of
+//! `Textures.pak`, a material template out of `Materials.pak` and a page file out of
 //! `VirtualTextures.pak` — so the data directory is never walked looking for a file. Mod archives are
-//! the one addition: they are read first, because a mod ships replacements for files the game also
-//! has, and their resources are spread over whichever archive the mod author chose. Nothing here
-//! knows about assets or export formats: callers name the archive they expect (`read_from` /
-//! `list_in`), or name a mod by index (`read_mod_file` / `list_mod`).
+//! the one addition, and they are read first, because a mod ships replacements for files the game also
+//! has. Callers name the archive they expect (`read_from` / `list_in`) or a mod by index
+//! (`read_mod_file` / `list_mod`).
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -19,8 +18,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use maclarian::pak::lspk::{FileTableEntry, LspkReader};
 
 /// The game's archives. The variant is the resource kind, not a directory listing: every read names
-/// the kind it expects, which is what keeps a lookup from wandering into the wrong archive (and from
-/// parsing a 12 GB file table to answer a question about a texture).
+/// the kind it expects, which keeps a lookup from wandering into the wrong archive.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Pak {
     /// GR2 meshes
@@ -45,7 +43,7 @@ impl Pak {
     }
 }
 
-/// One mod archive, opened on demand like the game's own
+// One mod archive, opened on demand like the game's own
 struct ModPak {
     reader: LspkReader<BufReader<File>>,
     table: Vec<FileTableEntry>,
@@ -55,24 +53,24 @@ struct ModPak {
 /// tables and readers stay resident, so indexes are never reparsed per file.
 pub struct Archives {
     game_path: PathBuf,
-    /// The mod archives to search, in ascending file name order — the order they are searched in
-    /// reversed, so the last one wins. A mod that replaces something is meant to take precedence over
-    /// both the game and the mods loaded before it.
+    // The mod archives to search, in ascending file name order — the order they are searched in is
+    // reversed, so the last one wins: a mod that replaces something takes precedence over both the game
+    // and the mods loaded before it.
     mod_paths: Vec<PathBuf>,
     readers: HashMap<Pak, LspkReader<BufReader<File>>>,
     tables: HashMap<Pak, Vec<FileTableEntry>>,
-    /// One slot per entry of `mod_paths`, filled on first use
+    // One slot per entry of `mod_paths`, filled on first use
     mod_paks: Vec<Option<ModPak>>,
 }
 
-/// Normalize a path: unify on `/` separators and lowercase for comparison
-/// (separators inside PAK archives are inconsistent on Windows)
+// Normalize a path: unify on `/` separators and lowercase for comparison (separators inside PAK
+// archives are inconsistent on Windows)
 fn normalize_path(path: &str) -> String {
     path.replace('\\', "/").to_lowercase()
 }
 
-/// The entry whose path matches `want`, compared through `normalize_path` so separators and casing
-/// do not have to agree with the archive
+// The entry whose path matches `want`, compared through `normalize_path` so separators and casing do
+// not have to agree with the archive
 fn find_entry(table: &[FileTableEntry], want: &str) -> Option<FileTableEntry> {
     table
         .iter()
@@ -80,7 +78,7 @@ fn find_entry(table: &[FileTableEntry], want: &str) -> Option<FileTableEntry> {
         .cloned()
 }
 
-/// Open one archive and parse its whole file table
+// Open one archive and parse its whole file table
 fn open_pak(path: &Path) -> Result<ModPak, String> {
     let file = File::open(path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
     let mut reader = LspkReader::with_path(BufReader::new(file), path);
@@ -105,12 +103,12 @@ impl Archives {
         }
     }
 
-    /// Path of one archive inside the data directory
+    // Path of one archive inside the data directory
     fn path_of(&self, pak: Pak) -> PathBuf {
         self.game_path.join(pak.file_name())
     }
 
-    /// Open an archive and cache its file table; no-op when already cached
+    // Open an archive and cache its file table; no-op when already cached
     fn ensure(&mut self, pak: Pak) -> Result<(), String> {
         if self.tables.contains_key(&pak) {
             return Ok(());
@@ -129,7 +127,7 @@ impl Archives {
         Ok(())
     }
 
-    /// Open one mod archive and cache its file table; no-op when already cached
+    // Open one mod archive and cache its file table; no-op when already cached
     fn ensure_mod(&mut self, index: usize) -> Result<(), String> {
         if self.mod_paks.get(index).is_some_and(Option::is_some) {
             return Ok(());
@@ -139,7 +137,7 @@ impl Archives {
         Ok(())
     }
 
-    /// Path of one mod archive inside the pool
+    // Path of one mod archive inside the pool
     fn mod_path_of(&self, index: usize) -> Result<PathBuf, String> {
         self.mod_paths
             .get(index)
@@ -147,7 +145,7 @@ impl Archives {
             .ok_or_else(|| format!("Mod archive #{index} is not part of the pool"))
     }
 
-    /// Read one file out of a mod archive, or nothing when that mod does not carry it
+    // Read one file out of a mod archive, or nothing when that mod does not carry it
     fn read_mod(
         &mut self,
         index: usize,
@@ -161,13 +159,13 @@ impl Archives {
         self.decompress_mod(index, &entry, target)
     }
 
-    /// The file table entry of one open mod archive for `want`
+    // The file table entry of one open mod archive for `want`
     fn mod_entry(&self, index: usize, want: &str) -> Option<FileTableEntry> {
         let mod_pak = self.mod_paks.get(index)?.as_ref()?;
         find_entry(&mod_pak.table, want)
     }
 
-    /// Decompress one entry out of one open mod archive
+    // Decompress one entry out of one open mod archive
     fn decompress_mod(
         &mut self,
         index: usize,
@@ -197,11 +195,10 @@ impl Archives {
         self.read_from_game(pak, target, &want)
     }
 
-    /// Search the mod archives for one file, highest priority first: a mod ships replacements for files
-    /// the game also has, and a DDS a modded visual points at has to come out of the mod.
-    ///
-    /// A mod archive that cannot be opened is skipped rather than reported: it must not keep the game's
-    /// own files from being read.
+    // Search the mod archives for one file, highest priority first: a mod ships replacements for files the
+    // game also has, and a DDS a modded visual points at has to come out of the mod. A mod archive that
+    // cannot be opened is skipped rather than reported, so it cannot keep the game's own files from being
+    // read.
     fn read_from_mods(&mut self, target: &str, want: &str) -> Option<Vec<u8>> {
         for index in (0..self.mod_paths.len()).rev() {
             match self.read_mod(index, target, want) {
@@ -213,7 +210,7 @@ impl Archives {
         None
     }
 
-    /// Read one file out of the archive named by kind; that archive is opened first when it is not
+    // Read one file out of the archive named by kind; that archive is opened first when it is not
     fn read_from_game(&mut self, pak: Pak, target: &str, want: &str) -> Result<Vec<u8>, String> {
         self.ensure(pak)?;
         let entry = self.game_entry(pak, target, want)?;
@@ -227,7 +224,7 @@ impl Archives {
             .map_err(|e| format!("Failed to decompress {target}: {e}"))
     }
 
-    /// The file table entry of one open game archive for `want`
+    // The file table entry of one open game archive for `want`
     fn game_entry(&mut self, pak: Pak, target: &str, want: &str) -> Result<FileTableEntry, String> {
         self.tables
             .get(&pak)

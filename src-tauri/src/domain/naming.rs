@@ -1,11 +1,7 @@
 //! How a name becomes a file name: what an exported artifact may be called on disk, what a virtual
 //! texture layer is called, and which GTS file belongs to a page file.
-//!
-//! These are naming conventions rather than archive work: each one takes a string and gives a string
-//! back, with no file ever touched. `crate::infrastructure::export` and `virtual_textures.rs` are the
-//! ones that write.
 
-/// Sanitize a file/directory name: strip Windows-forbidden and control characters, cap the length
+// Sanitize a file/directory name: strip Windows-forbidden and control characters, cap the length
 pub(crate) fn sanitize_file_name(raw: &str) -> String {
     let cleaned: String = raw
         .chars()
@@ -21,8 +17,8 @@ pub(crate) fn sanitize_file_name(raw: &str) -> String {
     }
 }
 
-/// Windows-forbidden and path-separating characters become underscores, so nothing here can name a
-/// file outside the directory it is written to
+// Windows-forbidden and path-separating characters become underscores, so nothing here can name a
+// file outside the directory it is written to
 fn replace_forbidden(c: char) -> char {
     if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
         '_'
@@ -31,9 +27,8 @@ fn replace_forbidden(c: char) -> char {
     }
 }
 
-/// The name a layer takes in the export. The extractor calls the base layer `BaseMap` while the engine
-/// calls it Albedo — the export follows the engine, so `BaseMap` → `Albedo`; the other two layers just
-/// drop the trailing `Map` (`NormalMap` → `Normal`)
+// The extractor calls the base layer `BaseMap` while the engine calls it Albedo; the export follows
+// the engine, and the other two layers just drop the trailing `Map` (`NormalMap` → `Normal`)
 pub(crate) fn export_layer_name(layer: &str) -> &str {
     match layer {
         "BaseMap" => "Albedo",
@@ -41,16 +36,13 @@ pub(crate) fn export_layer_name(layer: &str) -> &str {
     }
 }
 
-/// GTP path → GTS path: strip the trailing `_<32 hex digits>` and swap the extension
-/// (`Generated/Public/VirtualTextures/Albedo_Normal_Physical_5_<hash>.gtp` →
-/// `Generated/Public/VirtualTextures/Albedo_Normal_Physical_5.gts`)
-///
-/// What remains is the tile set index, not a per-file name: every page file of that set (same index,
-/// its own hash) derives the same GTS, which is how one GTS comes to serve many GTPs. maclarian
-/// derives the name the same way (`virtual_texture/utils.rs::find_gts_path`).
+// GTP path → GTS path: strip the trailing `_<32 hex digits>` and swap the extension
+// (`Generated/Public/VirtualTextures/Albedo_Normal_Physical_5_<hash>.gtp` →
+// `Generated/Public/VirtualTextures/Albedo_Normal_Physical_5.gts`). What remains is the tile set index,
+// so every page file of that set derives the same GTS, which is how one GTS comes to serve many GTPs
 pub(crate) fn derive_gts_path(gtp_path: &str) -> String {
-    // The directory is split off first and put back at the end: only the file name loses its hash
-    // suffix, while the directory has to survive into the result (a GTS sits beside its page file)
+    // Split off first and put back at the end: only the file name loses its hash suffix, while the
+    // directory has to survive into the result (a GTS sits beside its page file)
     let (dir, name) = gtp_path.rsplit_once('/').unwrap_or(("", gtp_path));
     let stem = strip_hash_suffix(strip_gtp_extension(name));
 
@@ -61,16 +53,15 @@ pub(crate) fn derive_gts_path(gtp_path: &str) -> String {
     }
 }
 
-/// A page file name without its extension; `name` itself when it ends in neither spelling
+// A page file name without its extension; `name` itself when it ends in neither spelling
 fn strip_gtp_extension(name: &str) -> &str {
     name.strip_suffix(".gtp")
         .or_else(|| name.strip_suffix(".GTP"))
         .unwrap_or(name)
 }
 
-/// A tile set index without its trailing `_<32 hex digits>`: that suffix is what makes a page file
-/// name unique, and only the index it belongs to names the GTS. Any other trailing word is part of
-/// the index and stays.
+// A tile set index without its trailing `_<32 hex digits>`: only the index names the GTS, so any other
+// trailing word is part of it and stays
 fn strip_hash_suffix(stem: &str) -> &str {
     let stripped = stem.rfind('_').filter(|pos| {
         let suffix = &stem[pos + 1..];

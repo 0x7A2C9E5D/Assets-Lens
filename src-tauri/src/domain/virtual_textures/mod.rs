@@ -1,17 +1,13 @@
 //! Virtual textures: the row an asset's list carries, and the page files behind it.
 //!
-//! Page files: stage the page file a `GtpMatch` names plus the GTS that covers it.
-//!
-//! A GTS is not the companion of one-page file: it is the metadata of a whole tile set
-//! (`<Base>_<index>.gts`), listing every page file of that set, so one GTS serves many GTPs. The
-//! extractor resolves a page file by looking its hash up in the GTS metadata, which is what makes
-//! trying several candidates safe — a GTS from another tile set fails instead of exporting the
+//! A GTS is the metadata of a whole tile set (`<Base>_<index>.gts`), not the companion of one page
+//! file, so the extractor resolves a page file by looking its hash up in the GTS metadata — trying
+//! several candidates is safe, because a GTS from another tile set fails instead of exporting the
 //! wrong pixels.
 //!
-//! Both live inside the archives as raw blocks, while `VirtualTextureExtractor` takes file paths, so
-//! they are written to a staging directory first. Finding them is archive work rather than export
-//! work: this module only produces paths, and `infrastructure::export` turns them into exported
-//! artifacts.
+//! Both live inside the archives as raw blocks while `VirtualTextureExtractor` takes file paths, so
+//! they are staged to a directory first. Finding them is archive work: this module only produces
+//! paths, and `infrastructure::export` turns them into artifacts.
 
 use std::collections::HashMap;
 
@@ -27,39 +23,30 @@ mod staging;
 pub use page_files::{page_file_size, PageFileSizes};
 pub use staging::stage_sources;
 
-/// Streaming virtual texture reference (GTex).
-///
-/// A row of the asset's virtual texture list (the detail panel), and — copied — the entry the export
-/// manifest material binding it carries, which is why it is `Clone`. Its `width` / `height` are filled
-/// by whoever holds the archives, for the detail rows and for the entries inside a material alike (see
-/// `export::fill_vt_sizes`).
+/// Streaming virtual texture reference (GTex): a row of the asset's virtual texture list, and —
+/// copied — the entry a material binding of the export manifest carries, which is why it is `Clone`.
+/// Its `width` / `height` are filled by whoever holds the archives (`export::fill_vt_sizes`).
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VirtualTextureSummary {
     pub id: String,
     pub name: String,
-    /// Mod providing this virtual texture; absent when it comes from the game (see
-    /// `domain::source::ModSources`)
+    /// Mod providing this virtual texture; absent for the game's own
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub hash: String,
     /// Page file (`.gtp`) inside its archive; empty when no lookup was run or nothing matched
     pub path: String,
-    /// Pixel size of this page file, read out of its tile set's GTS — by `get_visual` for a detail
-    /// row and by `export::fill_vt_sizes` for the export manifest, both off the same
-    /// `virtual_textures::page_file_size`. It is the same box the extractor writes as its DDS.
+    /// Pixel size of this page file, read out of its tile set's GTS through
+    /// `virtual_textures::page_file_size`; it is the same box the extractor writes as its DDS.
     /// `None` when the hash resolved to no page file, that GTS could not be parsed, or the caller
     /// does not read the GTS at all (the row then renders without a size)
     pub width: Option<u32>,
     pub height: Option<u32>,
     /// Parameter the binding fills (e.g. `virtualtexture`), read off the asset's materials — it
-    /// belongs to the binding, not to the resource. Absent from the JSON while unset: the names come
-    /// from the materials' templates (see `domain::material::fill_virtual_texture_parameters`), which a detail view
-    /// and an export both read up front (`application::commands::ensure_virtual_texture_parameters`).
-    ///
-    /// One name per row, so an asset that binds a virtual texture through several materials with
-    /// different parameters shows only the first here; each material states its own name in its
-    /// `bindings` (see `material::fill_material_bindings`).
+    /// belongs to the binding, not to the resource. One name per row, so an asset binding the same
+    /// virtual texture through several materials shows only the first here; each material states its
+    /// own name in its `bindings`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameter_name: Option<String>,
 }
@@ -101,15 +88,9 @@ pub fn match_for_hash<'a>(matches: &'a [GtpMatch], hash: &str) -> Option<&'a Gtp
         .find(|matched| matched.gtex_hash.eq_ignore_ascii_case(hash))
 }
 
-/// The virtual textures of `value`, in the asset's own order, each carrying the parameter the binding
-/// fills.
-///
-/// The virtual texture list of the detail panel, and the source the export manifest builds its material
-/// rows from (see `material::manifest_materials`). The parameter name is only ever filled once the caller
-/// resolved it — the templates carrying it are read by a detail view and by an export
-/// (`application::commands::ensure_virtual_texture_parameters`), not by this function — so a row
-/// stays without one until then. Which material binds a virtual texture is likewise stated on the
-/// material rows (see `material::fill_material_bindings`).
+/// The virtual textures of `value`, in the asset's own order: the virtual texture list of the detail
+/// panel, and the source the export manifest builds its material rows from. The parameter name stays
+/// empty until the caller resolves it, since the templates carrying it are not read here.
 pub fn virtual_texture_summaries(
     value: &VisualAsset,
     matches: &[GtpMatch],
@@ -123,8 +104,8 @@ pub fn virtual_texture_summaries(
         .collect()
 }
 
-/// One row of the virtual texture list: the resource with its page file, labeled with the mod that
-/// provides it and the parameter the asset's materials bind it with
+// One row of the virtual texture list: the resource with its page file, labeled with the mod that
+// provides it and the parameter the asset's materials bind it with
 fn virtual_texture_summary(
     vt: &VirtualTextureRef,
     value: &VisualAsset,

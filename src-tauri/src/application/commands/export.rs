@@ -18,15 +18,15 @@ use crate::domain::source::ModSources;
 use crate::infrastructure::archives::Archives;
 use crate::infrastructure::export::{run_export, ExportContext};
 
-/// The material cache of one asset, the mod sources its rows are labeled with, and the pool the
-/// archive reads go through
+// The material cache of one asset, the mod sources its rows are labeled with, and the pool the archive
+// reads go through
 type ExportAssets = (
     HashMap<String, MaterialInfo>,
     ModSources,
     Arc<Mutex<Archives>>,
 );
 
-/// Everything one export needs, owned: the export itself runs with the state lock released.
+// Everything one export needs, owned: the export itself runs with the state lock released
 struct ExportInputs {
     asset: VisualAsset,
     materials: HashMap<String, MaterialInfo>,
@@ -36,8 +36,8 @@ struct ExportInputs {
 }
 
 impl ExportInputs {
-    /// `subject` is the asset and the page files resolved for it, `assets` the material cache and the
-    /// sources the manifest names, taken together while the state was held
+    // `subject` is the asset and the page files resolved for it, `assets` the material cache and the
+    // sources the manifest names, taken together while the state was held
     fn new(subject: (VisualAsset, Vec<GtpMatch>), assets: ExportAssets) -> Self {
         let (asset, vt_matches) = subject;
         let (materials, sources, pool) = assets;
@@ -54,8 +54,8 @@ impl ExportInputs {
 /// Export a single visual asset: GR2 → GLB (optionally embedded textures) + textures +
 /// virtual textures + asset.json.
 ///
-/// Reading PAKs, converting and writing to disk are all slow, so this runs inside spawn_blocking;
-/// the state lock is released as soon as the needed data has been fetched.
+/// Reading PAKs, converting and writing to disk are all slow, so this runs inside spawn_blocking; the
+/// state lock is released as soon as the needed data has been fetched.
 #[tauri::command]
 pub async fn export_visual_asset(
     app: AppHandle,
@@ -73,7 +73,7 @@ pub async fn export_visual_asset(
         .map_err(|err| format!("Export task terminated unexpectedly: {err}"))?
 }
 
-/// The directory the export writes into, checked before the task is spawned
+// The directory the export writes into, checked before the task is spawned
 fn export_root(dest_dir: &str) -> Result<PathBuf, String> {
     let root = PathBuf::from(dest_dir);
     if !root.exists() {
@@ -82,7 +82,7 @@ fn export_root(dest_dir: &str) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-/// Take the inputs the export needs and run it over them, both off the main thread
+// Take the inputs the export needs and run it over them, both off the main thread
 fn export_job(
     state: &SharedState,
     id: &str,
@@ -94,12 +94,12 @@ fn export_job(
     export_with(&inputs, dest_root, options, on_progress)
 }
 
-/// The inputs of one export, taken while the state lock is held.
-///
-/// The manifest states the parameter of every virtual texture binding, both on the material rows and
-/// on the virtual texture rows. Those names are not in the parsed database, so they are read off this
-/// asset's material templates first — and only while some binding of this asset has no name yet (see
-/// `ensure_virtual_texture_parameters`).
+// The inputs of one export, taken while the state lock is held.
+//
+// The manifest states the parameter of every virtual texture binding, on the material rows and on the
+// virtual texture rows alike. Those names are not in the parsed database, so they are read off this
+// asset's material templates first — and only while some binding of this asset has no name yet (see
+// `ensure_virtual_texture_parameters`).
 fn export_inputs(
     state: &SharedState,
     id: &str,
@@ -109,7 +109,7 @@ fn export_inputs(
     take_export_inputs(state, id, options)
 }
 
-/// The inputs read under the state lock, released again before anything is written
+// The inputs read under the state lock, released again before anything is written
 fn take_export_inputs(
     state: &SharedState,
     id: &str,
@@ -121,7 +121,7 @@ fn take_export_inputs(
     Ok(ExportInputs::new(subject, assets))
 }
 
-/// The asset of `id` and the page files resolved for it
+// The asset of `id` and the page files resolved for it
 fn export_subject(
     st: &mut AppState,
     id: &str,
@@ -132,7 +132,7 @@ fn export_subject(
     Ok((asset, vt_matches))
 }
 
-/// The asset `id` names, cloned out of the index
+// The asset `id` names, cloned out of the index
 fn asset_of(st: &AppState, id: &str) -> Result<VisualAsset, String> {
     st.merged_db
         .as_ref()
@@ -141,8 +141,8 @@ fn asset_of(st: &AppState, id: &str) -> Result<VisualAsset, String> {
         .ok_or_else(|| NOT_BUILT.to_string())
 }
 
-/// The page files resolved for `asset`, looked up only when virtual textures are part of the export:
-/// with an empty list the manifest rows simply carry no path and no archive
+// The page files resolved for `asset`, looked up only when virtual textures are part of the export: with
+// an empty list the manifest rows simply carry no path and no archive
 fn page_files(st: &mut AppState, asset: &VisualAsset, options: &ExportOptions) -> Vec<GtpMatch> {
     if !options.texture_format.is_export() {
         return Vec::new();
@@ -150,11 +150,11 @@ fn page_files(st: &mut AppState, asset: &VisualAsset, options: &ExportOptions) -
     st.vt_matches(&vt_hashes(asset))
 }
 
-/// The material cache entries of `asset`, the mod sources the manifest labels every row with, and the
-/// archive pool the reads share
+// The material cache entries of `asset`, the mod sources the manifest labels every row with, and the
+// archive pool the reads share
 fn export_assets(st: &mut AppState, asset: &VisualAsset) -> Result<ExportAssets, String> {
-    // Cut out of the cache while the state is held: the manifest names the materials of the asset,
-    // and the cache they live in is not handed to the export
+    // Cut out of the cache while the state is held: the manifest names the materials of the asset, and
+    // the cache they live in is not handed to the export
     let materials = materials_of(&asset.material_ids, &st.materials);
     // Taken whole: unlike the material cache it only holds the resources the mods provide, and the
     // manifest labels every row of the asset with it
@@ -163,7 +163,7 @@ fn export_assets(st: &mut AppState, asset: &VisualAsset) -> Result<ExportAssets,
     Ok((materials, sources, st.pool()?))
 }
 
-/// Run the export over the taken inputs, reporting progress through the channel
+// Run the export over the taken inputs, reporting progress through the channel
 fn export_with(
     inputs: &ExportInputs,
     dest_root: &Path,
@@ -175,7 +175,7 @@ fn export_with(
     })
 }
 
-/// The borrow `run_export` takes of one export's inputs
+// The borrow `run_export` takes of one export's inputs
 fn export_context(inputs: &ExportInputs) -> ExportContext<'_> {
     ExportContext {
         asset: &inputs.asset,

@@ -5,11 +5,8 @@ use serde::Serialize;
 
 use crate::domain::source::{source_of, ModSources};
 
-/// Texture reference (DDS).
-///
-/// A row of the asset's texture list (the detail panel), and — copied — the entry the export manifest
-/// material binding it carries: the resource stated in full (name, path, size, parameter) rather than
-/// a GUID to look up. Hence, `Clone`.
+/// A row of the asset's texture list: the detail panel's own, and — copied — the entry an export
+/// manifest's material binding carries
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureSummary {
@@ -29,7 +26,7 @@ impl From<&TextureRef> for TextureSummary {
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
-            // Settled by the caller, which is the only place holding the source map
+            // Settled by the caller, the only place holding the source map
             source: None,
             path: value.dds_path.clone(),
             width: value.width,
@@ -39,11 +36,9 @@ impl From<&TextureRef> for TextureSummary {
     }
 }
 
-/// The textures of `value`, in the asset's own order.
-///
-/// The texture list of the detail panel, and the source the export manifest builds its material rows
-/// from (see `material::manifest_materials`). Which material binds a texture is stated the other way
-/// round, on the material rows (see `material::fill_material_bindings`).
+/// The textures of `value`, in the asset's own order: the detail panel's texture list, and the source
+/// the export manifest builds its material rows from. Which material binds a texture is stated on the
+/// material rows instead (see `material::fill_material_bindings`).
 pub fn texture_summaries(value: &VisualAsset, sources: &ModSources) -> Vec<TextureSummary> {
     value
         .textures

@@ -14,12 +14,11 @@ use super::{ModAssets, ModMaterial, TextureParam};
 ///
 /// The order is what makes the merge work: the mod's own textures and virtual textures are inserted
 /// first, so the references resolved below can reach them; then each visual is resolved against the
-/// merged view — a material the mod ships, or one the game already had, because a mod visual
-/// routinely binds the game's own materials and those only exist in the cache.
+/// merged view — a material the mod ships, or one the game already had, because a mod visual routinely
+/// binds the game's own materials, which only exist in the cache.
 ///
 /// A resource the mod redefines overrides the game's by GUID, and every GUID the mod provides is
-/// recorded in `sources`, which is what the UI and `asset.json` label it with. Everything the game
-/// provides stays absent from `sources`, i.e. reads as the base game.
+/// recorded in `sources`, which is what the UI and `asset.json` label it with.
 pub fn merge_into(
     db: &mut MergedDatabase,
     assets: ModAssets,
@@ -32,7 +31,7 @@ pub fn merge_into(
     insert_materials(materials, sources, &assets.name, assets.materials);
 }
 
-/// Insert the mod's own textures by GUID, recording each one as provided by `name`
+// Insert the mod's own textures by GUID, recording each one as provided by `name`
 fn insert_textures(
     db: &mut MergedDatabase,
     sources: &mut ModSources,
@@ -45,7 +44,7 @@ fn insert_textures(
     }
 }
 
-/// Insert the mod's own virtual textures by GUID, recording each one as provided by `name`
+// Insert the mod's own virtual textures by GUID, recording each one as provided by `name`
 fn insert_virtual_textures(
     db: &mut MergedDatabase,
     sources: &mut ModSources,
@@ -58,8 +57,7 @@ fn insert_virtual_textures(
     }
 }
 
-/// Insert the mod's visuals, resolving the references of each one against the merged view first: a
-/// material the mod ships, or one the game already had
+// Insert the mod's visuals, resolving the references of each one against the merged view first
 fn insert_visuals(
     db: &mut MergedDatabase,
     sources: &mut ModSources,
@@ -75,8 +73,8 @@ fn insert_visuals(
     }
 }
 
-/// Index one resolved visual: by GR2 file name (appended rather than replaced, one GR2 can back
-/// several visuals), by name, and by id
+// Index one resolved visual: by GR2 file name (appended rather than replaced, one GR2 can back several
+// visuals), by name, and by id
 fn insert_visual(db: &mut MergedDatabase, visual: VisualAsset) {
     let gr2_name = gr2_file_name(&visual);
     if !gr2_name.is_empty() {
@@ -89,7 +87,7 @@ fn insert_visual(db: &mut MergedDatabase, visual: VisualAsset) {
     db.visuals_by_id.insert(visual.id.clone(), visual);
 }
 
-/// File name of a visual's GR2 path; empty when the path names no file
+// File name of a visual's GR2 path; empty when the path names no file
 fn gr2_file_name(visual: &VisualAsset) -> String {
     Path::new(&visual.gr2_path)
         .file_name()
@@ -97,7 +95,7 @@ fn gr2_file_name(visual: &VisualAsset) -> String {
         .unwrap_or_default()
 }
 
-/// Fold the mod's own materials into the cache, recording each one as provided by `name`
+// Fold the mod's own materials into the cache, recording each one as provided by `name`
 fn insert_materials(
     materials: &mut HashMap<String, MaterialInfo>,
     sources: &mut ModSources,
@@ -110,7 +108,7 @@ fn insert_materials(
     }
 }
 
-/// The cache entry of one mod material
+// The cache entry of one mod material
 fn material_info(material: ModMaterial) -> MaterialInfo {
     MaterialInfo {
         name: material.name,
@@ -120,14 +118,14 @@ fn material_info(material: ModMaterial) -> MaterialInfo {
     }
 }
 
-/// The texture GUIDs of one material's texture parameters, in parameter order
+// The texture GUIDs of one material's texture parameters, in parameter order
 fn texture_ids_of(textures: Vec<TextureParam>) -> Vec<String> {
     textures.into_iter().map(|param| param.texture_id).collect()
 }
 
-/// The virtual texture bindings of one material. Names stay empty, exactly as they do for the game's
-/// own materials read out of the database: the parameter of a binding belongs to the material's
-/// template and is read per detail view (see `domain::material::fill_virtual_texture_parameters`)
+// The virtual texture bindings of one material. Names stay empty, exactly as they do for the game's own
+// materials read out of the database: the parameter of a binding belongs to the material's template and
+// is read per detail view (see `domain::material::fill_virtual_texture_parameters`)
 fn bindings_of(ids: Vec<String>) -> Vec<VirtualTextureBinding> {
     ids.into_iter()
         .map(|id| VirtualTextureBinding {
@@ -137,13 +135,12 @@ fn bindings_of(ids: Vec<String>) -> Vec<VirtualTextureBinding> {
         .collect()
 }
 
-/// Resolve the texture and virtual texture references of one mod visual, in the order maclarian
-/// resolves them: through each material the visual names, keeping the first binding of a resource and
-/// dropping the ones that name a resource the index does not hold.
-///
-/// A material the mod ships brings the parameter name of every binding. A material the game already
-/// had does not: the cache keeps GUIDs only (see `application::state::extract_materials`), so those
-/// texture rows come out without a parameter — they are still listed under their material.
+// Resolve the texture and virtual texture references of one mod visual, in the order maclarian resolves
+// them: through each material the visual names, keeping the first binding of a resource and dropping the
+// ones that name a resource the index does not hold.
+//
+// A material the mod ships brings the parameter name of every binding; a material the game already had
+// does not, because the cache keeps GUIDs only (see `application::state::extract_materials`).
 fn resolve(
     visual: &mut VisualAsset,
     mod_materials: &HashMap<String, ModMaterial>,
@@ -158,7 +155,7 @@ fn resolve(
     visual.virtual_textures = rows.virtual_textures;
 }
 
-/// The resource rows one visual resolves to
+// The resource rows one visual resolves to
 #[derive(Default)]
 struct ResolvedRows {
     textures: Vec<TextureRef>,
@@ -166,8 +163,8 @@ struct ResolvedRows {
 }
 
 impl ResolvedRows {
-    /// Resolve one material of the visual: from the mod when it ships it, from the cache otherwise.
-    /// A material neither of them knows contributes nothing.
+    // Resolve one material of the visual: from the mod when it ships it, from the cache otherwise. A
+    // material neither of them knows contributes nothing.
     fn push_material(
         &mut self,
         db: &MergedDatabase,
@@ -182,7 +179,7 @@ impl ResolvedRows {
         }
     }
 
-    /// The rows of a material the mod ships, each carrying the parameter name of its binding
+    // The rows of a material the mod ships, each carrying the parameter name of its binding
     fn push_mod_material(&mut self, db: &MergedDatabase, material: &ModMaterial) {
         for param in &material.textures {
             push_texture(&mut self.textures, &db.textures, &param.texture_id, &param.parameter_name);
@@ -192,8 +189,8 @@ impl ResolvedRows {
         }
     }
 
-    /// The rows of a material the game already had: the cache keeps GUIDs only, so its texture rows
-    /// come out without a parameter (they are still listed under their material)
+    // The rows of a material the game already had: the cache keeps GUIDs only, so its texture rows come out
+    // without a parameter (they are still listed under their material)
     fn push_cached_material(&mut self, db: &MergedDatabase, material: &MaterialInfo) {
         for texture_id in &material.texture_ids {
             push_texture(&mut self.textures, &db.textures, texture_id, "");
@@ -204,8 +201,8 @@ impl ResolvedRows {
     }
 }
 
-/// Add one bound texture to a visual's rows, unless a material already contributed it (two materials
-/// of one mesh may share a texture)
+// Add one bound texture to a visual's rows, unless a material already contributed it (two materials of
+// one mesh may share a texture)
 fn push_texture(
     rows: &mut Vec<TextureRef>,
     textures: &HashMap<String, TextureRef>,
@@ -225,7 +222,7 @@ fn push_texture(
     rows.push(row);
 }
 
-/// Add one bound virtual texture to a visual's rows, unless a material already contributed it
+// Add one bound virtual texture to a visual's rows, unless a material already contributed it
 fn push_virtual_texture(
     rows: &mut Vec<VirtualTextureRef>,
     virtual_textures: &HashMap<String, VirtualTextureRef>,

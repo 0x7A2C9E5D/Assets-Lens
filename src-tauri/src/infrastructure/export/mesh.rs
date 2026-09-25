@@ -12,8 +12,8 @@ use super::{ExportOutput, PHASE_MODEL, PHASE_MODEL_RAW};
 use crate::domain::export::MeshFormat;
 use crate::infrastructure::archives::{lock_pool, Archives, Pak};
 
-/// Read the mesh and write it into the export directory. Unlike a texture, the mesh is not
-/// optional: any failure here aborts the whole export instead of recording a warning
+// Read the mesh and write it into the export directory; unlike a texture the mesh is not optional,
+// so any failure here aborts the whole export instead of recording a warning
 pub(super) fn export_mesh(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
@@ -26,7 +26,7 @@ pub(super) fn export_mesh(
     write_mesh(&mesh_bytes, plan, output)
 }
 
-/// Count the mesh as the current item, under the phase its format belongs to
+// Count the mesh as the current item, under the phase its format belongs to
 fn report_mesh_start(
     asset: &VisualAsset,
     plan: &ExportPlan<'_>,
@@ -40,7 +40,7 @@ fn report_mesh_start(
     progress.item(phase, Some(asset.gr2_path.clone()));
 }
 
-/// Write the mesh bytes into the export directory and record the artifact
+// Write the mesh bytes into the export directory and record the artifact
 fn write_mesh(
     bytes: &[u8],
     plan: &ExportPlan<'_>,
@@ -53,7 +53,7 @@ fn write_mesh(
     Ok(())
 }
 
-/// Pull the mesh bytes out of the archives, converted to GLB unless the raw GR2 was asked for
+// Pull the mesh bytes out of the archives, converted to GLB unless the raw GR2 was asked for
 pub(super) fn read_mesh_bytes(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,

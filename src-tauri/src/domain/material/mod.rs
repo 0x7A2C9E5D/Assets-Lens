@@ -15,11 +15,9 @@ pub use summary::{material_summaries, MaterialSummary};
 /// One material of the built database: the name that makes its GUID readable, plus the resources it
 /// binds (GUIDs, in parameter order).
 ///
-/// `Clone` so a command can hand the entries of one asset to an export task without copying the whole
-/// cache (see `materials_of`). Serialized because the whole map is persisted to disk with the
-/// database it came out of (`crate::application::cache`), which is what saves a build on the next
-/// launch: the names are not in the database itself (see
-/// `crate::application::state::extract_materials`), so they have to travel with it.
+/// `Clone` so a command can hand one asset's entries to an export task without copying the whole
+/// cache. Serialized because the whole map is persisted next to the database it came out of
+/// (`crate::application::cache`) — the names are not in the database itself, so they travel with it
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MaterialInfo {
     /// Human-readable name from `MaterialBank` (e.g. `BEAR_Body_A`); empty when the resource has none
@@ -29,8 +27,7 @@ pub struct MaterialInfo {
     /// GUIDs of the textures this material binds
     pub texture_ids: Vec<String>,
     /// The virtual textures this material binds. An asset's virtual texture list is the union over
-    /// its materials, so this is what tells those rows which material they came from: a virtual
-    /// texture is only ever reachable through the material that parameterizes it.
+    /// its materials, so this is what tells those rows which material they came from.
     pub virtual_textures: Vec<VirtualTextureBinding>,
 }
 
@@ -39,19 +36,17 @@ pub struct MaterialInfo {
 pub struct VirtualTextureBinding {
     /// GUID of the virtual texture resource (`VirtualTextureBank`)
     pub id: String,
-    /// `ParameterName` of the binding node (e.g. `virtualtexture`, `overlayvirtualtexture`). Empty
-    /// until a detail view resolves it: maclarian keeps only the GUID of a binding
-    /// (see `virtual_texture_params`), so the name is read off the material's template on demand
-    /// (`application::commands::ensure_virtual_texture_parameters`) and stays empty only until then.
+    /// `ParameterName` of the binding node (e.g. `virtualtexture`). Empty until a detail view
+    /// resolves it: maclarian keeps only the GUID of a binding, so the name is read off the
+    /// material's template on demand (`ensure_virtual_texture_parameters`)
     pub parameter_name: String,
 }
 
 /// Fill in the parameter name of every virtual texture binding from the material's own template.
 ///
-/// The names are read separately from the database — maclarian drops them, and reading them is a
-/// per-detail-view job (see `virtual_texture_params`) — so the two are joined here. Bindings and
-/// names are paired by position, which holds because both come out in document order. A material the
-/// reader did not reach keeps its empty names, and the panel then renders the chip without one.
+/// maclarian drops the names, so they are read separately (see `virtual_texture_params`) and joined
+/// here. Bindings and names are paired by position, which holds because both come out in document
+/// order. A material the reader did not reach keeps its empty names.
 pub fn fill_virtual_texture_parameters(
     materials: &mut HashMap<String, MaterialInfo>,
     parameters: &HashMap<String, Vec<String>>,
@@ -71,10 +66,9 @@ pub fn fill_virtual_texture_parameters(
 
 /// The entries of the material cache that `material_ids` reference, as an owned subset.
 ///
-/// A material row of the export manifest reads the resources it binds out of these entries (see
-/// `manifest_materials`), and the cache they live in is not handed to the export task
-/// — so the export takes the handful of entries it needs rather than the whole cache (one entry per
-/// material of the game, each holding its own texture lists).
+/// A material row of the export manifest reads the resources it binds out of these entries, and the
+/// whole cache stays behind — one entry per material of the game would be far too much to hand over
+/// (`manifest_materials`).
 pub fn materials_of(
     material_ids: &[String],
     materials: &HashMap<String, MaterialInfo>,
@@ -89,21 +83,17 @@ pub fn materials_of(
         .collect()
 }
 
-/// The asset's rows indexed by GUID, so a material's references can be looked up in them without a
-/// scan. Both a material row of the detail panel and one of the export manifest join on the GUID,
-/// which is what keeps two same-named materials apart.
-///
-/// Keyed by `&str` rather than `String`: the rows outlive the map, and the ids being looked up are
-/// only ever compared.
+// The asset's rows indexed by GUID, so a material's references can be looked up without a scan. Both
+// a material row of the detail panel and one of the export manifest join on the GUID, which is what
+// keeps two same-named materials apart. Keyed by `&str` because the rows outlive the map and the ids
+// are only ever compared.
 fn rows_by_id<'a, T>(rows: &'a [T], id_of: impl Fn(&'a T) -> &'a str) -> HashMap<&'a str, &'a T> {
     rows.iter().map(|row| (id_of(row), row)).collect()
 }
 
-/// Parameter the asset's materials bind the virtual texture `id` with.
-///
-/// The name belongs to the binding rather than to the resource, so it is taken from the first
-/// material that binds it — in the shipped data a virtual texture is bound once and with the same
-/// name everywhere, which is what makes one name per row enough.
+// Parameter the asset's materials bind the virtual texture `id` with. The name belongs to the binding
+// rather than to the resource, so it is taken from the first material that binds it — in the shipped
+// data a virtual texture is bound once and with the same name everywhere.
 pub(crate) fn virtual_texture_parameter(
     id: &str,
     material_ids: &[String],

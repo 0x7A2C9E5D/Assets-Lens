@@ -14,10 +14,8 @@ use super::ModAssets;
 /// Read one mod archive into the resources it contributes.
 ///
 /// A file that fails to parse is skipped with a note: a mod is third-party data, and one unreadable
-/// bank must not cost the whole build.
-///
-/// Only the module's bank folders are walked (see `bank_dir`), and they are read one directory at a
-/// time so a `_merged.lsf` can stand in for the files beside it.
+/// bank must not cost the whole build. Only the module's bank folders are walked (see `bank_dir`), one
+/// directory at a time, so a `_merged.lsf` can stand in for the files beside it.
 pub fn read_mod(archives: &mut Archives, index: usize) -> ModAssets {
     let stem = archives.mod_name(index);
     let Some(paths) = mod_paths(archives, index, &stem) else {
@@ -32,7 +30,7 @@ pub fn read_mod(archives: &mut Archives, index: usize) -> ModAssets {
     assets
 }
 
-/// The archive entries of one mod, or `None` — reported — when its file table cannot be listed
+// The archive entries of one mod, or `None` — reported — when its file table cannot be listed
 fn mod_paths(archives: &mut Archives, index: usize, stem: &str) -> Option<Vec<String>> {
     match archives.list_mod(index) {
         Ok(paths) => Some(paths),
@@ -43,7 +41,7 @@ fn mod_paths(archives: &mut Archives, index: usize, stem: &str) -> Option<Vec<St
     }
 }
 
-/// The bank files of one mod, grouped one directory at a time and in directory order
+// The bank files of one mod, grouped one directory at a time and in directory order
 fn bank_files(paths: &[String]) -> Vec<&str> {
     let mut banks: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for path in paths {
@@ -55,9 +53,9 @@ fn bank_files(paths: &[String]) -> Vec<&str> {
     banks.into_values().flat_map(without_merged_siblings).collect()
 }
 
-/// One bank directory's files, with the `.lsf` banks a `_merged.lsf` beside them stands for dropped:
-/// that file already holds every one of them. `.lsx` banks stay, the merged file accounts for the
-/// `.lsf` ones only.
+// One bank directory's files, with the `.lsf` banks a `_merged.lsf` beside them stands for dropped:
+// that file already holds every one of them. `.lsx` banks stay, the merged file accounts for the
+// `.lsf` ones only.
 fn without_merged_siblings(mut files: Vec<&str>) -> Vec<&str> {
     if files.iter().any(|path| path.ends_with("_merged.lsf")) {
         files.retain(|path| path.ends_with("_merged.lsf") || path.ends_with(".lsx"));
@@ -65,8 +63,8 @@ fn without_merged_siblings(mut files: Vec<&str>) -> Vec<&str> {
     files
 }
 
-/// Read every indexed bank region of one file into `assets`; a region that carries no indexed
-/// resource is skipped
+// Read every indexed bank region of one file into `assets`; a region that carries no indexed
+// resource is skipped
 fn read_banks(archives: &mut Archives, index: usize, path: &str, assets: &mut ModAssets) {
     let Some(lsx) = read_bank(archives, index, path) else {
         return;
@@ -84,20 +82,17 @@ fn read_banks(archives: &mut Archives, index: usize, path: &str, assets: &mut Mo
     }
 }
 
-/// The bank directory an archive entry belongs to, or `None` when the entry is not a bank file.
-///
-/// Two things have to hold: the path sits under `Public/` and carries a `Content` folder, and a
-/// `[PAK]_<name>` folder appears in it. Neither has to be the file's own folder — the engine nests
-/// banks under the asset tree they belong to, so folders may sit between `Content` and `[PAK]_`, and
-/// a bank file may sit below `[PAK]_` in turn.
-///
-/// Both `.lsf` and `.lsx` banks are read: the editor emits either form, and both carry the same
-/// regions.
-///
-/// Everything else a module ships supplies no indexed resource: `RootTemplates` and `Tags` hold
-/// template and tag tables, `GUI` and the `Mods/<name>/` metadata live outside `Content` altogether.
-/// Rejecting them by path keeps those files from being parsed only for every region in them to be
-/// dropped.
+// The bank directory an archive entry belongs to, or `None` when the entry is not a bank file.
+//
+// Two things have to hold: the path sits under `Public/` and carries a `Content` folder, and a
+// `[PAK]_<name>` folder appears in it. Neither has to be the file's own folder — the engine nests banks
+// under the asset tree they belong to, so folders may sit between `Content` and `[PAK]_`, and a bank
+// file may sit below `[PAK]_` in turn. Both `.lsf` and `.lsx` banks are read: the editor emits either
+// form, and both carry the same regions.
+//
+// Everything else a module ships supplies no indexed resource: `RootTemplates` and `Tags` hold template
+// and tag tables, `GUI` and the `Mods/<name>/` metadata live outside `Content` altogether. Rejecting
+// them by path keeps those files from being parsed only for every region in them to be dropped.
 fn bank_dir(path: &str) -> Option<&str> {
     let (dir, file) = path.rsplit_once('/')?;
     if !matches!(file.rsplit('.').next(), Some("lsf" | "lsx")) {
@@ -113,8 +108,8 @@ fn bank_dir(path: &str) -> Option<&str> {
     (has_content && has_bank).then_some(dir)
 }
 
-/// Parse one bank file into an LSX document; a file that fails any step is skipped, leaving the mod's
-/// other banks unaffected.
+// Parse one bank file into an LSX document; a file that fails any step is skipped, leaving the mod's
+// other banks unaffected.
 pub(super) fn read_bank(archives: &mut Archives, index: usize, path: &str) -> Option<LsxDocument> {
     let bytes = mod_file_bytes(archives, index, path)?;
     let xml = bank_xml(path, &bytes)?;
@@ -123,7 +118,7 @@ pub(super) fn read_bank(archives: &mut Archives, index: usize, path: &str) -> Op
         .ok()
 }
 
-/// The bytes of one mod file, or `None` — reported — when that file cannot be read
+// The bytes of one mod file, or `None` — reported — when that file cannot be read
 fn mod_file_bytes(archives: &mut Archives, index: usize, path: &str) -> Option<Vec<u8>> {
     match archives.read_mod_file(index, path) {
         Ok(bytes) => Some(bytes),
@@ -134,10 +129,10 @@ fn mod_file_bytes(archives: &mut Archives, index: usize, path: &str) -> Option<V
     }
 }
 
-/// The XML of one bank file, or `None` — reported — when its own format cannot be read: a `.lsx`
-/// bank is XML already, a `.lsf` bank goes through maclarian's LSF reader and then its converter,
-/// which hands over the same document model. A file that fails any step is skipped, leaving the
-/// mod's other banks unaffected.
+// The XML of one bank file, or `None` — reported — when its own format cannot be read: a `.lsx` bank is
+// XML already, a `.lsf` bank goes through maclarian's LSF reader and then its converter, which hands
+// over the same document model. A file that fails any step is skipped, leaving the mod's other banks
+// unaffected.
 fn bank_xml(path: &str, bytes: &[u8]) -> Option<String> {
     if path.ends_with(".lsx") {
         return lsx_text(path, bytes);
@@ -148,18 +143,16 @@ fn bank_xml(path: &str, bytes: &[u8]) -> Option<String> {
         .ok()
 }
 
-/// One `.lsx` bank's text, or `None` — reported — when the bytes are not valid UTF-8
+// One `.lsx` bank's text, or `None` — reported — when the bytes are not valid UTF-8
 fn lsx_text(path: &str, bytes: &[u8]) -> Option<String> {
     String::from_utf8(bytes.to_vec())
         .map_err(|err| eprintln!("[maclarian] {path} is not readable as LSX: {err}"))
         .ok()
 }
 
-/// The `Resource` nodes of a bank region.
-///
-/// A per-resource bank file nests them under a node named after the bank (`VisualBank` → `Resource`),
-/// which is the shape maclarian reads out of a merged file; a region listing them directly is accepted
-/// as well.
+// The `Resource` nodes of a bank region: a per-resource bank file nests them under a node named after
+// the bank (`VisualBank` → `Resource`), which is the shape maclarian reads out of a merged file, and a
+// region listing them directly is accepted as well.
 pub(super) fn resource_nodes<'a>(region: &'a LsxRegion, bank: &str) -> Vec<&'a LsxNode> {
     let mut resources = Vec::new();
     for node in &region.nodes {
@@ -172,8 +165,8 @@ pub(super) fn resource_nodes<'a>(region: &'a LsxRegion, bank: &str) -> Vec<&'a L
     resources
 }
 
-/// Value of one attribute of a node; a node that does not carry it yields an empty string, which is
-/// what every caller below tests against
+// Value of one attribute of a node; a node that does not carry it yields an empty string, which is what
+// every caller tests against
 pub(super) fn attr(node: &LsxNode, id: &str) -> String {
     node.attributes
         .iter()

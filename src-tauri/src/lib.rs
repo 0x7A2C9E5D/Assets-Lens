@@ -14,17 +14,16 @@ use application::state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        // Opens the project's external links (GitHub / Nexus Mods) in the system browser
+        // Opens external links (GitHub / Nexus Mods) in the system browser
         .plugin(tauri_plugin_opener::init())
-        // The game directory is recorded by the backend itself (`settings`) and comes back with
-        // `restore_state`; the index built from it is persisted separately, and comes back with it
+        // Empty on purpose: the game directory and the persisted index come back through `restore_state`
         .manage(Arc::new(Mutex::new(AppState::new())))
         .invoke_handler(handlers())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
-/// Every command the frontend can invoke
+// Every command the frontend can invoke
 fn handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
     tauri::generate_handler![
         app_info,

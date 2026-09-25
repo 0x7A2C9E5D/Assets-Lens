@@ -16,17 +16,15 @@ use crate::domain::virtual_textures::VirtualTextureSummary;
 /// One material as `asset.json` lists it: the identity of a `MaterialSummary` plus the resources the
 /// material binds, each stated in full.
 ///
-/// A material row carries the asset's texture rows for its own resources, in binding order: each
-/// resource in full (name, path, size, parameter) rather than a GUID to look up, so a reader takes the
-/// resources of a material from one place instead of joining two lists by GUID. What a row of the
-/// detail panel states the other way round (its `bindings`) is left out here: a material containing
-/// its textures says that already.
+/// A row carries whole resource rows (name, path, size, parameter) instead of GUIDs to look up, so a
+/// reader takes the resources of a material from one place. The reverse statement of a detail row
+/// (`bindings`) is left out: a material containing its textures says that already.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportMaterial {
     pub id: String,
     pub name: String,
-    /// Mod providing this material; absent when it comes from the game (see `domain::source::ModSources`)
+    /// Mod providing this material; absent for the game's own
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub source_file: String,
@@ -39,11 +37,8 @@ pub struct ExportMaterial {
 }
 
 impl ExportMaterial {
-    /// `known` is the name cache entry for this GUID. The identity is taken from `MaterialSummary`, so
-    /// an unknown material keeps an empty name here exactly as it does on a detail row.
-    ///
-    /// A material names its resources by GUID, so `textures` / `virtual_textures` are looked up in the
-    /// asset's own rows by that GUID.
+    // `known` is the name cache entry for this GUID. A material names its resources by GUID, so
+    // `textures` / `virtual_textures` are looked up in the asset's own rows by that GUID.
     fn new(
         id: &str,
         known: Option<&MaterialInfo>,
@@ -59,9 +54,8 @@ impl ExportMaterial {
         )
     }
 
-    /// The manifest row for a material whose identity is already stated. The identity comes from
-    /// `MaterialSummary`, so an unknown material keeps an empty name here exactly as it does on a
-    /// detail row.
+    // The manifest row for a material whose identity is already stated: an unknown material keeps an
+    // empty name here exactly as it does on a detail row, since the identity comes from the summary.
     fn from_summary(
         summary: MaterialSummary,
         known: Option<&MaterialInfo>,
@@ -79,8 +73,8 @@ impl ExportMaterial {
     }
 }
 
-/// The asset's texture rows for the textures a material binds, in the material's own (parameter)
-/// order. An id the rows do not carry contributes anything.
+// The asset's texture rows for the textures a material binds, in the material's own (parameter)
+// order. An id the rows do not carry contributes anything.
 fn bound_textures(
     known: Option<&MaterialInfo>,
     textures: &HashMap<&str, &TextureSummary>,
@@ -96,8 +90,8 @@ fn bound_textures(
         .collect()
 }
 
-/// The asset's virtual texture rows for the resources a material binds, in binding order. An id the
-/// rows do not carry contributes anything.
+// The asset's virtual texture rows for the resources a material binds, in binding order. An id the
+// rows do not carry contributes anything.
 fn bound_virtual_textures(
     known: Option<&MaterialInfo>,
     virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
@@ -116,10 +110,8 @@ fn bound_virtual_textures(
 /// The materials of `value` in the asset's own order, as the export manifest lists them: each one
 /// carrying the asset's texture and virtual texture rows for the resources it binds.
 ///
-/// Those rows are the manifest's only statement of the asset's resources — the material containing them
-/// says which material they belong to, so a separate list beside the materials would only repeat it.
-/// This is also why the rows are whole: the manifest is read on its own, so a GUID to look up would
-/// not do.
+/// Those rows are the manifest's only statement of the asset's resources, and they are whole because
+/// the manifest is read on its own — a GUID to look up would not do.
 pub fn manifest_materials(
     value: &VisualAsset,
     materials: &HashMap<String, MaterialInfo>,

@@ -12,12 +12,10 @@ use crate::domain::source::ModSources;
 use crate::domain::virtual_textures::PageFileSizes;
 use crate::infrastructure::archives::{Archives, Pak};
 
-/// One material as it appears in the serialized database, carrying only what the panel needs.
-///
-/// Deserialized into this shape rather than picked out of a `serde_json::Value`: the database
-/// holds every visual and texture as well, and building that whole tree only to reach `materials`
-/// is a memory spike worth skipping. Unknown fields are ignored, while `name` is required — a
-/// renamed field stops here instead of quietly leaving every material without a label.
+// One material as the serialized database carries it, deserialized into this shape instead of picked
+// out of a `serde_json::Value`: the database holds every visual and texture as well, so building that
+// whole tree only to reach `materials` is a memory spike worth skipping. `name` is required, so a
+// renamed field stops here instead of quietly leaving every material without a label
 #[derive(Deserialize)]
 struct RawMaterial {
     name: String,
@@ -25,31 +23,29 @@ struct RawMaterial {
     source_file: String,
     #[serde(default)]
     texture_ids: Vec<RawTextureParam>,
-    /// Bare GUIDs, unlike `texture_ids`: maclarian parses a binding down to its `ID` and drops the
-    /// parameter name that goes with it (see `virtual_texture_params`). Absent — not empty — for
-    /// the materials that bind no virtual texture, hence the default.
+    // Bare GUIDs, unlike `texture_ids`: maclarian parses a binding down to its `ID` and drops the
+    // parameter name that goes with it. Absent — not empty — for the materials that bind no virtual
+    // texture, hence the default
     #[serde(default)]
     virtual_texture_ids: Vec<String>,
 }
 
-/// A texture binding inside a material; the parameter name it also carries is already on the
-/// texture itself
+// A texture binding inside a material; the parameter name it also carries is already on the texture
+// itself
 #[derive(Deserialize)]
 struct RawTextureParam {
     texture_id: String,
 }
 
-/// The `materials` map of a serialized `MergedDatabase`; every other field is skipped
+// The `materials` map of a serialized `MergedDatabase`; every other field is skipped
 #[derive(Deserialize)]
 struct RawMaterials {
     #[serde(default)]
     materials: HashMap<String, RawMaterial>,
 }
 
-/// Read every material out of an already-built database, keyed by material GUID.
-///
-/// This runs once per build, where the cost disappears next to the parse itself; nothing is cached on
-/// disk, so a rebuilt database pays it again.
+/// Read every material out of an already-built database, keyed by material GUID. Runs once per build,
+/// where the cost disappears next to the parse itself; nothing is cached on disk
 pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
     let Some(raw) = raw_materials(db) else {
         return HashMap::new();
@@ -60,10 +56,9 @@ pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
         .collect()
 }
 
-/// The `materials` map of the database as serde sees it, or `None` when it cannot be read.
-///
-/// maclarian keeps `MaterialDef` — and the map holding it — crate-private, so serializing the
-/// database is the only door out; parsing the JSON back is the second half of that door.
+// The `materials` map of the database as serde sees it, or `None` when it cannot be read. maclarian
+// keeps `MaterialDef` — and the map holding it — crate-private, so serializing the database is the
+// only door out and parsing the JSON back is the second half of that door
 fn raw_materials(db: &MergedDatabase) -> Option<RawMaterials> {
     let json = match serde_json::to_string(db) {
         Ok(json) => json,
@@ -75,13 +70,13 @@ fn raw_materials(db: &MergedDatabase) -> Option<RawMaterials> {
     }
 }
 
-/// Answer a read that failed, in the one shape the caller has for it
+// Answer a read that failed, in the one shape the caller has for it
 fn unavailable(err: serde_json::Error) -> Option<RawMaterials> {
     eprintln!("[maclarian] material names unavailable: {err}");
     None
 }
 
-/// One serialized material as the panel's own shape
+// One serialized material as the panel's own shape
 fn material_info(material: RawMaterial) -> MaterialInfo {
     MaterialInfo {
         name: material.name,
@@ -97,8 +92,8 @@ fn material_info(material: RawMaterial) -> MaterialInfo {
     }
 }
 
-/// A serialized material's virtual texture bindings, as bare GUIDs: the parameter name is not in the
-/// serialized database, so `fill_virtual_texture_parameters` supplies it later
+// A serialized material's virtual texture bindings as bare GUIDs, with the parameter name left empty
+// for `fill_virtual_texture_parameters` to supply
 fn virtual_texture_bindings(ids: Vec<String>) -> Vec<VirtualTextureBinding> {
     ids.into_iter()
         .map(|id| VirtualTextureBinding {
@@ -111,53 +106,47 @@ fn virtual_texture_bindings(ids: Vec<String>) -> Vec<VirtualTextureBinding> {
 /// Global application state: BG3 data directory, the resource resolver, the built database, and a
 /// stable name cache for consistent pagination order.
 ///
-/// The game data directory does not survive in here: it is recorded on disk by `settings` and adopted
-/// again on the next launch (`commands::restore_state`), so this state only lives for the current
-/// session. What the session *can* get back from disk along with it is the built index itself: adopting
-/// a directory looks for the file a previous build left for that directory (`cache`) and fills the
-/// fields below from it, which is what spares the next launch a scan. The mod directory is not
-/// settable at all — it is always the game's own default location.
+/// The game data directory does not live in here: it is recorded on disk by `settings` and adopted
+/// again on the next launch, along with the index a previous build persisted for that directory
+/// (`cache`). The mod directory is not settable at all — it is always the game's own default location.
 pub struct AppState {
-    /// Shared rather than owned: building the database runs for minutes, and the build has to keep
-    /// working on the resolver after the state lock has been released (see `build_database`).
-    /// It is not cloned — `GameDataResolver` is not `Clone`.
+    /// Shared rather than owned: a build runs for minutes and has to keep working on the resolver
+    /// after the state lock is released; `GameDataResolver` is not `Clone`
     pub resolver: Option<Arc<GameDataResolver>>,
     pub game_path: Option<PathBuf>,
     pub merged_db: Option<MergedDatabase>,
-    /// Sorted visual GUIDs kept after building, so pagination order stays stable
-    /// (HashMap iteration order is not deterministic). Ids rather than names: a name can belong to
-    /// several visuals, so keying the list by name would silently drop the duplicates.
+    /// Sorted visual GUIDs kept after building, so pagination order stays stable (HashMap iteration
+    /// order is not deterministic). Ids rather than names: a name can belong to several visuals
     pub visual_ids: Vec<String>,
-    /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
-    /// picks a sequence instead of re-sorting every id on each page request.
+    /// The same GUIDs ordered by GUID, so sorting by ID picks a sequence instead of re-sorting every
+    /// id on each page request
     pub visual_ids_by_id: Vec<String>,
     /// The same GUIDs ordered by their source (mod name), with the base game first: the mod table
-    /// offers that column as a sort key, and it is resolved here for the same reason as the orders
-    /// above.
+    /// offers that column as a sort key
     pub visual_ids_by_source: Vec<String>,
-    /// Materials by GUID, filled once per build. The database itself cannot be queried for them
-    /// (see `extract_materials`), so the names are read out at build time and kept here.
+    /// Materials by GUID, filled once per build; the database cannot be queried for them (see
+    /// `extract_materials`), so the names are read out at build time and kept here
     pub materials: HashMap<String, MaterialInfo>,
     /// The mod providing each resource of the index, filled once per build. Only the resources a mod
-    /// provides are in here (see `ModSources`), and it labels them in the list, the detail panel and
-    /// `asset.json` alike.
+    /// provides are in here (see `ModSources`), and it labels the list, the detail panel and
+    /// `asset.json` alike
     pub mod_sources: ModSources,
     /// What this session knows about the index persisted on disk (see `CacheStatus`): set when a
-    /// directory is selected, and reset by a build of this session's own. Only a report — the page is
-    /// what shows it, and nothing in the backend branches on it.
+    /// directory is selected, and reset by a build of this session's own. A report only — nothing in
+    /// the backend branches on it
     pub cache_status: CacheStatus,
     /// PAK read pool shared by every command: opening an archive parses its whole file table, so the
     /// pool is created once per game directory instead of once per preview / export. `Mutex` because
-    /// reading an archive needs `&mut` on its reader.
+    /// reading an archive needs `&mut` on its reader
     pub archives: Option<Arc<Mutex<Archives>>>,
-    /// Page file sizes by GTS path, filled by `virtual_textures::page_file_size`. Reading a GTS
-    /// costs a full extraction while one GTS serves every page file of its tile set, so browsing a
-    /// model whose virtual textures share a tile set would otherwise read the same file repeatedly.
-    /// An empty list is a cached "no sizes here" answer, not a missing entry.
+    /// Page file sizes by GTS path, filled by `virtual_textures::page_file_size`. Reading a GTS costs
+    /// a full extraction while one GTS serves every page file of its tile set, so browsing a model
+    /// whose virtual textures share a tile set would otherwise read the same file repeatedly. An empty
+    /// list is a cached "no sizes here" answer, not a missing entry
     pub page_file_sizes: HashMap<String, PageFileSizes>,
 }
 
-/// An empty state: no directory chosen and nothing built yet, which is what `new` returns
+// An empty state: no directory chosen and nothing built yet, which is what `new` returns
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
@@ -200,8 +189,8 @@ impl AppState {
     }
 
     /// The shared PAK pool, created on the first command that needs an archive. Callers clone the
-    /// `Arc` back out and lock it only around a single read, so the state lock and the pool never
-    /// have to be held at the same time.
+    /// `Arc` back out and lock it only around a single read, so the state lock and the pool never have
+    /// to be held at the same time
     pub fn pool(&mut self) -> Result<Arc<Mutex<Archives>>, String> {
         if let Some(pool) = &self.archives {
             return Ok(pool.clone());
@@ -223,9 +212,9 @@ impl AppState {
         Ok(pool)
     }
 
-    /// The archive that holds the virtual texture page files. maclarian's lookup needs one archive
-    /// to list; which one that is cannot come from a page file (finding it is the lookup's job), so
-    /// it is spelled out by kind.
+    // The archive that holds the virtual texture page files. maclarian's lookup needs one archive to
+    // list, and which one that is cannot come from a page file (finding it is the lookup's job), so it
+    // is spelled out by kind
     fn vt_pak(&self) -> Result<PathBuf, String> {
         let game_path = self
             .game_path
@@ -242,14 +231,14 @@ impl AppState {
         Ok(vt_pak)
     }
 
-    /// Resolve GTex hashes to their page files through maclarian's own lookup. Each `GtpMatch`
-    /// carries the path inside the archive *and* the archive itself, so neither has to be guessed
-    /// downstream — and unlike a hash-to-path index, a match can only exist for a hash that is
-    /// actually present. A missing archive or a failed lookup degrades to "no virtual textures":
-    /// they are optional, and must not abort a detail view or an export.
+    /// Resolve GTex hashes to their page files through maclarian's own lookup. Each `GtpMatch` carries
+    /// the path inside the archive *and* the archive itself, so neither has to be guessed downstream —
+    /// and unlike a hash-to-path index, a match can only exist for a hash that is actually present. A
+    /// missing archive or a failed lookup degrades to "no virtual textures": they are optional, and
+    /// must not abort a detail view or an export.
     ///
     /// `MergedResolver` owns the database it is built from, so the database moves out and back in
-    /// (pointers move, nothing is copied); the state is left exactly as it was found.
+    /// (pointers move, nothing is copied), leaving the state exactly as it was found.
     pub fn vt_matches(&mut self, hashes: &[String]) -> Vec<GtpMatch> {
         let Some(db) = self.merged_db.take() else {
             return Vec::new();
@@ -264,8 +253,8 @@ impl AppState {
     }
 }
 
-/// Resolve `hashes` through the archive `pak` names, degrading to an empty list on a failed lookup:
-/// virtual textures are optional, and a lookup must not abort a detail view or an export.
+// Resolve `hashes` through the archive `pak` names, degrading to an empty list on a failed lookup:
+// virtual textures are optional, and a lookup must not abort a detail view or an export
 fn gtps_in_pak(resolver: &MergedResolver, hashes: &[String], pak: &Path) -> Vec<GtpMatch> {
     let hashes: Vec<&str> = hashes.iter().map(String::as_str).collect();
     resolver
@@ -276,23 +265,18 @@ fn gtps_in_pak(resolver: &MergedResolver, hashes: &[String], pak: &Path) -> Vec<
         })
 }
 
-/// Report an archive that is not there and answer with no virtual textures, the same way a failed
-/// lookup does
+// Report an archive that is not there and answer with no virtual textures, the same way a failed
+// lookup does
 fn vt_unavailable(err: String) -> Vec<GtpMatch> {
     eprintln!("[maclarian] {err}");
     Vec::new()
 }
 
-/// Where the game installs its mods: `%LOCALAPPDATA%\Larian Studios\Baldur's Gate 3\Mods`, which is
-/// the directory every mod manager for the game writes to.
-///
-/// This is fixed rather than configurable: it is where the game itself reads mods from, so scanning
-/// anything else would index resources the game never loads. `None` on a machine that has never run
-/// the game — and a `Mods` directory holding no `.pak` is just as valid — leaves the database built
-/// from the game alone.
-///
-/// Shared with `cache`, which fingerprints the same list: a persisted index may only be reused while
-/// the mods it was built from are unchanged, so both sides have to enumerate them identically.
+// Where the game installs its mods: `%LOCALAPPDATA%\Larian Studios\Baldur's Gate 3\Mods`, the
+// directory every mod manager for the game writes to. It is fixed rather than configurable because it
+// is where the game itself reads mods from, so scanning anything else would index resources the game
+// never loads; `None` on a machine that has never run the game leaves the database built from the game
+// alone. Shared with `cache`, which fingerprints the same list
 pub(crate) fn default_mods_path() -> Option<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     let path = PathBuf::from(base)
@@ -302,15 +286,10 @@ pub(crate) fn default_mods_path() -> Option<PathBuf> {
     path.is_dir().then_some(path)
 }
 
-/// The mod archives of a directory, in ascending file name order.
-///
-/// The order is fixed rather than left to the file system, because it is what decides which mod wins
-/// when two of them provide the same resource: a read walks the list backwards, so the last file name
-/// takes precedence. A directory that cannot be listed contributes no mods rather than an error —
-/// mods are optional, and the game's own data is read either way.
-///
-/// Shared with `cache` for the same reason as `default_mods_path`: the fingerprint has to see exactly
-/// the mods a build would read, in the order it would read them.
+// The mod archives of a directory, in ascending file name order: the order decides which mod wins when
+// two of them provide the same resource, because a read walks the list backwards and the last file
+// name takes precedence. A directory that cannot be listed contributes no mods rather than an error.
+// Shared with `cache`, whose fingerprint has to see exactly the mods a build would read
 pub(crate) fn mod_paks(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();

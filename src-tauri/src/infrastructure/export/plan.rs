@@ -1,5 +1,5 @@
-//! The export plan and its progress reporting: what an export will contain, decided before anything
-//! is written, and the counter every step of the pipeline reports through.
+//! Export plan and progress reporting: what an export will contain, decided before anything is
+//! written, plus the counter every step of the pipeline reports through.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,8 +10,8 @@ use super::virtual_textures::vt_targets_of;
 use crate::domain::export::{ExportOptions, ExportProgress, MeshFormat};
 use crate::domain::naming::sanitize_file_name;
 
-/// Tracks export progress: counts finished items and reports the running percentage, so no step of
-/// the pipeline has to thread a `done` counter around
+// Tracks export progress: counts finished items and reports the running percentage, so no step has
+// to thread a `done` counter around
 pub(crate) struct ProgressTracker<'a> {
     total: usize,
     done: usize,
@@ -27,7 +27,7 @@ impl<'a> ProgressTracker<'a> {
         }
     }
 
-    /// Count one finished item and report it
+    // Count one finished item and report it
     pub(crate) fn item(&mut self, phase: &str, file: Option<String>) {
         self.done += 1;
         (self.on_progress)(ExportProgress {
@@ -41,8 +41,8 @@ impl<'a> ProgressTracker<'a> {
         });
     }
 
-    /// Report a phase boundary without counting an item (`prepare` / `done`); those carry a fixed
-    /// percentage because they wrap the counted items instead of being one of them
+    // Report a phase boundary without counting an item; `prepare` / `done` carry a fixed percentage
+    // because they wrap the counted items instead of being one of them
     pub(crate) fn phase(&self, phase: &str, percent: f32) {
         (self.on_progress)(ExportProgress {
             phase: phase.to_string(),
@@ -52,9 +52,9 @@ impl<'a> ProgressTracker<'a> {
     }
 }
 
-/// Everything decided before the first artifact is written: where it goes, in which form, and how
-/// many items the progress bar will count. Bundling it keeps the steps below at four to six
-/// parameters instead of threading every path and flag through the whole pipeline
+// Everything decided before the first artifact is written: where it goes, in which form, and how
+// many items the progress bar counts. Bundling it keeps the steps below at four to six parameters
+// instead of threading every path and flag through the whole pipeline
 pub(crate) struct ExportPlan<'a> {
     pub(crate) dir_name: String,
     pub(crate) out_dir: PathBuf,
@@ -66,17 +66,17 @@ pub(crate) struct ExportPlan<'a> {
 }
 
 impl ExportPlan<'_> {
-    /// Where the extracted layers of the virtual textures go
+    // Where the extracted layers of the virtual textures go
     pub(crate) fn vt_dir(&self) -> PathBuf {
         self.out_dir.join("virtual_textures")
     }
 }
 
-/// Decide what the export will contain and create its output directory.
-///
-/// The `ExportPlan` literal below is the accepted struct-initialization exception to the 15-line
-/// budget: its fields are what the whole pipeline reads back, so moving the value computations away
-/// from the literal would separate each field from the value that explains it.
+// Decide what the export will contain and create its output directory.
+//
+// The `ExportPlan` literal below is the accepted struct-initialization exception to the 15-line
+// budget: its fields are what the whole pipeline reads back, so moving the value computations away
+// from the literal would separate each field from the value that explains it.
 pub(super) fn plan_export<'a>(
     asset: &'a VisualAsset,
     dest_root: &Path,
@@ -103,14 +103,14 @@ pub(super) fn plan_export<'a>(
     })
 }
 
-/// Create the directory one export writes into
+// Create the directory one export writes into
 fn create_out_dir(dest_root: &Path, dir_name: &str) -> Result<PathBuf, String> {
     let out_dir = dest_root.join(dir_name);
     fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create export directory: {e}"))?;
     Ok(out_dir)
 }
 
-/// How many texture items the progress bar counts
+// How many texture items the progress bar counts
 fn texture_total(asset: &VisualAsset, export_textures: bool) -> usize {
     if export_textures {
         asset.textures.len()

@@ -1,6 +1,6 @@
-//! The virtual-texture step: stages the page files of each virtual texture, runs maclarian's
-//! extractor over them, moves the resulting layer files into the export directory, and sizes the
-//! manifest rows whose page file resolved.
+//! Virtual-texture step: stages the page files of each virtual texture, runs maclarian's extractor
+//! over them, moves the resulting layer files into the export directory, and sizes the manifest rows
+//! whose page file resolved.
 
 use std::collections::HashMap;
 use std::fs;
@@ -19,13 +19,13 @@ use crate::domain::naming::{export_layer_name, sanitize_file_name};
 use crate::domain::virtual_textures::{self, match_for_hash, PageFileSizes, VirtualTextureSummary};
 use crate::infrastructure::archives::{lock_pool, Archives};
 
-/// The three layers exported from a virtual texture (order matches `VirtualTextureLayer`).
-/// Extractor output is `<name>_<layer>.dds`; export file names follow the engine's naming for split
-/// virtual textures (`BaseMap` → `Albedo`, see `domain::naming::export_layer_name`)
+// The three layers exported from a virtual texture (order matches `VirtualTextureLayer`). Extractor
+// output is `<name>_<layer>.dds`; export names follow the engine's naming for split virtual textures
+// (`BaseMap` → `Albedo`, see `domain::naming::export_layer_name`)
 pub(super) const VT_LAYERS: [&str; 3] = ["BaseMap", "NormalMap", "PhysicalMap"];
 
-/// Page files worth extracting: extracting needs a hash to resolve the `GtpMatch` naming the page
-/// file in the archives, and virtual textures are only exported together with the textures
+// Page files worth extracting: extracting needs a hash to resolve the `GtpMatch` naming the page file
+// in the archives, and virtual textures are only exported together with the textures
 pub(crate) fn vt_targets_of(asset: &VisualAsset, export_textures: bool) -> Vec<&VirtualTextureRef> {
     if !export_textures {
         return Vec::new();
@@ -37,9 +37,9 @@ pub(crate) fn vt_targets_of(asset: &VisualAsset, export_textures: bool) -> Vec<&
         .collect()
 }
 
-/// Extract every virtual texture of the asset. All of them share one staging directory — a GTS is
-/// read once no matter how many page files of its tile set pass through — while each get its own
-/// extraction output directory, so a failed candidate cannot leave artifacts behind for the next
+// Extract every virtual texture of the asset. All of them share one staging directory — a GTS is
+// read once no matter how many page files of its tile set pass through — while each gets its own
+// extraction output directory, so a failed candidate cannot leave artifacts behind for the next
 pub(super) fn export_virtual_textures(
     ctx: &ExportContext<'_>,
     plan: &ExportPlan<'_>,
@@ -55,9 +55,12 @@ pub(super) fn export_virtual_textures(
     export_vt_targets(ctx, plan, &staging, output, progress)
 }
 
-/// Create the virtual texture output directory and the staging area of the run. `None` when the
-/// staging area cannot be made, which is a warning: the export carries on without virtual textures
-fn vt_staging(plan: &ExportPlan<'_>, output: &mut ExportOutput) -> Result<Option<VtStaging>, String> {
+// Create the virtual texture output directory and the staging area of the run; `None` when the
+// staging area cannot be made, which is a warning: the export carries on without virtual textures
+fn vt_staging(
+    plan: &ExportPlan<'_>,
+    output: &mut ExportOutput,
+) -> Result<Option<VtStaging>, String> {
     fs::create_dir_all(plan.vt_dir())
         .map_err(|e| format!("Failed to create virtual textures directory: {e}"))?;
     let staging = VtStaging::new();
@@ -68,7 +71,7 @@ fn vt_staging(plan: &ExportPlan<'_>, output: &mut ExportOutput) -> Result<Option
     Ok(Some(staging))
 }
 
-/// Extract every target of the plan, one progress item each
+// Extract every target of the plan, one progress item each
 fn export_vt_targets(
     ctx: &ExportContext<'_>,
     plan: &ExportPlan<'_>,
@@ -83,8 +86,8 @@ fn export_vt_targets(
     Ok(())
 }
 
-/// One virtual texture of an export run: the target, the page file its hash resolved to, and the
-/// sequence number of its staging directory
+// One virtual texture of an export run: the target, the page file its hash resolved to, and the
+// sequence number of its staging directory
 struct VtJob<'a> {
     vt: &'a VirtualTextureRef,
     matched: &'a GtpMatch,
@@ -92,15 +95,15 @@ struct VtJob<'a> {
 }
 
 impl<'a> VtJob<'a> {
-    /// The job of one target; `None` when its hash resolved to no page file
+    // The job of one target; `None` when its hash resolved to no page file
     fn resolve(vt: &'a VirtualTextureRef, vt_matches: &'a [GtpMatch], seq: usize) -> Option<Self> {
         let matched = match_for_hash(vt_matches, &vt.gtex_hash)?;
         Some(Self { vt, matched, seq })
     }
 }
 
-/// Extract one virtual texture. A hash that resolved to no page file, and an extraction that fails,
-/// are both warnings: unlike the mesh, one broken virtual texture does not abort the export
+// Extract one virtual texture. A hash that resolved to no page file, and an extraction that fails,
+// are both warnings: unlike the mesh, one broken virtual texture does not abort the export
 fn export_vt_target(
     ctx: &ExportContext<'_>,
     vt: &VirtualTextureRef,
@@ -116,9 +119,9 @@ fn export_vt_target(
     extract_vt_target(ctx, &job, staging, plan, output)
 }
 
-/// Extract one resolved target in its own staging directory, releasing the archive pool afterward
-/// so a long export keeps interleaving with previews. Reaching the archives is not optional —
-/// nothing can be written without them — while a failed extraction is only a warning
+// Extract one resolved target in its own staging directory, releasing the archive pool afterward so
+// a long export keeps interleaving with previews. Reaching the archives is not optional — nothing can
+// be written without them — while a failed extraction is only a warning
 fn extract_vt_target(
     ctx: &ExportContext<'_>,
     job: &VtJob<'_>,
@@ -134,7 +137,7 @@ fn extract_vt_target(
     Ok(())
 }
 
-/// Extract one-page file into its staging directory and move the layer files into the export dir
+// Extract one page file into its staging directory and move the layer files into the export dir
 fn extract_vt(
     archive: &mut Archives,
     job: &VtJob<'_>,
@@ -151,9 +154,9 @@ fn extract_vt(
     collect_vt_layers(&stage, plan, &sanitize_file_name(&job.vt.name), output)
 }
 
-/// Staging area of one export run: all page files share `files` (a GTS is read once no matter how
-/// many of them use it) while each get its own output directory `stage_N`. The whole area is
-/// removed when the run ends — also when it is aborted halfway
+// Staging area of one export run: all page files share `files` (a GTS is read once no matter how
+// many of them use it) while each gets its own output directory `stage_N`. The whole area is removed
+// when the run ends — also when it is aborted halfway
 pub(super) struct VtStaging {
     root: PathBuf,
 }
@@ -169,12 +172,12 @@ impl VtStaging {
         }
     }
 
-    /// Files staged for all page files (`virtual_textures::stage_sources` reuses them by name)
+    // Files staged for all page files (`virtual_textures::stage_sources` reuses them by name)
     pub(super) fn shared(&self) -> PathBuf {
         self.root.join("files")
     }
 
-    /// Output directory of the page file with this export sequence number
+    // Output directory of the page file with this export sequence number
     pub(super) fn stage(&self, seq: usize) -> PathBuf {
         self.root.join(format!("stage_{seq}"))
     }
@@ -195,9 +198,9 @@ pub(super) fn next_temp_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-/// Run the extractor with each GTS candidate until one accepts the page file: GTS naming does not
-/// always match the GTP, so the candidates are tried in likelihood order. Trying them is safe
-/// because the extractor checks the hash against the GTS metadata itself
+// Run the extractor with each GTS candidate until one accepts the page file: GTS naming does not
+// always match the GTP, so the candidates are tried in likelihood order. Trying them is safe because
+// the extractor checks the hash against the GTS metadata itself
 fn extract_with_any_gts(
     gtp: &Path,
     gts_candidates: &[PathBuf],
@@ -207,7 +210,7 @@ fn extract_with_any_gts(
         .map_err(|last_err| format!("Virtual texture extraction failed: {last_err}"))
 }
 
-/// Try every candidate in order, reporting the last error when none of them accepts the page file
+// Try every candidate in order, reporting the last error when none of them accepts the page file
 fn extract_each_gts(gtp: &Path, gts_candidates: &[PathBuf], stage: &Path) -> Result<(), String> {
     let mut last_err = "no GTS candidate available".to_string();
     for gts_path in gts_candidates {
@@ -219,8 +222,8 @@ fn extract_each_gts(gtp: &Path, gts_candidates: &[PathBuf], stage: &Path) -> Res
     Err(last_err)
 }
 
-/// Try one candidate: `Ok(None)` when it accepted the page file, `Ok(Some(error))` when it did not,
-/// with the partial output cleared so the next candidate's artifacts do not mix together
+// Try one candidate: `Ok(None)` when it accepted the page file, `Ok(Some(error))` when it did not,
+// with the partial output cleared so the next candidate's artifacts do not mix together
 fn attempt_gts(gtp: &Path, gts_path: &Path, stage: &Path) -> Result<Option<String>, String> {
     match VirtualTextureExtractor::extract_with_gts(gtp, gts_path, stage) {
         Ok(()) => Ok(None),
@@ -231,15 +234,15 @@ fn attempt_gts(gtp: &Path, gts_path: &Path, stage: &Path) -> Result<Option<Strin
     }
 }
 
-/// Clear the staging directory so the next candidate starts from nothing, recreating it because the
-/// extractor expects it to exist
+// Clear the staging directory so the next candidate starts from nothing, recreating it because the
+// extractor expects it to exist
 fn reset_stage(stage: &Path) -> Result<(), String> {
     let _ = fs::remove_dir_all(stage);
     fs::create_dir_all(stage).map_err(|e| format!("Failed to recreate staging directory: {e}"))
 }
 
-/// Move the extracted layer files into the export's virtual texture directory, named after the asset
-/// instead of the tile set, and convert them when PNG was asked for
+// Move the extracted layer files into the export's virtual texture directory, named after the asset
+// instead of the tile set, and convert them when PNG was asked for
 fn collect_vt_layers(
     stage: &Path,
     plan: &ExportPlan<'_>,
@@ -255,8 +258,8 @@ fn collect_vt_layers(
     Ok(())
 }
 
-/// Move one extracted layer into the virtual texture directory under its export name and record the
-/// artifact
+// Move one extracted layer into the virtual texture directory under its export name and record the
+// artifact
 fn export_vt_layer(
     layer: &str,
     src: &Path,
@@ -274,8 +277,8 @@ fn export_vt_layer(
     Ok(())
 }
 
-/// Move the extractor's output into place. A rename onto an existing destination fails on Windows,
-/// which is what the copy covers: a re-export overwrites the file the previous one left behind
+// Move the extractor's output into place. A rename onto an existing destination fails on Windows,
+// which is what the copy covers: a re-export overwrites the file the previous one left behind
 fn move_layer(src: &Path, dds_path: &Path, layer: &str) -> Result<(), String> {
     if fs::rename(src, dds_path).is_ok() {
         return Ok(());
@@ -284,7 +287,7 @@ fn move_layer(src: &Path, dds_path: &Path, layer: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Record the layer's DDS, replaced by its PNG form when conversion was asked for and worked
+// Record the layer's DDS, replaced by its PNG form when conversion was asked for and worked
 fn record_layer(
     vt_dir: &Path,
     dds_path: &Path,
@@ -301,7 +304,7 @@ fn record_layer(
     }
 }
 
-/// Find the extractor output for one layer; the file name ends with `_<layer>.dds`
+// Find the extractor output for one layer; the file name ends with `_<layer>.dds`
 pub(super) fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, String> {
     let suffix = format!("_{}.dds", layer.to_lowercase());
     Ok(fs::read_dir(stage)
@@ -317,15 +320,13 @@ pub(super) fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<Path
         }))
 }
 
-/// Fill in the pixel size of every virtual texture the materials of the manifest carry.
-///
-/// The size is the bounding box of that page file's own tiles, which is exactly the DDS the extractor
-/// wrote next to the manifest and the value the detail view shows for the same virtual texture (see
-/// `virtual_textures::page_file_size`), so `asset.json` and the UI agree on it.
-///
-/// The archives are read here, and a size is decoration: an unavailable pool, a hash that resolved to
-/// no page file or a GTS that does not parse all leave the field unset rather than failing an export
-/// whose files are already on disk.
+// Fill in the pixel size of every virtual texture the materials of the manifest carry: the bounding
+// box of that page file's own tiles, which is the DDS the extractor wrote next to the manifest and
+// the value the detail view shows for the same virtual texture (see
+// `virtual_textures::page_file_size`), so `asset.json` and the UI agree on it.
+//
+// A size is decoration, so an unavailable pool, a hash that resolved to no page file or a GTS that
+// does not parse all leave the field unset rather than failing an export whose files are on disk
 pub(super) fn fill_vt_sizes(
     pool: &Arc<Mutex<Archives>>,
     vt_matches: &[GtpMatch],
@@ -340,8 +341,8 @@ pub(super) fn fill_vt_sizes(
     fill_sizes(&mut archives, vt_matches, manifest);
 }
 
-/// Whether the manifest carries any virtual texture row at all; nothing is read from the archives
-/// when it does not
+// Whether the manifest carries any virtual texture row at all; nothing is read from the archives when
+// it does not
 fn has_vt_rows(manifest: &ExportManifest) -> bool {
     manifest
         .materials
@@ -349,9 +350,9 @@ fn has_vt_rows(manifest: &ExportManifest) -> bool {
         .any(|material| !material.virtual_textures.is_empty())
 }
 
-/// Size every virtual texture row of the manifest, over one shared GTS cache: one GTS serves every
-/// page file of its tile set, so each is read once — also when two materials of the asset bind the
-/// same virtual texture
+// Size every virtual texture row of the manifest over one shared GTS cache: a GTS serves every page
+// file of its tile set, so each is read once — also when two materials of the asset bind the same
+// virtual texture
 fn fill_sizes(archives: &mut Archives, vt_matches: &[GtpMatch], manifest: &mut ExportManifest) {
     let mut sizes: HashMap<String, PageFileSizes> = HashMap::new();
     for material in &mut manifest.materials {
@@ -361,7 +362,7 @@ fn fill_sizes(archives: &mut Archives, vt_matches: &[GtpMatch], manifest: &mut E
     }
 }
 
-/// Size of the page file one row resolved to, or nothing when it did not resolve
+// Size of the page file one row resolved to, or nothing when it did not resolve
 pub(super) fn fill_vt_size(
     archives: &mut Archives,
     vt_matches: &[GtpMatch],
