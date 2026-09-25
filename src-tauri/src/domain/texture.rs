@@ -9,7 +9,7 @@ use crate::domain::source::{source_of, ModSources};
 ///
 /// A row of the asset's texture list (the detail panel), and — copied — the entry the export manifest
 /// material binding it carries: the resource stated in full (name, path, size, parameter) rather than
-/// a GUID to look up. Hence `Clone`.
+/// a GUID to look up. Hence, `Clone`.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureSummary {

@@ -9,7 +9,7 @@
 //!    material template (`virtual_texture_params`), and the shapes of an export and of the app's own
 //!    state (`export`, `app`).
 //!
-//! The game's formats are this application's subject matter, so working with them is model work: the
+//! The game's formats are this application's subject, so working with them is model work: the
 //! modules that parse one (`virtual_textures`, `virtual_texture_params`) do use the file system and
 //! read through `infrastructure::archives`, and the row builders take maclarian's own types. That is
 //! a deliberate narrowing of the earlier "no file system, no maclarian type" rule, which now holds

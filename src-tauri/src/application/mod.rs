@@ -4,7 +4,7 @@
 //! Unlike `domain` (the game's data as this app models it) and `infrastructure` (the game's files and
 //! the rest of the outside world), everything here is the application's own bookkeeping — the built
 //! index held in memory for the session (`state`) and written to disk so the next launch reads it back
-//! instead of scanning the paks again (`cache`), the game directory recorded so the next launch comes
+//! instead of scanning the packs again (`cache`), the game directory recorded so the next launch comes
 //! back to it (`settings`), and the handlers the frontend calls (`commands`).
 //!
 //! Two things in here lean elsewhere and are kept beside the state they serve rather than split out:

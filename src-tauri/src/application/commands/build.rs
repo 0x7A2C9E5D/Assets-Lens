@@ -203,7 +203,7 @@ pub async fn build_database(
         };
 
         // Persisted while the database is still ours to borrow: the launch after this one then reads
-        // the index back instead of parsing the paks again. Written before it is published (a 20 MB
+        // the index back instead of parsing the packs again. Written before it is published (a 20 MB
         // file must not be written under the state lock), and only for a build that read everything —
         // an index missing a pak's resources would otherwise outlive the failure it came from. A
         // failed write costs the next launch a scan and nothing else, so it does not fail the build.
