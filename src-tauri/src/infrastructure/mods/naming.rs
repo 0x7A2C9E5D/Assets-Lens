@@ -1,6 +1,6 @@
 //! Naming a mod and decoding the text its banks carry: the label the UI shows its resources under.
 
-use maclarian::formats::lsx::LsxNode;
+use maclarian::formats::lsx::{LsxDocument, LsxNode};
 
 use crate::infrastructure::archives::Archives;
 
@@ -15,20 +15,34 @@ pub(super) fn mod_display_name(
     paths: &[String],
     fallback: String,
 ) -> String {
-    let Some(path) = paths.iter().find(|path| path.ends_with("meta.lsx")) else {
+    let Some(path) = meta_path(paths) else {
         return fallback;
     };
+    declared_name(archives, index, path).unwrap_or(fallback)
+}
 
+/// The `meta.lsx` entry of a mod, which is where the `Name` it declares lives
+fn meta_path(paths: &[String]) -> Option<&str> {
+    paths
+        .iter()
+        .find(|path| path.ends_with("meta.lsx"))
+        .map(String::as_str)
+}
+
+/// The `Name` one mod declares in `path`; `None` when that file cannot be read or carries no name
+fn declared_name(archives: &mut Archives, index: usize, path: &str) -> Option<String> {
     read_bank(archives, index, path)
-        .and_then(|document| {
-            document
-                .regions
-                .iter()
-                .flat_map(|region| region.nodes.iter())
-                .find_map(module_name)
-        })
+        .and_then(|document| document_name(&document))
         .filter(|name| !name.is_empty())
-        .unwrap_or(fallback)
+}
+
+/// The `Name` of the first `ModuleInfo` node in a document
+fn document_name(document: &LsxDocument) -> Option<String> {
+    document
+        .regions
+        .iter()
+        .flat_map(|region| region.nodes.iter())
+        .find_map(module_name)
 }
 
 /// The `Name` attribute of the first `ModuleInfo` node in the tree. The declaration sits one level

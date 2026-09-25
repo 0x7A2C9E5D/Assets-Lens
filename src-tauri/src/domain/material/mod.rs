@@ -89,6 +89,16 @@ pub fn materials_of(
         .collect()
 }
 
+/// The asset's rows indexed by GUID, so a material's references can be looked up in them without a
+/// scan. Both a material row of the detail panel and one of the export manifest join on the GUID,
+/// which is what keeps two same-named materials apart.
+///
+/// Keyed by `&str` rather than `String`: the rows outlive the map, and the ids being looked up are
+/// only ever compared.
+fn rows_by_id<'a, T>(rows: &'a [T], id_of: impl Fn(&'a T) -> &'a str) -> HashMap<&'a str, &'a T> {
+    rows.iter().map(|row| (id_of(row), row)).collect()
+}
+
 /// Parameter the asset's materials bind the virtual texture `id` with.
 ///
 /// The name belongs to the binding rather than to the resource, so it is taken from the first

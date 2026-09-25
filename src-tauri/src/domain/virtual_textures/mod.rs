@@ -25,7 +25,7 @@ mod page_files;
 mod staging;
 
 pub use page_files::{page_file_size, PageFileSizes};
-pub use staging::{stage_sources, StagedSources};
+pub use staging::stage_sources;
 
 /// Streaming virtual texture reference (GTex).
 ///
@@ -119,13 +119,21 @@ pub fn virtual_texture_summaries(
     value
         .virtual_textures
         .iter()
-        .map(|vt| {
-            let mut summary =
-                VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash));
-            summary.source = source_of(sources, &vt.id);
-            summary.parameter_name =
-                virtual_texture_parameter(&vt.id, &value.material_ids, materials);
-            summary
-        })
+        .map(|vt| virtual_texture_summary(vt, value, matches, materials, sources))
         .collect()
+}
+
+/// One row of the virtual texture list: the resource with its page file, labeled with the mod that
+/// provides it and the parameter the asset's materials bind it with
+fn virtual_texture_summary(
+    vt: &VirtualTextureRef,
+    value: &VisualAsset,
+    matches: &[GtpMatch],
+    materials: &HashMap<String, MaterialInfo>,
+    sources: &ModSources,
+) -> VirtualTextureSummary {
+    let mut summary = VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash));
+    summary.source = source_of(sources, &vt.id);
+    summary.parameter_name = virtual_texture_parameter(&vt.id, &value.material_ids, materials);
+    summary
 }

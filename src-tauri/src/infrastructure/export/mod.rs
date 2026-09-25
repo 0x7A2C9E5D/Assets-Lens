@@ -24,7 +24,7 @@ use crate::infrastructure::archives::Archives;
 
 use self::manifest::{build_manifest, write_manifest};
 use self::mesh::export_mesh;
-use self::plan::{plan_export, ProgressTracker};
+use self::plan::{plan_export, ExportPlan, ProgressTracker};
 use self::textures::export_textures;
 use self::virtual_textures::{export_virtual_textures, fill_vt_sizes};
 
@@ -46,30 +46,39 @@ pub(crate) const PHASE_VIRTUAL: &str = "virtualTextures";
 pub(crate) const PHASE_MANIFEST: &str = "manifest";
 pub(crate) const PHASE_DONE: &str = "done";
 
-/// Append a structured warning (code is localized by the frontend, detail keeps the raw message)
-pub(crate) fn push_warning(
-    warnings: &mut Vec<ExportWarning>,
-    code: &str,
-    detail: impl Into<String>,
-) {
-    warnings.push(ExportWarning {
-        code: code.to_string(),
-        detail: detail.into(),
-    });
+/// What one export run collected: the artifacts it wrote and the warnings they raised.
+///
+/// Every step of the pipeline — mesh, textures, virtual textures, manifest — contributes to the same
+/// two lists, so they travel as one output each step appends to instead of two parameters threaded
+/// through every call.
+#[derive(Default)]
+pub struct ExportOutput {
+    files: Vec<ExportedFile>,
+    warnings: Vec<ExportWarning>,
 }
 
-/// Record one written artifact in the export result
-pub(crate) fn record_file(
-    files: &mut Vec<ExportedFile>,
-    path: &Path,
-    kind: &str,
-    size_bytes: usize,
-) {
-    files.push(ExportedFile {
-        path: path.display().to_string(),
-        kind: kind.to_string(),
-        size_bytes,
-    });
+impl ExportOutput {
+    /// Record one written artifact
+    pub(crate) fn record(&mut self, path: &Path, kind: &str, size_bytes: usize) {
+        self.files.push(ExportedFile {
+            path: path.display().to_string(),
+            kind: kind.to_string(),
+            size_bytes,
+        });
+    }
+
+    /// Append a structured warning (code is localized by the frontend, detail keeps the raw message)
+    pub(crate) fn warn(&mut self, code: &str, detail: impl Into<String>) {
+        self.warnings.push(ExportWarning {
+            code: code.to_string(),
+            detail: detail.into(),
+        });
+    }
+
+    /// The artifacts and warnings, in the order the pipeline produced them
+    pub(crate) fn into_parts(self) -> (Vec<ExportedFile>, Vec<ExportWarning>) {
+        (self.files, self.warnings)
+    }
 }
 
 /// What an export reads from: the asset being exported and the caches describing it, grouped so the
@@ -99,50 +108,56 @@ pub fn run_export(
     options: &ExportOptions,
     on_progress: &dyn Fn(ExportProgress),
 ) -> Result<ExportResult, String> {
-    let ExportContext {
-        asset,
-        materials,
-        sources,
-        vt_matches,
-        pool,
-    } = *ctx;
-
-    let plan = plan_export(asset, dest_root, options)?;
-
-    let mut files: Vec<ExportedFile> = Vec::new();
-    let mut warnings: Vec<ExportWarning> = Vec::new();
+    let plan = plan_export(ctx.asset, dest_root, options)?;
+    let mut output = ExportOutput::default();
     let mut progress = ProgressTracker::new(plan.progress_total, on_progress);
     progress.phase(PHASE_PREPARE, 0.0);
 
-    // 1. Mesh: raw GR2 straight out of the PAK, or a plain GR2 → GLB conversion
-    export_mesh(asset, pool, &plan, &mut files, &mut progress)?;
-
-    // 2. Textures: pull DDS from PAKs, optionally converting to PNG
-    export_textures(asset, pool, &plan, &mut files, &mut warnings, &mut progress)?;
-
-    // 3. Virtual textures: GTP + GTS → three layer DDS files. Every hash was resolved to a
-    // `GtpMatch` up front, which carries both the page file and the archive holding it
-    export_virtual_textures(
-        pool,
-        &plan,
-        vt_matches,
-        &mut files,
-        &mut warnings,
-        &mut progress,
-    )?;
-
-    // 4. Metadata manifest (always written, but never listed among the exported files)
-    progress.item(PHASE_MANIFEST, None);
-    let mut manifest = build_manifest(asset, materials, sources, vt_matches);
-    // Completed before to write: the sizes come out of the archives, which the manifest alone has
-    // no access to
-    fill_vt_sizes(pool, vt_matches, &mut manifest);
-    write_manifest(&manifest, &plan.out_dir, &mut warnings);
+    export_artifacts(ctx, &plan, &mut output, &mut progress)?;
+    export_manifest(ctx, &plan, &mut output, &mut progress);
 
     progress.phase(PHASE_DONE, 1.0);
-    Ok(ExportResult {
+    Ok(export_result(&plan, output))
+}
+
+/// Write the artifacts of one export, in pipeline order: the mesh (raw GR2 or a GR2 → GLB
+/// conversion), then the textures, then the virtual textures.
+///
+/// The mesh is the core artifact, so its failure aborts the whole export; a single texture or
+/// virtual texture that fails only records a warning and the rest carries on.
+fn export_artifacts(
+    ctx: &ExportContext<'_>,
+    plan: &ExportPlan<'_>,
+    output: &mut ExportOutput,
+    progress: &mut ProgressTracker<'_>,
+) -> Result<(), String> {
+    export_mesh(ctx.asset, ctx.pool, plan, output, progress)?;
+    export_textures(ctx.asset, ctx.pool, plan, output, progress)?;
+    export_virtual_textures(ctx, plan, output, progress)
+}
+
+/// Write the metadata manifest (`asset.json`). It is always written and never listed among the
+/// exported files.
+fn export_manifest(
+    ctx: &ExportContext<'_>,
+    plan: &ExportPlan<'_>,
+    output: &mut ExportOutput,
+    progress: &mut ProgressTracker<'_>,
+) {
+    progress.item(PHASE_MANIFEST, None);
+    let mut manifest = build_manifest(ctx.asset, ctx.materials, ctx.sources, ctx.vt_matches);
+    // Completed before writing: the sizes come out of the archives, which the manifest alone has no
+    // access to
+    fill_vt_sizes(ctx.pool, ctx.vt_matches, &mut manifest);
+    write_manifest(&manifest, &plan.out_dir, output);
+}
+
+/// Where the export wrote and what it produced
+fn export_result(plan: &ExportPlan<'_>, output: ExportOutput) -> ExportResult {
+    let (files, warnings) = output.into_parts();
+    ExportResult {
         output_dir: plan.out_dir.display().to_string(),
         files,
         warnings,
-    })
+    }
 }

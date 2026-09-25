@@ -28,24 +28,31 @@ pub fn stage_sources(
     matched: &GtpMatch,
     shared: &Path,
 ) -> Result<StagedSources, String> {
-    let gtp_rel = matched.gtp_path.as_str();
-    let gtp_name = Path::new(gtp_rel)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| format!("Invalid GTP path: {gtp_rel}"))?;
-
-    let gtp = shared.join(gtp_name);
-    if !gtp.exists() {
-        // Page files are read from the virtual texture archive and nowhere else
-        let bytes = pak.read_from(Pak::VirtualTextures, gtp_rel)?;
-        fs::write(&gtp, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
-    }
-
+    let gtp = stage_page_file(pak, matched.gtp_path.as_str(), shared)?;
     let gts_candidates = stage_gts_candidates(pak, matched, shared)?;
     Ok(StagedSources {
         gtp,
         gts_candidates,
     })
+}
+
+/// Stage the page file at `gtp_rel` into `shared`, reuse the copy already there. Page files are read
+/// from the virtual texture archive and nowhere else.
+fn stage_page_file(pak: &mut Archives, gtp_rel: &str, shared: &Path) -> Result<PathBuf, String> {
+    let path =
+        staged_path(gtp_rel, shared).ok_or_else(|| format!("Invalid GTP path: {gtp_rel}"))?;
+    if path.exists() {
+        return Ok(path);
+    }
+    let bytes = pak.read_from(Pak::VirtualTextures, gtp_rel)?;
+    fs::write(&path, bytes).map_err(|e| format!("Failed to stage GTP: {e}"))?;
+    Ok(path)
+}
+
+/// Where a staged copy of `rel` lives inside `shared`; `None` when the archive path has no file name
+fn staged_path(rel: &str, shared: &Path) -> Option<PathBuf> {
+    let name = Path::new(rel).file_name().and_then(|n| n.to_str())?;
+    Some(shared.join(name))
 }
 
 /// Resolve GTS candidates and stage them into the `shared` directory, ordered by likelihood:
@@ -65,83 +72,103 @@ fn stage_gts_candidates(
 ) -> Result<Vec<PathBuf>, String> {
     let gtp_rel = matched.gtp_path.as_str();
     let gts_rel = derive_gts_path(gtp_rel);
-
-    let gtp_stem = Path::new(gtp_rel)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let gtp_dir = Path::new(gtp_rel)
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
     let mut staged: Vec<PathBuf> = Vec::new();
-
-    // 1. Standard derived name
-    if stage_gts_file(pak, &gts_rel, shared, &mut staged) {
-        return Ok(staged);
+    // The derived name is the one that normally hits, and the fallbacks are only worth scanning when
+    // it does not
+    if !stage_gts_file(pak, &gts_rel, shared, &mut staged) {
+        stage_fallbacks(pak, gtp_rel, shared, &mut staged)?;
     }
+    finish_candidates(gts_rel, staged)
+}
 
-    // 2. Same-directory prefix fallback: the tile set names of the virtual texture archive, filtered
-    //    to the GTP's directory and a name prefix
-    let mut fallbacks: Vec<String> = pak
-        .list_in(Pak::VirtualTextures)?
-        .into_iter()
-        .filter(|p| {
-            p.to_lowercase().ends_with(".gts")
-                && Path::new(p)
-                    .parent()
-                    .and_then(|p| p.to_str())
-                    .unwrap_or("")
-                    .to_lowercase()
-                    == gtp_dir
-        })
-        .filter(|p| {
-            let stem = Path::new(p)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            !stem.is_empty() && gtp_stem.starts_with(&stem)
-        })
-        .collect();
-    // The closer the GTS name is to the GTP name, the more likely it hits; try in descending
-    // file-name length
-    fallbacks.sort_by_key(|p| std::cmp::Reverse(p.len()));
-
-    for rel in fallbacks {
-        stage_gts_file(pak, &rel, shared, &mut staged);
-    }
-
+/// The staged candidates, or the error naming the GTS that could not be found
+fn finish_candidates(gts_rel: String, staged: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
     if staged.is_empty() {
-        return Err(format!(
-            "{gts_rel} not found in {}",
-            Pak::VirtualTextures.file_name()
-        ));
+        return Err(missing_gts_error(&gts_rel));
     }
     Ok(staged)
 }
 
+/// What a tile set whose GTS could not be staged reports
+fn missing_gts_error(gts_rel: &str) -> String {
+    format!(
+        "{gts_rel} not found in {}",
+        Pak::VirtualTextures.file_name()
+    )
+}
+
+/// Stage the fallback candidates of one page file: the closest GTS name first, since the closer it is
+/// to the GTP name, the more likely it is the one that accepts the page file
+fn stage_fallbacks(
+    pak: &mut Archives,
+    gtp_rel: &str,
+    shared: &Path,
+    staged: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    let mut fallbacks = gts_fallbacks(pak, gtp_rel)?;
+    fallbacks.sort_by_key(|rel| std::cmp::Reverse(rel.len()));
+    for rel in fallbacks {
+        stage_gts_file(pak, &rel, shared, staged);
+    }
+    Ok(())
+}
+
+/// `.gts` files of the virtual texture archive that could cover the page file: in the GTP's own
+/// directory, and named as a prefix of the GTP (tile sets do not always share the index spelling of
+/// their page files)
+fn gts_fallbacks(pak: &mut Archives, gtp_rel: &str) -> Result<Vec<String>, String> {
+    let gtp_stem = file_stem_lowercase(gtp_rel);
+    let gtp_dir = parent_dir_lowercase(gtp_rel);
+    Ok(pak
+        .list_in(Pak::VirtualTextures)?
+        .into_iter()
+        .filter(|rel| is_gts_in_dir(rel, &gtp_dir))
+        .filter(|rel| {
+            let stem = file_stem_lowercase(rel);
+            !stem.is_empty() && gtp_stem.starts_with(&stem)
+        })
+        .collect())
+}
+
+/// Whether `rel` is a `.gts` in `dir`, both already lower case
+fn is_gts_in_dir(rel: &str, dir: &str) -> bool {
+    rel.to_lowercase().ends_with(".gts") && parent_dir_lowercase(rel) == dir
+}
+
+/// File stem of an archive path, lower case; empty when it has none
+fn file_stem_lowercase(rel: &str) -> String {
+    Path::new(rel)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase()
+}
+
+/// Parent directory of an archive path, lower case; empty when it has none
+fn parent_dir_lowercase(rel: &str) -> String {
+    Path::new(rel)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .to_lowercase()
+}
+
 /// Stage one GTS to disk; reuse it directly when already staged (shared with another GTP)
 fn stage_gts_file(pak: &mut Archives, rel: &str, shared: &Path, staged: &mut Vec<PathBuf>) -> bool {
-    let Some(name) = Path::new(rel).file_name().and_then(|n| n.to_str()) else {
+    let Some(path) = staged_path(rel, shared) else {
         return false;
     };
-    let path = shared.join(name);
-    if path.exists() {
+    if path.exists() || stage_gts_bytes(pak, rel, &path) {
         staged.push(path);
         return true;
     }
-    match pak.read_from(Pak::VirtualTextures, rel) {
-        Ok(bytes) => match fs::write(&path, &bytes) {
-            Ok(()) => {
-                staged.push(path);
-                true
-            }
-            Err(_) => false,
-        },
-        Err(_) => false,
-    }
+    false
+}
+
+/// Write the GTS at `rel` out to `path`; `false` when it cannot be read or written
+fn stage_gts_bytes(pak: &mut Archives, rel: &str, path: &Path) -> bool {
+    let Ok(bytes) = pak.read_from(Pak::VirtualTextures, rel) else {
+        return false;
+    };
+    fs::write(path, &bytes).is_ok()
 }

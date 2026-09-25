@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use maclarian::merged::VisualAsset;
 use serde::Serialize;
 
+use super::rows_by_id;
 use super::summary::MaterialSummary;
 use super::MaterialInfo;
 use crate::domain::source::ModSources;
@@ -50,45 +51,66 @@ impl ExportMaterial {
         virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
         sources: &ModSources,
     ) -> Self {
-        let MaterialSummary {
-            id,
-            name,
-            source,
-            source_file,
-            // The manifest states the resources inside each material, so the row-level bindings of
-            // the detail panel have nothing to add here
-            bindings: _,
-        } = MaterialSummary::new(id, known, sources);
+        Self::from_summary(
+            MaterialSummary::new(id, known, sources),
+            known,
+            textures,
+            virtual_textures,
+        )
+    }
 
+    /// The manifest row for a material whose identity is already stated. The identity comes from
+    /// `MaterialSummary`, so an unknown material keeps an empty name here exactly as it does on a
+    /// detail row.
+    fn from_summary(
+        summary: MaterialSummary,
+        known: Option<&MaterialInfo>,
+        textures: &HashMap<&str, &TextureSummary>,
+        virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
+    ) -> Self {
         Self {
-            id,
-            name,
-            source,
-            source_file,
-            // In the material's own order (its parameter order); an id the asset's texture rows do
-            // not carry contributes anything
-            textures: known
-                .map(|material| {
-                    material
-                        .texture_ids
-                        .iter()
-                        .filter_map(|id| textures.get(id.as_str()))
-                        .map(|row| (*row).clone())
-                        .collect()
-                })
-                .unwrap_or_default(),
-            virtual_textures: known
-                .map(|material| {
-                    material
-                        .virtual_textures
-                        .iter()
-                        .filter_map(|binding| virtual_textures.get(binding.id.as_str()))
-                        .map(|row| (*row).clone())
-                        .collect()
-                })
-                .unwrap_or_default(),
+            id: summary.id,
+            name: summary.name,
+            source: summary.source,
+            source_file: summary.source_file,
+            textures: bound_textures(known, textures),
+            virtual_textures: bound_virtual_textures(known, virtual_textures),
         }
     }
+}
+
+/// The asset's texture rows for the textures a material binds, in the material's own (parameter)
+/// order. An id the rows do not carry contributes nothing.
+fn bound_textures(
+    known: Option<&MaterialInfo>,
+    textures: &HashMap<&str, &TextureSummary>,
+) -> Vec<TextureSummary> {
+    let Some(material) = known else {
+        return Vec::new();
+    };
+    material
+        .texture_ids
+        .iter()
+        .filter_map(|id| textures.get(id.as_str()))
+        .map(|row| (*row).clone())
+        .collect()
+}
+
+/// The asset's virtual texture rows for the resources a material binds, in binding order. An id the
+/// rows do not carry contributes nothing.
+fn bound_virtual_textures(
+    known: Option<&MaterialInfo>,
+    virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
+) -> Vec<VirtualTextureSummary> {
+    let Some(material) = known else {
+        return Vec::new();
+    };
+    material
+        .virtual_textures
+        .iter()
+        .filter_map(|binding| virtual_textures.get(binding.id.as_str()))
+        .map(|row| (*row).clone())
+        .collect()
 }
 
 /// The materials of `value` in the asset's own order, as the export manifest lists them: each one
@@ -105,12 +127,8 @@ pub fn manifest_materials(
     virtual_textures: &[VirtualTextureSummary],
     sources: &ModSources,
 ) -> Vec<ExportMaterial> {
-    let textures: HashMap<&str, &TextureSummary> =
-        textures.iter().map(|row| (row.id.as_str(), row)).collect();
-    let virtual_textures: HashMap<&str, &VirtualTextureSummary> = virtual_textures
-        .iter()
-        .map(|row| (row.id.as_str(), row))
-        .collect();
+    let textures = rows_by_id(textures, |row| row.id.as_str());
+    let virtual_textures = rows_by_id(virtual_textures, |row| row.id.as_str());
 
     value
         .material_ids

@@ -10,13 +10,7 @@ pub(crate) fn sanitize_file_name(raw: &str) -> String {
     let cleaned: String = raw
         .chars()
         .filter(|c| !c.is_control())
-        .map(|c| {
-            if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
-                '_'
-            } else {
-                c
-            }
-        })
+        .map(replace_forbidden)
         .collect();
 
     let trimmed = cleaned.trim().trim_matches('.').to_string();
@@ -24,6 +18,16 @@ pub(crate) fn sanitize_file_name(raw: &str) -> String {
         "asset".to_string()
     } else {
         trimmed.chars().take(80).collect()
+    }
+}
+
+/// Windows-forbidden and path-separating characters become underscores, so nothing here can name a
+/// file outside the directory it is written to
+fn replace_forbidden(c: char) -> char {
+    if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+        '_'
+    } else {
+        c
     }
 }
 
@@ -48,20 +52,29 @@ pub(crate) fn derive_gts_path(gtp_path: &str) -> String {
     // The directory is split off first and put back at the end: only the file name loses its hash
     // suffix, while the directory has to survive into the result (a GTS sits beside its page file)
     let (dir, name) = gtp_path.rsplit_once('/').unwrap_or(("", gtp_path));
-    let stem = name
-        .strip_suffix(".gtp")
-        .or_else(|| name.strip_suffix(".GTP"))
-        .unwrap_or(name);
-
-    let stripped = stem.rfind('_').filter(|pos| {
-        let suffix = &stem[pos + 1..];
-        suffix.len() == 32 && suffix.chars().all(|c| c.is_ascii_hexdigit())
-    });
-    let stem = stripped.map_or(stem, |pos| &stem[..pos]);
+    let stem = strip_hash_suffix(strip_gtp_extension(name));
 
     if dir.is_empty() {
         format!("{stem}.gts")
     } else {
         format!("{dir}/{stem}.gts")
     }
+}
+
+/// A page file name without its extension; `name` itself when it ends in neither spelling
+fn strip_gtp_extension(name: &str) -> &str {
+    name.strip_suffix(".gtp")
+        .or_else(|| name.strip_suffix(".GTP"))
+        .unwrap_or(name)
+}
+
+/// A tile set index without its trailing `_<32 hex digits>`: that suffix is what makes a page file
+/// name unique, and only the index it belongs to names the GTS. Any other trailing word is part of
+/// the index and stays.
+fn strip_hash_suffix(stem: &str) -> &str {
+    let stripped = stem.rfind('_').filter(|pos| {
+        let suffix = &stem[pos + 1..];
+        suffix.len() == 32 && suffix.chars().all(|c| c.is_ascii_hexdigit())
+    });
+    stripped.map_or(stem, |pos| &stem[..pos])
 }

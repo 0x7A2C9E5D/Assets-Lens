@@ -72,7 +72,11 @@ impl ExportPlan<'_> {
     }
 }
 
-/// Decide what the export will contain and create its output directory
+/// Decide what the export will contain and create its output directory.
+///
+/// The `ExportPlan` literal below is the accepted struct-initialization exception to the 15-line
+/// budget: its fields are what the whole pipeline reads back, so moving the value computations away
+/// from the literal would separate each field from the value that explains it.
 pub(super) fn plan_export<'a>(
     asset: &'a VisualAsset,
     dest_root: &Path,
@@ -82,17 +86,11 @@ pub(super) fn plan_export<'a>(
     let export_textures = options.texture_format.is_export();
 
     let dir_name = sanitize_file_name(&asset.name);
-    let out_dir = dest_root.join(&dir_name);
-    fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create export directory: {e}"))?;
+    let out_dir = create_out_dir(dest_root, &dir_name)?;
 
     let vt_targets = vt_targets_of(asset, export_textures);
-    let texture_total = if export_textures {
-        asset.textures.len()
-    } else {
-        0
-    };
     // 1 mesh + 1 manifest, plus texture files and virtual textures
-    let progress_total = 2 + texture_total + vt_targets.len();
+    let progress_total = 2 + texture_total(asset, export_textures) + vt_targets.len();
 
     Ok(ExportPlan {
         dir_name,
@@ -103,4 +101,20 @@ pub(super) fn plan_export<'a>(
         vt_targets,
         progress_total,
     })
+}
+
+/// Create the directory one export writes into
+fn create_out_dir(dest_root: &Path, dir_name: &str) -> Result<PathBuf, String> {
+    let out_dir = dest_root.join(dir_name);
+    fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create export directory: {e}"))?;
+    Ok(out_dir)
+}
+
+/// How many texture items the progress bar counts
+fn texture_total(asset: &VisualAsset, export_textures: bool) -> usize {
+    if export_textures {
+        asset.textures.len()
+    } else {
+        0
+    }
 }

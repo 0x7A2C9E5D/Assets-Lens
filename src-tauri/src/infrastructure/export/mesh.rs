@@ -8,8 +8,8 @@ use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
 use maclarian::merged::VisualAsset;
 
 use super::plan::{ExportPlan, ProgressTracker};
-use super::{record_file, PHASE_MODEL, PHASE_MODEL_RAW};
-use crate::domain::export::{ExportedFile, MeshFormat};
+use super::{ExportOutput, PHASE_MODEL, PHASE_MODEL_RAW};
+use crate::domain::export::MeshFormat;
 use crate::infrastructure::archives::{lock_pool, Archives, Pak};
 
 /// Read the mesh and write it into the export directory. Unlike a texture, the mesh is not
@@ -18,26 +18,38 @@ pub(super) fn export_mesh(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
     plan: &ExportPlan<'_>,
-    files: &mut Vec<ExportedFile>,
+    output: &mut ExportOutput,
     progress: &mut ProgressTracker<'_>,
 ) -> Result<(), String> {
-    progress.item(
-        if plan.mesh_format.is_glb() {
-            PHASE_MODEL
-        } else {
-            PHASE_MODEL_RAW
-        },
-        Some(asset.gr2_path.clone()),
-    );
-
+    report_mesh_start(asset, plan, progress);
     let mesh_bytes = read_mesh_bytes(asset, pool, plan.mesh_format)?;
+    write_mesh(&mesh_bytes, plan, output)
+}
 
-    let mesh_ext = plan.mesh_format.extension();
-    let mesh_path = plan.out_dir.join(format!("{}.{mesh_ext}", plan.dir_name));
-    fs::write(&mesh_path, &mesh_bytes)
-        .map_err(|e| format!("Failed to write mesh ({mesh_ext}): {e}"))?;
-    record_file(files, &mesh_path, mesh_ext, mesh_bytes.len());
+/// Count the mesh as the current item, under the phase its format belongs to
+fn report_mesh_start(
+    asset: &VisualAsset,
+    plan: &ExportPlan<'_>,
+    progress: &mut ProgressTracker<'_>,
+) {
+    let phase = if plan.mesh_format.is_glb() {
+        PHASE_MODEL
+    } else {
+        PHASE_MODEL_RAW
+    };
+    progress.item(phase, Some(asset.gr2_path.clone()));
+}
 
+/// Write the mesh bytes into the export directory and record the artifact
+fn write_mesh(
+    bytes: &[u8],
+    plan: &ExportPlan<'_>,
+    output: &mut ExportOutput,
+) -> Result<(), String> {
+    let ext = plan.mesh_format.extension();
+    let path = plan.out_dir.join(format!("{}.{ext}", plan.dir_name));
+    fs::write(&path, bytes).map_err(|e| format!("Failed to write mesh ({ext}): {e}"))?;
+    output.record(&path, ext, bytes.len());
     Ok(())
 }
 

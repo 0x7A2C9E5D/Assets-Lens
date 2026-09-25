@@ -80,6 +80,17 @@ fn find_entry(table: &[FileTableEntry], want: &str) -> Option<FileTableEntry> {
         .cloned()
 }
 
+/// Open one archive and parse its whole file table
+fn open_pak(path: &Path) -> Result<ModPak, String> {
+    let file = File::open(path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
+    let mut reader = LspkReader::with_path(BufReader::new(file), path);
+    let table = reader
+        .list_files()
+        .map_err(|e| format!("Failed to read file table of {}: {e}", path.display()))?;
+
+    Ok(ModPak { reader, table })
+}
+
 impl Archives {
     /// A pool over the game's archives in `game_path` plus `mod_paths`; nothing is opened until it is
     /// first read
@@ -123,21 +134,17 @@ impl Archives {
         if self.mod_paks.get(index).is_some_and(Option::is_some) {
             return Ok(());
         }
+        let path = self.mod_path_of(index)?;
+        self.mod_paks[index] = Some(open_pak(&path)?);
+        Ok(())
+    }
 
-        let path = self
-            .mod_paths
+    /// Path of one mod archive inside the pool
+    fn mod_path_of(&self, index: usize) -> Result<PathBuf, String> {
+        self.mod_paths
             .get(index)
             .cloned()
-            .ok_or_else(|| format!("Mod archive #{index} is not part of the pool"))?;
-        let file =
-            File::open(&path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
-        let mut reader = LspkReader::with_path(BufReader::new(file), &path);
-        let table = reader
-            .list_files()
-            .map_err(|e| format!("Failed to read file table of {}: {e}", path.display()))?;
-
-        self.mod_paks[index] = Some(ModPak { reader, table });
-        Ok(())
+            .ok_or_else(|| format!("Mod archive #{index} is not part of the pool"))
     }
 
     /// Read one file out of a mod archive, or nothing when that mod does not carry it
@@ -148,47 +155,68 @@ impl Archives {
         want: &str,
     ) -> Result<Option<Vec<u8>>, String> {
         self.ensure_mod(index)?;
+        let Some(entry) = self.mod_entry(index, want) else {
+            return Ok(None);
+        };
+        self.decompress_mod(index, &entry, target)
+    }
 
+    /// The file table entry of one open mod archive for `want`
+    fn mod_entry(&self, index: usize, want: &str) -> Option<FileTableEntry> {
+        let mod_pak = self.mod_paks.get(index)?.as_ref()?;
+        find_entry(&mod_pak.table, want)
+    }
+
+    /// Decompress one entry out of one open mod archive
+    fn decompress_mod(
+        &mut self,
+        index: usize,
+        entry: &FileTableEntry,
+        target: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
         let Some(mod_pak) = self.mod_paks.get_mut(index).and_then(Option::as_mut) else {
             return Ok(None);
         };
-        let Some(entry) = find_entry(&mod_pak.table, want) else {
-            return Ok(None);
-        };
-
         mod_pak
             .reader
-            .decompress_file(&entry)
-            .map(Some)
+            .decompress_file(entry)
             .map_err(|e| format!("Failed to decompress {target}: {e}"))
+            .map(Some)
     }
 
     /// Read file bytes out of one archive.
     ///
-    /// Mod archives are searched first, highest priority first: a mod ships replacements for files the
-    /// game also has, and a DDS a modded visual points at has to come out of the mod. Only then is the
-    /// archive named by kind read, where a missing file is an error rather than the start of a search.
-    ///
-    /// A mod archive that cannot be opened is skipped rather than reported: it must not keep the
-    /// game's own files from being read.
+    /// Mod archives are searched first, highest priority first; only then is the archive named by kind
+    /// read, where a missing file is an error rather than the start of a search.
     pub fn read_from(&mut self, pak: Pak, target: &str) -> Result<Vec<u8>, String> {
         let want = normalize_path(target);
 
+        if let Some(bytes) = self.read_from_mods(target, &want) {
+            return Ok(bytes);
+        }
+        self.read_from_game(pak, target, &want)
+    }
+
+    /// Search the mod archives for one file, highest priority first: a mod ships replacements for files
+    /// the game also has, and a DDS a modded visual points at has to come out of the mod.
+    ///
+    /// A mod archive that cannot be opened is skipped rather than reported: it must not keep the game's
+    /// own files from being read.
+    fn read_from_mods(&mut self, target: &str, want: &str) -> Option<Vec<u8>> {
         for index in (0..self.mod_paths.len()).rev() {
-            match self.read_mod(index, target, &want) {
-                Ok(Some(bytes)) => return Ok(bytes),
+            match self.read_mod(index, target, want) {
+                Ok(Some(bytes)) => return Some(bytes),
                 Ok(None) => {}
                 Err(err) => eprintln!("[maclarian] mod archive skipped: {err}"),
             }
         }
+        None
+    }
 
+    /// Read one file out of the archive named by kind; that archive is opened first when it is not
+    fn read_from_game(&mut self, pak: Pak, target: &str, want: &str) -> Result<Vec<u8>, String> {
         self.ensure(pak)?;
-
-        let entry = self
-            .tables
-            .get(&pak)
-            .and_then(|entries| find_entry(entries, &want))
-            .ok_or_else(|| format!("{target} not found in {}", pak.file_name()))?;
+        let entry = self.game_entry(pak, target, want)?;
         let reader = self
             .readers
             .get_mut(&pak)
@@ -197,6 +225,14 @@ impl Archives {
         reader
             .decompress_file(&entry)
             .map_err(|e| format!("Failed to decompress {target}: {e}"))
+    }
+
+    /// The file table entry of one open game archive for `want`
+    fn game_entry(&mut self, pak: Pak, target: &str, want: &str) -> Result<FileTableEntry, String> {
+        self.tables
+            .get(&pak)
+            .and_then(|entries| find_entry(entries, want))
+            .ok_or_else(|| format!("{target} not found in {}", pak.file_name()))
     }
 
     /// List all file paths inside one archive (`/`-separated)

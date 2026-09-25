@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 
-use maclarian::formats::lsx::LsxRegion;
+use maclarian::formats::lsx::{LsxNode, LsxRegion};
 use maclarian::merged::{TextureRef, VirtualTextureRef, VisualAsset};
 
 use self::read::{attr, resource_nodes};
@@ -74,31 +74,9 @@ impl ModAssets {
     /// Add the visuals of one `VisualBank` region
     pub(super) fn read_visuals(&mut self, region: &LsxRegion) {
         for resource in resource_nodes(region, "VisualBank") {
-            let id = attr(resource, "ID");
-            let gr2_path = attr(resource, "SourceFile");
-            // Without either of these the visual could neither be shown nor previewed, which is where
-            // maclarian draws the same line
-            if id.is_empty() || gr2_path.is_empty() {
-                continue;
+            if let Some(visual) = visual_of(resource) {
+                self.visuals.push(visual);
             }
-
-            let mut material_ids: Vec<String> = Vec::new();
-            for child in resource.children.iter().filter(|c| c.id == "Objects") {
-                let material_id = attr(child, "MaterialID");
-                if !material_id.is_empty() && !material_ids.contains(&material_id) {
-                    material_ids.push(material_id);
-                }
-            }
-
-            self.visuals.push(VisualAsset {
-                id,
-                name: attr(resource, "Name"),
-                gr2_path,
-                source_pak: String::new(),
-                material_ids,
-                textures: Vec::new(),
-                virtual_textures: Vec::new(),
-            });
         }
     }
 
@@ -106,40 +84,9 @@ impl ModAssets {
     pub(super) fn read_materials(&mut self, region: &LsxRegion) {
         for resource in resource_nodes(region, "MaterialBank") {
             let id = attr(resource, "ID");
-            if id.is_empty() {
-                continue;
+            if !id.is_empty() {
+                self.materials.insert(id, mod_material(resource));
             }
-
-            let mut textures = Vec::new();
-            let mut virtual_textures: Vec<String> = Vec::new();
-            for child in &resource.children {
-                if child.id == "Texture2DParameters" {
-                    let texture_id = attr(child, "ID");
-                    if !texture_id.is_empty() {
-                        textures.push(TextureParam {
-                            parameter_name: attr(child, "ParameterName"),
-                            texture_id,
-                        });
-                    }
-                } else if child.id == "VirtualTextureParameters" {
-                    let virtual_texture_id = attr(child, "ID");
-                    if !virtual_texture_id.is_empty()
-                        && !virtual_textures.contains(&virtual_texture_id)
-                    {
-                        virtual_textures.push(virtual_texture_id);
-                    }
-                }
-            }
-
-            self.materials.insert(
-                id,
-                ModMaterial {
-                    name: attr(resource, "Name"),
-                    source_file: attr(resource, "SourceFile"),
-                    textures,
-                    virtual_textures,
-                },
-            );
         }
     }
 
@@ -147,24 +94,9 @@ impl ModAssets {
     pub(super) fn read_textures(&mut self, region: &LsxRegion) {
         for resource in resource_nodes(region, "TextureBank") {
             let id = attr(resource, "ID");
-            if id.is_empty() {
-                continue;
+            if !id.is_empty() {
+                self.textures.insert(id.clone(), mod_texture(resource, id));
             }
-
-            self.textures.insert(
-                id.clone(),
-                TextureRef {
-                    id,
-                    name: attr(resource, "Name"),
-                    dds_path: attr(resource, "SourceFile"),
-                    source_pak: String::new(),
-                    // A size the bank does not state stays 0, as it does for the game's own banks
-                    width: attr(resource, "Width").parse().unwrap_or(0),
-                    height: attr(resource, "Height").parse().unwrap_or(0),
-                    // Filled per visual, from the parameter of the material binding it
-                    parameter_name: None,
-                },
-            );
         }
     }
 
@@ -172,18 +104,123 @@ impl ModAssets {
     pub(super) fn read_virtual_textures(&mut self, region: &LsxRegion) {
         for resource in resource_nodes(region, "VirtualTextureBank") {
             let id = attr(resource, "ID");
-            if id.is_empty() {
-                continue;
+            if !id.is_empty() {
+                self.virtual_textures.insert(id.clone(), mod_virtual_texture(resource, id));
             }
-
-            self.virtual_textures.insert(
-                id.clone(),
-                VirtualTextureRef {
-                    id,
-                    name: attr(resource, "Name"),
-                    gtex_hash: attr(resource, "GTexFileName"),
-                },
-            );
         }
+    }
+}
+
+/// One visual of a `VisualBank` region, or `None` when it names no id or no mesh source: without
+/// either of these the visual could neither be shown nor previewed, which is where maclarian draws
+/// the same line
+fn visual_of(resource: &LsxNode) -> Option<VisualAsset> {
+    let id = attr(resource, "ID");
+    let gr2_path = attr(resource, "SourceFile");
+    if id.is_empty() || gr2_path.is_empty() {
+        return None;
+    }
+    Some(new_visual(resource, id, gr2_path))
+}
+
+/// The visual row of a `Resource` node whose id and mesh source are already known to be set
+fn new_visual(resource: &LsxNode, id: String, gr2_path: String) -> VisualAsset {
+    VisualAsset {
+        id,
+        name: attr(resource, "Name"),
+        gr2_path,
+        source_pak: String::new(),
+        material_ids: material_ids_of(resource),
+        textures: Vec::new(),
+        virtual_textures: Vec::new(),
+    }
+}
+
+/// The material GUIDs a visual binds, in the order it lists them and without repeats
+fn material_ids_of(resource: &LsxNode) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    for child in resource.children.iter().filter(|child| child.id == "Objects") {
+        let material_id = attr(child, "MaterialID");
+        if !material_id.is_empty() && !ids.contains(&material_id) {
+            ids.push(material_id);
+        }
+    }
+    ids
+}
+
+/// One material of a `MaterialBank` region, with the resources it binds
+fn mod_material(resource: &LsxNode) -> ModMaterial {
+    let mut bound = BoundResources::default();
+    for child in &resource.children {
+        bound.push(child);
+    }
+    ModMaterial {
+        name: attr(resource, "Name"),
+        source_file: attr(resource, "SourceFile"),
+        textures: bound.textures,
+        virtual_textures: bound.virtual_textures,
+    }
+}
+
+/// The resources one material binds, accumulated over the child nodes of its `Resource`
+#[derive(Default)]
+struct BoundResources {
+    textures: Vec<TextureParam>,
+    virtual_textures: Vec<String>,
+}
+
+impl BoundResources {
+    /// Read one child node of a material: a texture parameter, a virtual texture parameter, or
+    /// neither — every other child carries no indexed resource
+    fn push(&mut self, child: &LsxNode) {
+        if child.id == "Texture2DParameters" {
+            self.push_texture(child);
+        } else if child.id == "VirtualTextureParameters" {
+            self.push_virtual_texture(child);
+        }
+    }
+
+    /// One `Texture2DParameters` node: a texture GUID paired with the parameter that binds it
+    fn push_texture(&mut self, child: &LsxNode) {
+        let texture_id = attr(child, "ID");
+        if texture_id.is_empty() {
+            return;
+        }
+        self.textures.push(TextureParam {
+            parameter_name: attr(child, "ParameterName"),
+            texture_id,
+        });
+    }
+
+    /// One `VirtualTextureParameters` node: a virtual texture GUID, without repeats
+    fn push_virtual_texture(&mut self, child: &LsxNode) {
+        let id = attr(child, "ID");
+        if !id.is_empty() && !self.virtual_textures.contains(&id) {
+            self.virtual_textures.push(id);
+        }
+    }
+}
+
+/// One texture of a `TextureBank` region, whose id is already known to be set
+fn mod_texture(resource: &LsxNode, id: String) -> TextureRef {
+    TextureRef {
+        id,
+        name: attr(resource, "Name"),
+        dds_path: attr(resource, "SourceFile"),
+        source_pak: String::new(),
+        // A size the bank does not state stays 0, as it does for the game's own banks
+        width: attr(resource, "Width").parse().unwrap_or(0),
+        height: attr(resource, "Height").parse().unwrap_or(0),
+        // Filled per visual, from the parameter of the material binding it
+        parameter_name: None,
+    }
+}
+
+/// One virtual texture of a `VirtualTextureBank` region, whose id is already known to be set
+fn mod_virtual_texture(resource: &LsxNode, id: String) -> VirtualTextureRef {
+    VirtualTextureRef {
+        id,
+        name: attr(resource, "Name"),
+        gtex_hash: attr(resource, "GTexFileName"),
     }
 }

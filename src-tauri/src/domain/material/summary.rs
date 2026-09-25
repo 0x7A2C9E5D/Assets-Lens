@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use super::MaterialInfo;
+use super::{rows_by_id, MaterialInfo, VirtualTextureBinding};
 use crate::domain::source::{source_of, ModSources};
 use crate::domain::texture::TextureSummary;
 use crate::domain::virtual_textures::VirtualTextureSummary;
@@ -107,40 +107,80 @@ pub(crate) fn fill_material_bindings(
     virtual_textures: &[VirtualTextureSummary],
     known: &HashMap<String, MaterialInfo>,
 ) {
-    let textures: HashMap<&str, &TextureSummary> =
-        textures.iter().map(|row| (row.id.as_str(), row)).collect();
-    let virtual_textures: HashMap<&str, &VirtualTextureSummary> = virtual_textures
-        .iter()
-        .map(|row| (row.id.as_str(), row))
-        .collect();
+    let textures = rows_by_id(textures, |row| row.id.as_str());
+    let virtual_textures = rows_by_id(virtual_textures, |row| row.id.as_str());
 
     for row in materials.iter_mut() {
-        let Some(material) = known.get(&row.id) else {
-            continue;
-        };
-
-        row.bindings = material
-            .texture_ids
-            .iter()
-            .filter_map(|id| textures.get(id.as_str()))
-            .map(|texture| MaterialBinding {
-                kind: BindingKind::Texture,
-                id: texture.id.clone(),
-                name: texture.name.clone(),
-                parameter_name: texture.parameter_name.clone(),
-            })
-            .chain(material.virtual_textures.iter().filter_map(|binding| {
-                let row = virtual_textures.get(binding.id.as_str())?;
-                Some(MaterialBinding {
-                    kind: BindingKind::Virtual,
-                    id: row.id.clone(),
-                    name: row.name.clone(),
-                    // Taken from this material's own binding: the parameter belongs to the binding,
-                    // not to the resource, so the row-level one would only be an approximation
-                    parameter_name: Some(binding.parameter_name.clone())
-                        .filter(|name| !name.is_empty()),
-                })
-            }))
-            .collect();
+        row.bindings = material_bindings(known.get(&row.id), &textures, &virtual_textures);
     }
+}
+
+/// What one material binds, in binding order: its textures first, then its virtual textures. A
+/// material the cache does not know binds nothing.
+fn material_bindings(
+    known: Option<&MaterialInfo>,
+    textures: &HashMap<&str, &TextureSummary>,
+    virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
+) -> Vec<MaterialBinding> {
+    let Some(material) = known else {
+        return Vec::new();
+    };
+    let mut bindings = texture_bindings(material, textures);
+    bindings.extend(virtual_texture_bindings(material, virtual_textures));
+    bindings
+}
+
+/// The textures a material binds, in the material's own (parameter) order. A resource no asset row
+/// carries contributes nothing.
+fn texture_bindings(
+    material: &MaterialInfo,
+    textures: &HashMap<&str, &TextureSummary>,
+) -> Vec<MaterialBinding> {
+    material
+        .texture_ids
+        .iter()
+        .filter_map(|id| textures.get(id.as_str()).copied())
+        .map(texture_binding)
+        .collect()
+}
+
+/// The binding row of one texture the material references
+fn texture_binding(texture: &TextureSummary) -> MaterialBinding {
+    MaterialBinding {
+        kind: BindingKind::Texture,
+        id: texture.id.clone(),
+        name: texture.name.clone(),
+        parameter_name: texture.parameter_name.clone(),
+    }
+}
+
+/// The virtual textures a material binds, in binding order. A resource no asset row carries
+/// contributes nothing.
+fn virtual_texture_bindings(
+    material: &MaterialInfo,
+    virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
+) -> Vec<MaterialBinding> {
+    material
+        .virtual_textures
+        .iter()
+        .filter_map(|binding| virtual_texture_binding(binding, virtual_textures))
+        .collect()
+}
+
+/// The binding row of one virtual texture the material references, or `None` when no asset row
+/// carries it.
+///
+/// The parameter name is taken from this material's own binding: the name belongs to the binding, not
+/// to the resource, so the row-level one would only be an approximation. An empty name is left out.
+fn virtual_texture_binding(
+    binding: &VirtualTextureBinding,
+    virtual_textures: &HashMap<&str, &VirtualTextureSummary>,
+) -> Option<MaterialBinding> {
+    let row = virtual_textures.get(binding.id.as_str())?;
+    Some(MaterialBinding {
+        kind: BindingKind::Virtual,
+        id: row.id.clone(),
+        name: row.name.clone(),
+        parameter_name: Some(binding.parameter_name.clone()).filter(|name| !name.is_empty()),
+    })
 }

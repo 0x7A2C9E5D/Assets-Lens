@@ -20,51 +20,68 @@ use super::ModAssets;
 /// time so a `_merged.lsf` can stand in for the files beside it.
 pub fn read_mod(archives: &mut Archives, index: usize) -> ModAssets {
     let stem = archives.mod_name(index);
-
-    let paths = match archives.list_mod(index) {
-        Ok(paths) => paths,
-        Err(err) => {
-            eprintln!("[maclarian] mod {stem} skipped: {err}");
-            return ModAssets::new(stem);
-        }
+    let Some(paths) = mod_paths(archives, index, &stem) else {
+        return ModAssets::new(stem);
     };
 
     let name = mod_display_name(archives, index, &paths, stem);
     let mut assets = ModAssets::new(name);
+    for path in bank_files(&paths) {
+        read_banks(archives, index, path, &mut assets);
+    }
+    assets
+}
 
+/// The archive entries of one mod, or `None` — reported — when its file table cannot be listed
+fn mod_paths(archives: &mut Archives, index: usize, stem: &str) -> Option<Vec<String>> {
+    match archives.list_mod(index) {
+        Ok(paths) => Some(paths),
+        Err(err) => {
+            eprintln!("[maclarian] mod {stem} skipped: {err}");
+            None
+        }
+    }
+}
+
+/// The bank files of one mod, grouped one directory at a time and in directory order
+fn bank_files(paths: &[String]) -> Vec<&str> {
     let mut banks: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for path in &paths {
+    for path in paths {
         if let Some(dir) = bank_dir(path) {
             banks.entry(dir).or_default().push(path);
         }
     }
 
-    for mut files in banks.into_values() {
-        // A directory carrying a merged file already holds every `.lsf` bank beside it, so those are
-        // not parsed again. `.lsx` banks stay: the merged file accounts for the `.lsf` ones only.
-        if files.iter().any(|path| path.ends_with("_merged.lsf")) {
-            files.retain(|path| path.ends_with("_merged.lsf") || path.ends_with(".lsx"));
-        }
+    banks.into_values().flat_map(without_merged_siblings).collect()
+}
 
-        for path in files {
-            let Some(lsx) = read_bank(archives, index, path) else {
-                continue;
-            };
-            for region in &lsx.regions {
-                match region.id.as_str() {
-                    "VisualBank" => assets.read_visuals(region),
-                    "MaterialBank" => assets.read_materials(region),
-                    "TextureBank" => assets.read_textures(region),
-                    "VirtualTextureBank" => assets.read_virtual_textures(region),
-                    // Every other region (Templates, Tags, CharacterVisualBank, …) carries no indexed
-                    // resource
-                    _ => {}
-                }
-            }
+/// One bank directory's files, with the `.lsf` banks a `_merged.lsf` beside them stands for dropped:
+/// that file already holds every one of them. `.lsx` banks stay, the merged file accounts for the
+/// `.lsf` ones only.
+fn without_merged_siblings(mut files: Vec<&str>) -> Vec<&str> {
+    if files.iter().any(|path| path.ends_with("_merged.lsf")) {
+        files.retain(|path| path.ends_with("_merged.lsf") || path.ends_with(".lsx"));
+    }
+    files
+}
+
+/// Read every indexed bank region of one file into `assets`; a region that carries no indexed
+/// resource is skipped
+fn read_banks(archives: &mut Archives, index: usize, path: &str, assets: &mut ModAssets) {
+    let Some(lsx) = read_bank(archives, index, path) else {
+        return;
+    };
+    for region in &lsx.regions {
+        match region.id.as_str() {
+            "VisualBank" => assets.read_visuals(region),
+            "MaterialBank" => assets.read_materials(region),
+            "TextureBank" => assets.read_textures(region),
+            "VirtualTextureBank" => assets.read_virtual_textures(region),
+            // Every other region (Templates, Tags, CharacterVisualBank, …) carries no indexed
+            // resource
+            _ => {}
         }
     }
-
-    assets
 }
 
 /// The bank directory an archive entry belongs to, or `None` when the entry is not a bank file.
@@ -96,46 +113,46 @@ fn bank_dir(path: &str) -> Option<&str> {
     (has_content && has_bank).then_some(dir)
 }
 
-/// Parse one bank file into an LSX document.
-///
-/// A `.lsx` bank is already XML and is parsed as it stands; a `.lsf` bank goes through maclarian's LSF
-/// reader, which handles the document version and the per-segment compression, and then its
-/// converter, which hands over the same document model. A file that fails any step is skipped,
-/// leaving the mod's other banks unaffected.
+/// Parse one bank file into an LSX document; a file that fails any step is skipped, leaving the mod's
+/// other banks unaffected.
 pub(super) fn read_bank(archives: &mut Archives, index: usize, path: &str) -> Option<LsxDocument> {
-    let bytes = match archives.read_mod_file(index, path) {
-        Ok(bytes) => bytes,
+    let bytes = mod_file_bytes(archives, index, path)?;
+    let xml = bank_xml(path, &bytes)?;
+    parse_lsx(&xml)
+        .map_err(|err| eprintln!("[maclarian] {path} is not readable as LSX: {err}"))
+        .ok()
+}
+
+/// The bytes of one mod file, or `None` — reported — when that file cannot be read
+fn mod_file_bytes(archives: &mut Archives, index: usize, path: &str) -> Option<Vec<u8>> {
+    match archives.read_mod_file(index, path) {
+        Ok(bytes) => Some(bytes),
         Err(err) => {
             eprintln!("[maclarian] mod file skipped: {err}");
-            return None;
-        }
-    };
-
-    let xml = if path.ends_with(".lsx") {
-        match String::from_utf8(bytes) {
-            Ok(xml) => xml,
-            Err(err) => {
-                eprintln!("[maclarian] {path} is not readable as LSX: {err}");
-                return None;
-            }
-        }
-    } else {
-        match parse_lsf_bytes(&bytes).and_then(|document| to_lsx(&document)) {
-            Ok(xml) => xml,
-            Err(err) => {
-                eprintln!("[maclarian] {path} is not readable as LSF: {err}");
-                return None;
-            }
-        }
-    };
-
-    match parse_lsx(&xml) {
-        Ok(lsx) => Some(lsx),
-        Err(err) => {
-            eprintln!("[maclarian] {path} is not readable as LSX: {err}");
             None
         }
     }
+}
+
+/// The XML of one bank file, or `None` — reported — when its own format cannot be read: a `.lsx`
+/// bank is XML already, a `.lsf` bank goes through maclarian's LSF reader and then its converter,
+/// which hands over the same document model. A file that fails any step is skipped, leaving the
+/// mod's other banks unaffected.
+fn bank_xml(path: &str, bytes: &[u8]) -> Option<String> {
+    if path.ends_with(".lsx") {
+        return lsx_text(path, bytes);
+    }
+    parse_lsf_bytes(bytes)
+        .and_then(|document| to_lsx(&document))
+        .map_err(|err| eprintln!("[maclarian] {path} is not readable as LSF: {err}"))
+        .ok()
+}
+
+/// One `.lsx` bank's text, or `None` — reported — when the bytes are not valid UTF-8
+fn lsx_text(path: &str, bytes: &[u8]) -> Option<String> {
+    String::from_utf8(bytes.to_vec())
+        .map_err(|err| eprintln!("[maclarian] {path} is not readable as LSX: {err}"))
+        .ok()
 }
 
 /// The `Resource` nodes of a bank region.

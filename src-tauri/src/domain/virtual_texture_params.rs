@@ -32,18 +32,28 @@ pub fn read_parameters(
     let mut parameters = HashMap::new();
 
     for (material_id, source_file) in materials {
-        let names = match templates.get(source_file.as_str()) {
-            Some(names) => names.clone(),
-            None => {
-                let names = read_template(pool, source_file);
-                templates.insert(source_file.as_str(), names.clone());
-                names
-            }
-        };
+        let names = template_parameters(pool, &mut templates, source_file.as_str());
         parameters.insert(material_id.clone(), names);
     }
 
     parameters
+}
+
+/// The parameter names of `source_file`'s template, read at most once per template: templates are
+/// shared between materials, so the cache avoids re-reading the same file for each of them
+fn template_parameters<'a>(
+    pool: &mut Archives,
+    templates: &mut HashMap<&'a str, Vec<String>>,
+    source_file: &'a str,
+) -> Vec<String> {
+    match templates.get(source_file) {
+        Some(names) => names.clone(),
+        None => {
+            let names = read_template(pool, source_file);
+            templates.insert(source_file, names.clone());
+            names
+        }
+    }
 }
 
 /// Parameter names declared by one material template, in binding order.

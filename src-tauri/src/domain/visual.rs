@@ -52,6 +52,8 @@ impl VisualAssetDetail {
         let virtual_textures = virtual_texture_summaries(value, matches, materials, sources);
         fill_material_bindings(&mut material_rows, &textures, &virtual_textures, materials);
 
+        // One line over the limit, deliberately: the structure of the payload is the point here, and
+        // moving any field into a helper of its own would only hide which value it names.
         Self {
             id: value.id.clone(),
             name: value.name.clone(),
