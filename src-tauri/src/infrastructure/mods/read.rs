@@ -1,0 +1,166 @@
+//! Reading a mod's banks: which of its archive entries are banks, and what each one parses into.
+
+use std::collections::BTreeMap;
+
+use maclarian::converter::to_lsx;
+use maclarian::formats::lsf::parse_lsf_bytes;
+use maclarian::formats::lsx::{parse_lsx, LsxDocument, LsxNode, LsxRegion};
+
+use crate::infrastructure::archives::Archives;
+
+use super::naming::mod_display_name;
+use super::ModAssets;
+
+/// Read one mod archive into the resources it contributes.
+///
+/// A file that fails to parse is skipped with a note: a mod is third-party data, and one unreadable
+/// bank must not cost the whole build.
+///
+/// Only the module's bank folders are walked (see `bank_dir`), and they are read one directory at a
+/// time so a `_merged.lsf` can stand in for the files beside it.
+pub fn read_mod(archives: &mut Archives, index: usize) -> ModAssets {
+    let stem = archives.mod_name(index);
+
+    let paths = match archives.list_mod(index) {
+        Ok(paths) => paths,
+        Err(err) => {
+            eprintln!("[maclarian] mod {stem} skipped: {err}");
+            return ModAssets::new(stem);
+        }
+    };
+
+    let name = mod_display_name(archives, index, &paths, stem);
+    let mut assets = ModAssets::new(name);
+
+    let mut banks: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for path in &paths {
+        if let Some(dir) = bank_dir(path) {
+            banks.entry(dir).or_default().push(path);
+        }
+    }
+
+    for mut files in banks.into_values() {
+        // A directory carrying a merged file already holds every `.lsf` bank beside it, so those are
+        // not parsed again. `.lsx` banks stay: the merged file accounts for the `.lsf` ones only.
+        if files.iter().any(|path| path.ends_with("_merged.lsf")) {
+            files.retain(|path| path.ends_with("_merged.lsf") || path.ends_with(".lsx"));
+        }
+
+        for path in files {
+            let Some(lsx) = read_bank(archives, index, path) else {
+                continue;
+            };
+            for region in &lsx.regions {
+                match region.id.as_str() {
+                    "VisualBank" => assets.read_visuals(region),
+                    "MaterialBank" => assets.read_materials(region),
+                    "TextureBank" => assets.read_textures(region),
+                    "VirtualTextureBank" => assets.read_virtual_textures(region),
+                    // Every other region (Templates, Tags, CharacterVisualBank, …) carries no indexed
+                    // resource
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    assets
+}
+
+/// The bank directory an archive entry belongs to, or `None` when the entry is not a bank file.
+///
+/// Two things have to hold: the path sits under `Public/` and carries a `Content` folder, and a
+/// `[PAK]_<name>` folder appears in it. Neither has to be the file's own folder — the engine nests
+/// banks under the asset tree they belong to, so folders may sit between `Content` and `[PAK]_`, and
+/// a bank file may sit below `[PAK]_` in turn.
+///
+/// Both `.lsf` and `.lsx` banks are read: the editor emits either form, and both carry the same
+/// regions.
+///
+/// Everything else a module ships supplies no indexed resource: `RootTemplates` and `Tags` hold
+/// template and tag tables, `GUI` and the `Mods/<name>/` metadata live outside `Content` altogether.
+/// Rejecting them by path keeps those files from being parsed only for every region in them to be
+/// dropped.
+fn bank_dir(path: &str) -> Option<&str> {
+    let (dir, file) = path.rsplit_once('/')?;
+    if !matches!(file.rsplit('.').next(), Some("lsf" | "lsx")) {
+        return None;
+    }
+
+    let folders = dir.strip_prefix("public/")?;
+    let is_content = |folder: &str| folder == "content";
+    let is_bank = |folder: &str| folder.starts_with("[pak]_");
+    let has_content = folders.split('/').any(is_content);
+    let has_bank = folders.split('/').any(is_bank);
+
+    (has_content && has_bank).then_some(dir)
+}
+
+/// Parse one bank file into an LSX document.
+///
+/// A `.lsx` bank is already XML and is parsed as it stands; a `.lsf` bank goes through maclarian's LSF
+/// reader, which handles the document version and the per-segment compression, and then its
+/// converter, which hands over the same document model. A file that fails any step is skipped,
+/// leaving the mod's other banks unaffected.
+pub(super) fn read_bank(archives: &mut Archives, index: usize, path: &str) -> Option<LsxDocument> {
+    let bytes = match archives.read_mod_file(index, path) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("[maclarian] mod file skipped: {err}");
+            return None;
+        }
+    };
+
+    let xml = if path.ends_with(".lsx") {
+        match String::from_utf8(bytes) {
+            Ok(xml) => xml,
+            Err(err) => {
+                eprintln!("[maclarian] {path} is not readable as LSX: {err}");
+                return None;
+            }
+        }
+    } else {
+        match parse_lsf_bytes(&bytes).and_then(|document| to_lsx(&document)) {
+            Ok(xml) => xml,
+            Err(err) => {
+                eprintln!("[maclarian] {path} is not readable as LSF: {err}");
+                return None;
+            }
+        }
+    };
+
+    match parse_lsx(&xml) {
+        Ok(lsx) => Some(lsx),
+        Err(err) => {
+            eprintln!("[maclarian] {path} is not readable as LSX: {err}");
+            None
+        }
+    }
+}
+
+/// The `Resource` nodes of a bank region.
+///
+/// A per-resource bank file nests them under a node named after the bank (`VisualBank` → `Resource`),
+/// which is the shape maclarian reads out of a merged file; a region listing them directly is accepted
+/// as well.
+pub(super) fn resource_nodes<'a>(region: &'a LsxRegion, bank: &str) -> Vec<&'a LsxNode> {
+    let mut resources = Vec::new();
+    for node in &region.nodes {
+        if node.id == bank {
+            resources.extend(node.children.iter().filter(|child| child.id == "Resource"));
+        } else if node.id == "Resource" {
+            resources.push(node);
+        }
+    }
+    resources
+}
+
+/// Value of one attribute of a node; a node that does not carry it yields an empty string, which is
+/// what every caller below tests against
+pub(super) fn attr(node: &LsxNode, id: &str) -> String {
+    node.attributes
+        .iter()
+        .find(|attr| attr.id == id)
+        .map(|attr| attr.value.clone())
+        .unwrap_or_default()
+}
