@@ -241,6 +241,11 @@ function renderGlb(bytes: Uint8Array) {
         // texture that was never exported, but the surface is shaded from its normals, which is
         // what makes curvature, hair cards and cloth folds readable. Broken normals only lose their
         // shading here — the hemisphere light still keeps every polygon off pure black.
+        //
+        // DoubleSide is not an aesthetic choice: BG3 hair, fur and cloth are single-layer cards that
+        // the engine's own material flag draws from both sides, while maclarian's GLB writes no
+        // `doubleSided` at all, so glTF's single-sided default would cull every card seen from
+        // behind. three flips the normal for a back-facing triangle, so the shading stays correct.
         model.traverse((obj) => {
           const mesh = obj as THREE.Mesh
           if (!mesh.isMesh) return
@@ -251,6 +256,7 @@ function renderGlb(bytes: Uint8Array) {
             color: palette.clay,
             roughness: CLAY_ROUGHNESS,
             metalness: 0,
+            side: core!.DoubleSide,
           })
           disposeMaterial(parsed)
         })
