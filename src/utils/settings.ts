@@ -106,7 +106,7 @@ export function readWindowGeometry(): WindowGeometry | null {
         if (!values.every((value) => typeof value === 'number' && Number.isFinite(value))) return null
         // A zero-sized or inverted rectangle would be applied as a window nobody can use
         if (width <= 0 || height <= 0) return null
-        return {x, y, width, height, maximized: maximized === true}
+        return {x, y, width, height, maximized: maximized}
     } catch {
         // Unavailable (private mode) or corrupted data: the window keeps its configured rectangle
         return null

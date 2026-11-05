@@ -131,7 +131,7 @@ async function currentRect(): Promise<Rect> {
 
 /**
  * Whether `geometry` still overlaps a monitor. A remembered position can outlive the screen it was
- * taken on (a monitor went away, the resolution changed) and a window restored off screen could not
+ * taken on (a monitor went away, the resolution changed) and a window restored off-screen could not
  * be dragged back, so the position is dropped while the size is kept.
  */
 async function isOnScreen(geometry: WindowGeometry): Promise<boolean> {

@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import {useI18n} from 'vue-i18n'
 
-/** Icon colour. Fluent keeps colour scarce: one plate stays neutral so the other three can carry
+/** Icon color. Fluent keeps color scarce: one plate stays neutral so the other three can carry
  *  the brand / status ramps without the row turning into four competing accents. */
 type Accent = 'brand' | 'success' | 'warning' | 'neutral'
 

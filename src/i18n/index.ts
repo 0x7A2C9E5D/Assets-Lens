@@ -7,12 +7,12 @@ import zhCN from './locales/zh-CN'
 import zhTW from './locales/zh-TW'
 
 /* ---------- Culture matching ---------- */
-// Matching leans on `Intl` and its CLDR likely subtags (`zh` → `zh-Hans-CN`) instead of handwritten
+// Matching leans on `Intl` and its CLDR likely sub-tags (`zh` → `zh-Hans-CN`) instead of handwritten
 // tag parsing, so a shipped language needs nothing but its bundle and one entry in `BUNDLES`.
 
 /** Parsed locale used by the matcher */
 interface LocaleInfo {
-    /** Tag with likely subtags filled in, e.g. `zh-Hans-CN` */
+    /** Tag with likely sub-tags filled in, e.g. `zh-Hans-CN` */
     maximized: string
     /** Language plus script, region dropped, e.g. `zh-Hans` */
     neutral: string
@@ -125,7 +125,7 @@ const AVAILABLE_CULTURES: readonly AvailableCulture[] = SUPPORTED_LOCALES.map(({
 
 /**
  * Best shipped locale for one tag, or null so the caller can try its next preference. Most specific
- * first: the same culture once likely subtags are filled in, then the same neutral culture (same
+ * first: the same culture once likely sub-tags are filled in, then the same neutral culture (same
  * language and script, region ignored). There is no language-only level on purpose — Chinese written
  * in the wrong script is a wrong answer, not a graceful fallback.
  */
@@ -186,7 +186,7 @@ async function setWindowTitle(title: string) {
     try {
         await getCurrentWindow().setTitle(title)
     } catch (err) {
-        // Outside Tauri (plain browser vite dev) there is no window to rename
+        // Outside Tauri (plain browser Vite dev) there is no window to rename
         console.warn('[setWindowTitle]', err)
     }
 }

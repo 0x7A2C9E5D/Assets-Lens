@@ -273,7 +273,7 @@ pub fn run_export(
     // 4. Metadata manifest (always written, but never listed among the exported files)
     progress.item(PHASE_MANIFEST, None);
     let mut manifest = build_manifest(asset, materials, vt_matches);
-    // Completed before the write: the sizes come out of the archives, which the manifest alone has
+    // Completed before to write: the sizes come out of the archives, which the manifest alone has
     // no access to
     fill_vt_sizes(pool, vt_matches, &mut manifest);
     write_manifest(&manifest, &plan.out_dir, &mut warnings);

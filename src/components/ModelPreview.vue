@@ -18,7 +18,7 @@ const props = defineProps<{ path: string | null }>()
  * The viewport takes the very neutral the card's wells are painted with (`ink-800`) so it reads as
  * one more recess on the same surface family instead of a panel of its own, and the grid is drawn
  * in the neutral stroke ramp (stroke2 on ink, stroke1 on paper) like every hairline in the UI. The
- * brand colour stays out of the scene: nothing here is interactive, and Fluent spends colour on
+ * brand color stays out of the scene: nothing here is interactive, and Fluent spends color on
  * things that are.
  *
  * The model is painted with a lit clay material rather than a flat fill: a texture-less BG3 mesh
@@ -89,7 +89,7 @@ let controls: InstanceType<OrbitCtor> | null = null
 let observer: ResizeObserver | null = null
 let model: THREE.Object3D | null = null
 let grid: THREE.Object3D | null = null
-/** The rig lives on the scene, so it survives every asset switch and only its colours follow the theme */
+/** The rig lives on the scene, so it survives every asset switch and only its colors follow the theme */
 let lights: {
   hemisphere: THREE.HemisphereLight
   key: THREE.DirectionalLight
@@ -380,7 +380,7 @@ function renderGlb(bytes: Uint8Array) {
         const gridHelper = new core.GridHelper(maxDim * 3, 12, palette.grid, palette.grid)
         const gridMat = gridHelper.material as THREE.LineBasicMaterial
         gridMat.transparent = true
-        // Grid colours live in vertex colors; dropping them lets the material colour drive every
+        // Grid colors live in vertex colors; dropping them lets the material color drive every
         // line at once, which is what a palette swap needs
         gridMat.vertexColors = false
         gridMat.color.setHex(palette.grid)
@@ -439,7 +439,7 @@ watch(
     },
 )
 
-/** A palette swap only recolours what is on screen: reloading would throw away the cached GLB and
+/** A palette swap only recolors what is on screen: reloading would throw away the cached GLB and
  *  the camera angle the user orbited to */
 watch(scenePalette, (palette) => {
   if (model) {

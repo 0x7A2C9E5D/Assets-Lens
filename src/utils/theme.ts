@@ -1,6 +1,6 @@
 /**
  * The active palette, as the single source of truth for every themed surface: the title bar toggle
- * writes it, the 3D preview reads it, and nothing else touches localStorage or the DOM for colour.
+ * writes it, the 3D preview reads it, and nothing else touches localStorage or the DOM for color.
  */
 
 import type {Ref} from 'vue'
@@ -13,7 +13,7 @@ export type ThemeName = 'dark' | 'light'
 /** Reactive active theme; dark is the default, which is what the app has shipped with so far */
 export const theme: Ref<ThemeName> = ref('dark')
 
-/** Paint `next` on <html>: every colour token hangs off the `[data-theme]` selector */
+/** Paint `next` on <html>: every color token hangs off the `[data-theme]` selector */
 export function applyTheme(next: ThemeName): void {
     const root = document.documentElement
     root.dataset.theme = next
