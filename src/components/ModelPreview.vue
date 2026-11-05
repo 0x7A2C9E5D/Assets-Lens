@@ -217,6 +217,96 @@ function removeGrid() {
   grid = null
 }
 
+/** Triangles of one mesh, the yardstick for which copy of a part is the finest */
+function triangleCount(mesh: THREE.Mesh): number {
+  const geometry = mesh.geometry
+  const count = geometry.index ? geometry.index.count : geometry.attributes.position.count
+  return Math.floor(count / 3)
+}
+
+/**
+ * A GR2 carries every LOD of every part, and maclarian copies them all into the GLB: `_Mesh`,
+ * `_Mesh_LOD1`, `_Mesh_LOD2`… as nodes side by side. The scene draws all of them at once, so a
+ * decimated copy is stacked on the real surface and the two fight for depth — the winning copy
+ * changes across the model, which reads as "the left half is a different mesh than the right".
+ * Keep the finest copy of each part and drop the rest; a part with no LOD siblings keeps itself.
+ */
+function keepFinestLod(model: THREE.Object3D) {
+  const finest = new Map<string, THREE.Mesh>()
+  model.traverse((obj) => {
+    const mesh = obj as THREE.Mesh
+    if (!mesh.isMesh) return
+    const part = mesh.name.replace(/_LOD\d+$/i, '')
+    const current = finest.get(part)
+    if (!current || triangleCount(mesh) > triangleCount(current)) finest.set(part, mesh)
+  })
+
+  const keep = new Set(finest.values())
+  const dropped: THREE.Mesh[] = []
+  model.traverse((obj) => {
+    const mesh = obj as THREE.Mesh
+    if (mesh.isMesh && !keep.has(mesh)) dropped.push(mesh)
+  })
+  for (const mesh of dropped) {
+    mesh.removeFromParent()
+    mesh.geometry.dispose()
+  }
+}
+
+/**
+ * Some meshes arrive with parts whose vertex normals point into the surface — the engine hides it
+ * behind double-sided materials, but a shaded preview cannot: that part is lit inside-out and reads
+ * as a different model from the part next to it. The triangles' own winding is the ground truth, so
+ * a vertex whose normal opposes the area-weighted face normals around it is negated rather than
+ * recomputed, which keeps the authored smoothing.
+ */
+function repairInvertedNormals(geometry: THREE.BufferGeometry) {
+  const position = geometry.attributes.position as THREE.BufferAttribute | undefined
+  const normal = geometry.attributes.normal as THREE.BufferAttribute | undefined
+  if (!position || !normal) return
+
+  const index = geometry.index
+  const count = index ? index.count : position.count
+  // Area-weighted sum of the face normals around each vertex (the cross product's length is twice
+  // the triangle area, so no normalization is needed)
+  const faces = new Float32Array(position.count * 3)
+  for (let i = 0; i + 2 < count; i += 3) {
+    const a = index ? index.getX(i) : i
+    const b = index ? index.getX(i + 1) : i + 1
+    const c = index ? index.getX(i + 2) : i + 2
+    const ax = position.getX(a)
+    const ay = position.getY(a)
+    const az = position.getZ(a)
+    const ux = position.getX(b) - ax
+    const uy = position.getY(b) - ay
+    const uz = position.getZ(b) - az
+    const vx = position.getX(c) - ax
+    const vy = position.getY(c) - ay
+    const vz = position.getZ(c) - az
+    const nx = uy * vz - uz * vy
+    const ny = uz * vx - ux * vz
+    const nz = ux * vy - uy * vx
+    for (const v of [a, b, c]) {
+      faces[v * 3] += nx
+      faces[v * 3 + 1] += ny
+      faces[v * 3 + 2] += nz
+    }
+  }
+
+  for (let v = 0; v < position.count; v += 1) {
+    const gx = faces[v * 3]
+    const gy = faces[v * 3 + 1]
+    const gz = faces[v * 3 + 2]
+    // A vertex shared by surfaces facing both ways has no meaningful side: leave it alone
+    if (gx * gx + gy * gy + gz * gz < 1e-12) continue
+    const nx = normal.getX(v)
+    const ny = normal.getY(v)
+    const nz = normal.getZ(v)
+    if (gx * nx + gy * ny + gz * nz < 0) normal.setXYZ(v, -nx, -ny, -nz)
+  }
+  normal.needsUpdate = true
+}
+
 function renderGlb(bytes: Uint8Array) {
   if (!scene || !camera || !core || !Gltf) return
   const orbit = controls
@@ -237,10 +327,11 @@ function renderGlb(bytes: Uint8Array) {
 
         const palette = scenePalette.value
 
+        keepFinestLod(model)
+
         // One neutral clay material in place of the GLB's own: no maps, so nothing depends on a
         // texture that was never exported, but the surface is shaded from its normals, which is
-        // what makes curvature, hair cards and cloth folds readable. Broken normals only lose their
-        // shading here — the hemisphere light still keeps every polygon off pure black.
+        // what makes curvature, hair cards and cloth folds readable.
         //
         // DoubleSide is not an aesthetic choice: BG3 hair, fur and cloth are single-layer cards that
         // the engine's own material flag draws from both sides, while maclarian's GLB writes no
@@ -249,6 +340,7 @@ function renderGlb(bytes: Uint8Array) {
         model.traverse((obj) => {
           const mesh = obj as THREE.Mesh
           if (!mesh.isMesh) return
+          repairInvertedNormals(mesh.geometry)
           // Replace the GLB's own material, then release it: GLTF materials can be shared between
           // meshes, but every mesh is re-materialized here, so nothing keeps referencing it
           const parsed = mesh.material
