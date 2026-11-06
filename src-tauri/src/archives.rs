@@ -15,6 +15,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use maclarian::pak::lspk::{FileTableEntry, LspkReader};
 
+use crate::error::AppError;
+
 /// The archives the app reads from. The variant is the resource kind, not a directory listing:
 /// every read names the kind it expects, which is what keeps a lookup from wandering into the
 /// wrong archive (and from parsing a 12 GB file table to answer a question about a texture).
@@ -72,18 +74,23 @@ impl Archives {
     }
 
     /// Open an archive and cache its file table; no-op when already cached
-    fn ensure(&mut self, pak: Pak) -> Result<(), String> {
+    fn ensure(&mut self, pak: Pak) -> Result<(), AppError> {
         if self.tables.contains_key(&pak) {
             return Ok(());
         }
 
         let path = self.path_of(pak);
-        let file =
-            File::open(&path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
+        let file = File::open(&path).map_err(|e| AppError::ArchiveOpen {
+            path: path.display().to_string(),
+            detail: e.to_string(),
+        })?;
         let mut reader = LspkReader::with_path(BufReader::new(file), &path);
         let entries = reader
             .list_files()
-            .map_err(|e| format!("Failed to read file table of {}: {e}", path.display()))?;
+            .map_err(|e| AppError::ArchiveFileTable {
+                path: path.display().to_string(),
+                detail: e.to_string(),
+            })?;
 
         self.readers.insert(pak, reader);
         self.tables.insert(pak, entries);
@@ -92,7 +99,7 @@ impl Archives {
 
     /// Read file bytes out of one archive. The archive is named by kind, so a missing file is an
     /// error rather than the start of a search: `Models.pak` is the only archive a GR2 is read from
-    pub fn read_from(&mut self, pak: Pak, target: &str) -> Result<Vec<u8>, String> {
+    pub fn read_from(&mut self, pak: Pak, target: &str) -> Result<Vec<u8>, AppError> {
         self.ensure(pak)?;
 
         let want = normalize_path(target);
@@ -105,19 +112,27 @@ impl Archives {
                     .find(|e| normalize_path(&e.path.to_string_lossy()) == want)
             })
             .cloned()
-            .ok_or_else(|| format!("{target} not found in {}", pak.file_name()))?;
+            .ok_or_else(|| AppError::ArchiveEntryMissing {
+                target: target.to_string(),
+                pak: pak.file_name(),
+            })?;
         let reader = self
             .readers
             .get_mut(&pak)
-            .ok_or_else(|| format!("Reader unavailable for {}", pak.file_name()))?;
+            .ok_or(AppError::ArchiveReaderMissing {
+                pak: pak.file_name(),
+            })?;
 
         reader
             .decompress_file(&entry)
-            .map_err(|e| format!("Failed to decompress {target}: {e}"))
+            .map_err(|e| AppError::ArchiveDecompress {
+                target: target.to_string(),
+                detail: e.to_string(),
+            })
     }
 
     /// List all file paths inside one archive (`/`-separated)
-    pub fn list_in(&mut self, pak: Pak) -> Result<Vec<String>, String> {
+    pub fn list_in(&mut self, pak: Pak) -> Result<Vec<String>, AppError> {
         self.ensure(pak)?;
         Ok(self
             .tables
@@ -133,7 +148,8 @@ impl Archives {
 }
 
 /// Lock the shared PAK pool for a single read
-pub fn lock_pool(pool: &Arc<Mutex<Archives>>) -> Result<MutexGuard<'_, Archives>, String> {
-    pool.lock()
-        .map_err(|e| format!("PAK pool lock unavailable: {e}"))
+pub fn lock_pool(pool: &Arc<Mutex<Archives>>) -> Result<MutexGuard<'_, Archives>, AppError> {
+    pool.lock().map_err(|e| AppError::ArchivePoolLock {
+        detail: e.to_string(),
+    })
 }

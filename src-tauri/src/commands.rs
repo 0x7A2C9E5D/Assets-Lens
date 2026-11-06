@@ -8,6 +8,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 use crate::archives::{lock_pool, Pak};
+use crate::error::AppError;
 use crate::export::run_export;
 use crate::models::{
     match_for_hash, materials_of, AppInfo, BuildProgress, DatabaseStats, ExportOptions,
@@ -19,13 +20,12 @@ use crate::virtual_textures;
 
 pub type SharedState = Arc<Mutex<AppState>>;
 
-/// Lock the shared state; the only failure mode is a poisoned mutex, reported as a plain string
-fn lock(state: &SharedState) -> Result<MutexGuard<'_, AppState>, String> {
-    state.lock().map_err(|e| format!("State lock unavailable: {e}"))
+/// Lock the shared state; the only failure mode is a poisoned mutex
+fn lock(state: &SharedState) -> Result<MutexGuard<'_, AppState>, AppError> {
+    state.lock().map_err(|e| AppError::StateLock {
+        detail: e.to_string(),
+    })
 }
-
-const NOT_CONFIGURED: &str = "BG3 Data directory is not set. Please use auto-detect or select a directory first.";
-const NOT_BUILT: &str = "Resource database has not been built. Please go to the Database page and build it first.";
 
 /// How far the archive has been parsed, as a fraction (0 while it reports no file count)
 fn parse_fraction(current: usize, total: usize) -> f32 {
@@ -75,7 +75,7 @@ fn sorted_visual_ids(db: &MergedDatabase) -> (Vec<String>, Vec<String>) {
 /// Auto-detect the BG3 Data directory (default Steam install location)
 #[tauri::command]
 #[specta::specta]
-pub fn detect_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
+pub fn detect_game_path(state: State<'_, SharedState>) -> Result<Option<String>, AppError> {
     let mut st = lock(&state)?;
 
     if !GameDataResolver::is_available() {
@@ -101,7 +101,7 @@ pub fn detect_game_path(state: State<'_, SharedState>) -> Result<Option<String>,
 /// (used to restore the UI state after switching pages)
 #[tauri::command]
 #[specta::specta]
-pub fn get_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
+pub fn get_game_path(state: State<'_, SharedState>) -> Result<Option<String>, AppError> {
     let st = lock(&state)?;
     Ok(st.game_path.as_ref().map(|p| p.display().to_string()))
 }
@@ -109,20 +109,19 @@ pub fn get_game_path(state: State<'_, SharedState>) -> Result<Option<String>, St
 /// Manually set the BG3 Data directory (must contain Shared.pak)
 #[tauri::command]
 #[specta::specta]
-pub fn set_game_path(state: State<'_, SharedState>, path: String) -> Result<String, String> {
+pub fn set_game_path(state: State<'_, SharedState>, path: String) -> Result<String, AppError> {
     let dir = PathBuf::from(&path);
 
     if !dir.exists() {
-        return Err(format!("Directory does not exist: {path}"));
+        return Err(AppError::DirectoryMissing { path });
     }
     if !dir.join("Shared.pak").exists() {
-        return Err(format!(
-            "Shared.pak not found in this directory. Please select the BG3 Data directory: {path}"
-        ));
+        return Err(AppError::SharedPakMissing { path });
     }
 
-    let resolver = GameDataResolver::new(&dir)
-        .map_err(|err| format!("Failed to initialize resource parser: {err}"))?;
+    let resolver = GameDataResolver::new(&dir).map_err(|err| AppError::ResolverInit {
+        detail: err.to_string(),
+    })?;
 
     let mut st = lock(&state)?;
     st.game_path = Some(dir);
@@ -138,21 +137,17 @@ pub fn set_game_path(state: State<'_, SharedState>, path: String) -> Result<Stri
 pub async fn build_database(
     app: AppHandle,
     on_progress: Channel<BuildProgress>,
-) -> Result<DatabaseStats, String> {
+) -> Result<DatabaseStats, AppError> {
     let state = app.state::<SharedState>().inner().clone();
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<DatabaseStats, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<DatabaseStats, AppError> {
         // Take what the build needs, then release the lock immediately: parsing Shared.pak runs for
         // minutes, and every other command needs that lock to answer.
         let (resolver, game_path) = {
             let st = lock(&state)?;
             (
-                st.resolver
-                    .clone()
-                    .ok_or_else(|| NOT_CONFIGURED.to_string())?,
-                st.game_path
-                    .clone()
-                    .ok_or_else(|| NOT_CONFIGURED.to_string())?,
+                st.resolver.clone().ok_or(AppError::NotConfigured)?,
+                st.game_path.clone().ok_or(AppError::NotConfigured)?,
             )
         };
 
@@ -198,10 +193,7 @@ pub async fn build_database(
         {
             let mut st = lock(&state)?;
             if st.game_path.as_deref() != Some(game_path.as_path()) {
-                return Err(
-                    "Game data directory changed while building; the result was discarded."
-                        .to_string(),
-                );
+                return Err(AppError::GameDirectoryChanged);
             }
             st.visual_ids = visual_ids;
             st.visual_ids_by_id = visual_ids_by_id;
@@ -220,7 +212,10 @@ pub async fn build_database(
         })
     })
         .await
-        .map_err(|err| format!("Build task terminated unexpectedly: {err}"))?
+        .map_err(|err| AppError::TaskTerminated {
+            task: "Build",
+            detail: err.to_string(),
+        })?
 }
 
 /// Make sure the materials of `visual_id` carry the parameter name of every virtual texture binding.
@@ -235,7 +230,7 @@ pub async fn build_database(
 ///
 /// The names stay in `materials` once read, so an already-named material is skipped and a second view
 /// of the same asset reads nothing at all.
-fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Result<(), String> {
+fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Result<(), AppError> {
     let (pending, pool, game_path) = {
         let mut st = lock(state)?;
 
@@ -265,10 +260,7 @@ fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Re
             return Ok(());
         }
 
-        let game_path = st
-            .game_path
-            .clone()
-            .ok_or_else(|| NOT_CONFIGURED.to_string())?;
+        let game_path = st.game_path.clone().ok_or(AppError::NotConfigured)?;
         (pending, st.pool()?, game_path)
     };
 
@@ -292,7 +284,7 @@ fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Re
 /// Current database statistics (None when not built yet)
 #[tauri::command]
 #[specta::specta]
-pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, String> {
+pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, AppError> {
     let st = lock(&state)?;
 
     match st.merged_db.as_ref() {
@@ -331,9 +323,9 @@ pub fn list_visuals(
     keyword: Option<String>,
     sort: Option<String>,
     descending: Option<bool>,
-) -> Result<Page<VisualSummary>, String> {
+) -> Result<Page<VisualSummary>, AppError> {
     let st = lock(&state)?;
-    let db = st.merged_db.as_ref().ok_or_else(|| NOT_BUILT.to_string())?;
+    let db = st.merged_db.as_ref().ok_or(AppError::NotBuilt)?;
 
     // "id" opts into the GUID order; anything else (including a missing value) keeps the name order
     let ids = match sort.as_deref() {
@@ -388,13 +380,10 @@ pub fn list_visuals(
 /// that carries it is one file read, not a scan.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_visual(
-    app: AppHandle,
-    id: String,
-) -> Result<Option<VisualAssetDetail>, String> {
+pub async fn get_visual(app: AppHandle, id: String) -> Result<Option<VisualAssetDetail>, AppError> {
     let state = app.state::<SharedState>().inner().clone();
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, AppError> {
         // The binding chips show the parameter each virtual texture fills. Those names are not in the
         // parsed database, so they are read off this asset's material templates first — and only
         // while some binding of this asset has no name yet (see
@@ -455,7 +444,10 @@ pub async fn get_visual(
         Ok(Some(detail))
     })
         .await
-        .map_err(|err| format!("Detail task terminated unexpectedly: {err}"))?
+        .map_err(|err| AppError::TaskTerminated {
+            task: "Detail",
+            detail: err.to_string(),
+        })?
 }
 
 /// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview
@@ -465,13 +457,10 @@ pub async fn get_visual(
 /// spawn_blocking to avoid freezing the UI
 #[tauri::command]
 #[specta::specta]
-pub async fn get_visual_preview(
-    app: AppHandle,
-    path: String,
-) -> Result<ModelPreview, String> {
+pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPreview, AppError> {
     let state = app.state::<SharedState>().inner().clone();
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<ModelPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ModelPreview, AppError> {
         // The pool is shared with every other command, so a preview no longer re-opens the archives.
         // Only the handle is taken here: the state lock is released before anything is read.
         let pool = {
@@ -495,7 +484,7 @@ pub async fn get_visual_preview(
             // Pass through unchanged: for a mesh-less GR2 maclarian returns
             // "No meshes found in GR2 file (...)", which the frontend maps to dedicated copy;
             // anything else falls through to the generic failure message
-            err.to_string()
+            AppError::Message(err.to_string())
         })?;
 
         Ok(ModelPreview {
@@ -503,7 +492,10 @@ pub async fn get_visual_preview(
         })
     })
         .await
-        .map_err(|err| format!("Preview task terminated unexpectedly: {err}"))?
+        .map_err(|err| AppError::TaskTerminated {
+            task: "Preview",
+            detail: err.to_string(),
+        })?
 }
 
 /// Export a single visual asset: GR2 → GLB (optionally embedded textures) + textures +
@@ -519,15 +511,15 @@ pub async fn export_visual_asset(
     dest_dir: String,
     options: ExportOptions,
     on_progress: Channel<ExportProgress>,
-) -> Result<ExportResult, String> {
+) -> Result<ExportResult, AppError> {
     let state = app.state::<SharedState>().inner().clone();
     let dest_root = PathBuf::from(&dest_dir);
 
     if !dest_root.exists() {
-        return Err(format!("Export directory does not exist: {dest_dir}"));
+        return Err(AppError::ExportDirectoryMissing { path: dest_dir });
     }
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, AppError> {
         // The manifest states the parameter of every virtual texture binding, both on the material
         // rows and on the virtual texture rows. Those names are not in the parsed database, so they
         // are read off this asset's material templates first — and only while some binding of this
@@ -541,7 +533,7 @@ pub async fn export_visual_asset(
                 .as_ref()
                 .and_then(|db| db.visuals_by_id.get(&id))
                 .cloned()
-                .ok_or_else(|| NOT_BUILT.to_string())?;
+                .ok_or(AppError::NotBuilt)?;
             // Page files are looked up only when virtual textures are part of the export; with an
             // empty list the manifest rows simply carry no path and no archive
             let vt_matches = if options.texture_format.is_export() {
@@ -569,5 +561,8 @@ pub async fn export_visual_asset(
         )
     })
         .await
-        .map_err(|err| format!("Export task terminated unexpectedly: {err}"))?
+        .map_err(|err| AppError::TaskTerminated {
+            task: "Export",
+            detail: err.to_string(),
+        })?
 }

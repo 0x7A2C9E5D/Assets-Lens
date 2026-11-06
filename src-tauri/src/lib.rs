@@ -1,4 +1,5 @@
 mod commands;
+mod error;
 pub mod export;
 mod models;
 pub mod archives;

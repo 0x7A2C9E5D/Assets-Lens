@@ -21,6 +21,7 @@ use maclarian::virtual_texture::VirtualTextureExtractor;
 use tempfile::TempDir;
 
 use crate::archives::{lock_pool, Archives, Pak};
+use crate::error::AppError;
 use crate::models::{
     manifest_materials, match_for_hash, texture_summaries, virtual_texture_summaries,
     ExportManifest, ExportOptions, ExportProgress, ExportResult, ExportWarning, ExportedFile,
@@ -197,14 +198,16 @@ fn plan_export<'a>(
     asset: &'a VisualAsset,
     dest_root: &Path,
     options: &ExportOptions,
-) -> Result<ExportPlan<'a>, String> {
+) -> Result<ExportPlan<'a>, AppError> {
     // Textures are always exported separately (regular + virtual); the format is a single switch
     let export_textures = options.texture_format.is_export();
 
     let dir_name = sanitize_file_name(&asset.name);
     let out_dir = dest_root.join(&dir_name);
-    fs::create_dir_all(&out_dir)
-        .map_err(|e| format!("Failed to create export directory: {e}"))?;
+    fs::create_dir_all(&out_dir).map_err(|e| AppError::CreateDirectory {
+        target: "export",
+        detail: e.to_string(),
+    })?;
 
     let vt_targets = vt_targets_of(asset, export_textures);
     let texture_total = if export_textures {
@@ -254,7 +257,7 @@ pub fn run_export(
     options: &ExportOptions,
     vt_matches: &[GtpMatch],
     on_progress: &dyn Fn(ExportProgress),
-) -> Result<ExportResult, String> {
+) -> Result<ExportResult, AppError> {
     let plan = plan_export(asset, dest_root, options)?;
 
     let mut files: Vec<ExportedFile> = Vec::new();
@@ -296,7 +299,7 @@ fn export_mesh(
     plan: &ExportPlan<'_>,
     files: &mut Vec<ExportedFile>,
     progress: &mut ProgressTracker<'_>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     progress.item(
         if plan.mesh_format.is_glb() {
             PHASE_MODEL
@@ -310,8 +313,10 @@ fn export_mesh(
 
     let mesh_ext = plan.mesh_format.extension();
     let mesh_path = plan.out_dir.join(format!("{}.{mesh_ext}", plan.dir_name));
-    fs::write(&mesh_path, &mesh_bytes)
-        .map_err(|e| format!("Failed to write mesh ({mesh_ext}): {e}"))?;
+    fs::write(&mesh_path, &mesh_bytes).map_err(|e| AppError::MeshWrite {
+        format: mesh_ext,
+        detail: e.to_string(),
+    })?;
     record_file(files, &mesh_path, mesh_ext, mesh_bytes.len());
 
     Ok(())
@@ -322,18 +327,23 @@ fn read_mesh_bytes(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
     mesh_format: MeshFormat,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, AppError> {
     // The mesh is read from `Models.pak` and nowhere else; a GR2 the game ships in another archive
     // reports that rather than being searched for
     let gr2_bytes = lock_pool(pool)?
         .read_from(Pak::Models, &asset.gr2_path)
-        .map_err(|err| format!("Mesh data unavailable: {err}"))?;
+        .map_err(|err| AppError::MeshUnavailable {
+            detail: err.to_string(),
+        })?;
 
     match mesh_format {
         // Raw GR2: the archive bytes are the artifact, nothing to convert
         MeshFormat::Gr2 => Ok(gr2_bytes),
-        MeshFormat::Glb => convert_gr2_bytes_to_glb(&gr2_bytes)
-            .map_err(|e| format!("Failed to convert mesh to GLB: {e}")),
+        MeshFormat::Glb => {
+            convert_gr2_bytes_to_glb(&gr2_bytes).map_err(|e| AppError::MeshConvert {
+                detail: e.to_string(),
+            })
+        }
     }
 }
 
@@ -346,7 +356,7 @@ fn export_textures(
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
     progress: &mut ProgressTracker<'_>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     // Regular textures are optional: nothing to do when only the mesh was asked for, or when the
     // asset has no material textures at all
     if !plan.export_textures || asset.textures.is_empty() {
@@ -354,8 +364,10 @@ fn export_textures(
     }
 
     let tex_dir = plan.out_dir.join("textures");
-    fs::create_dir_all(&tex_dir)
-        .map_err(|e| format!("Failed to create textures directory: {e}"))?;
+    fs::create_dir_all(&tex_dir).map_err(|e| AppError::CreateDirectory {
+        target: "textures",
+        detail: e.to_string(),
+    })?;
 
     for tex in &asset.textures {
         progress.item(PHASE_TEXTURES, Some(tex.dds_path.clone()));
@@ -373,12 +385,12 @@ fn export_texture(
     convert_to_png: bool,
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     // Locked per file only: decompressing one texture is quick, and it leaves the pool available to
     // other commands (a preview) while the export runs
     match lock_pool(pool)?.read_from(Pak::Textures, &tex.dds_path) {
         Ok(dds) => write_texture(tex, &dds, tex_dir, convert_to_png, files, warnings),
-        Err(err) => push_warning(warnings, "textureUnavailable", err),
+        Err(err) => push_warning(warnings, "textureUnavailable", err.to_string()),
     }
 
     Ok(())
@@ -429,14 +441,16 @@ fn export_virtual_textures(
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
     progress: &mut ProgressTracker<'_>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     if plan.vt_targets.is_empty() {
         return Ok(());
     }
 
     let vt_dir = plan.vt_dir();
-    fs::create_dir_all(&vt_dir)
-        .map_err(|e| format!("Failed to create virtual textures directory: {e}"))?;
+    fs::create_dir_all(&vt_dir).map_err(|e| AppError::CreateDirectory {
+        target: "virtual textures",
+        detail: e.to_string(),
+    })?;
 
     let staging = match VtStaging::new() {
         Ok(staging) => staging,
@@ -470,7 +484,7 @@ fn export_vt_target(
     plan: &ExportPlan<'_>,
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let Some(matched) = match_for_hash(vt_matches, &vt.gtex_hash) else {
         push_warning(warnings, "vtGtpNotFound", vt.gtex_hash.clone());
         return Ok(());
@@ -506,11 +520,14 @@ struct VtStaging {
 }
 
 impl VtStaging {
-    fn new() -> Result<Self, String> {
+    fn new() -> Result<Self, AppError> {
         let temp = tempfile::Builder::new()
             .prefix("bg3_asset_export_")
             .tempdir()
-            .map_err(|e| format!("Failed to create staging directory: {e}"))?;
+            .map_err(|e| AppError::CreateDirectory {
+                target: "staging",
+                detail: e.to_string(),
+            })?;
         Ok(Self {
             root: temp.path().to_path_buf(),
             _temp: temp,
@@ -527,8 +544,10 @@ impl VtStaging {
         self.root.join(format!("stage_{seq}"))
     }
 
-    fn prepare(&self) -> Result<(), String> {
-        fs::create_dir_all(self.shared()).map_err(|e| e.to_string())
+    fn prepare(&self) -> Result<(), AppError> {
+        // The staging root is a temp directory the OS just created, so a failure here is reported
+        // as-is instead of through one of the `CreateDirectory` messages
+        fs::create_dir_all(self.shared()).map_err(|e| AppError::Message(e.to_string()))
     }
 }
 
@@ -544,9 +563,12 @@ fn export_virtual_texture(
     staging: &VtStaging,
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let stage = staging.stage(seq);
-    fs::create_dir_all(&stage).map_err(|e| format!("Failed to create staging directory: {e}"))?;
+    fs::create_dir_all(&stage).map_err(|e| AppError::CreateDirectory {
+        target: "staging",
+        detail: e.to_string(),
+    })?;
 
     // Which files the archives hold for this page file is `virtual_textures`' question; the export
     // only consumes the staged paths
@@ -568,7 +590,7 @@ fn extract_with_any_gts(
     gtp: &Path,
     gts_candidates: Vec<PathBuf>,
     stage: &Path,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mut last_err = "no GTS candidate available".to_string();
     for gts_path in gts_candidates {
         match VirtualTextureExtractor::extract_with_gts(gtp, &gts_path, stage) {
@@ -577,13 +599,14 @@ fn extract_with_any_gts(
                 last_err = err.to_string();
                 // Clear partial output so the next candidate's artifacts do not mix together
                 let _ = fs::remove_dir_all(stage);
-                fs::create_dir_all(stage)
-                    .map_err(|e| format!("Failed to recreate staging directory: {e}"))?;
+                fs::create_dir_all(stage).map_err(|e| AppError::RecreateStagingDirectory {
+                    detail: e.to_string(),
+                })?;
             }
         }
     }
 
-    Err(format!("Virtual texture extraction failed: {last_err}"))
+    Err(AppError::VirtualTextureExtraction { detail: last_err })
 }
 
 /// Move the extracted layer files into `vt_dir`, named after the asset instead of the tile set, and
@@ -595,7 +618,7 @@ fn collect_vt_layers(
     convert_to_png: bool,
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     for layer in VT_LAYERS {
         let Some(src) = find_layer_output(stage, layer)? else {
             continue;
@@ -618,14 +641,14 @@ fn export_layer_name(layer: &str) -> &str {
 
 /// Move one extracted layer into `vt_dir` under its export name and record the artifact
 fn export_vt_layer(
-    layer: &str,
+    layer: &'static str,
     src: &Path,
     vt_dir: &Path,
     safe_name: &str,
     convert_to_png: bool,
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     // The extractor writes `<name>_<layer>.dds` (e.g. `..._basemap.dds`); the export file is named
     // after the layer as the engine names it
     let stem = format!("{safe_name}_{}", export_layer_name(layer));
@@ -633,7 +656,10 @@ fn export_vt_layer(
     // onto an existing destination fails on Windows, which is what the copy below covers
     let dds_path = vt_dir.join(format!("{stem}.dds"));
     if fs::rename(src, &dds_path).is_err() {
-        fs::copy(src, &dds_path).map_err(|e| format!("Failed to move {layer} output: {e}"))?;
+        fs::copy(src, &dds_path).map_err(|e| AppError::MoveLayerOutput {
+            layer,
+            detail: e.to_string(),
+        })?;
     }
 
     let dds_bytes = fs::read(&dds_path).unwrap_or_default();
@@ -647,10 +673,12 @@ fn export_vt_layer(
 }
 
 /// Find the extractor output for one layer; the file name ends with `_<layer>.dds`
-fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, String> {
+fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, AppError> {
     let suffix = format!("_{}.dds", layer.to_lowercase());
     Ok(fs::read_dir(stage)
-        .map_err(|e| format!("Failed to list extraction output: {e}"))?
+        .map_err(|e| AppError::ListExtractionOutput {
+            detail: e.to_string(),
+        })?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .find(|path| {
