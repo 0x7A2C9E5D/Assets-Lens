@@ -3,42 +3,30 @@
  * palette choice all live in localStorage. The window rectangle is not here — the window-state
  * plugin owns it on the Rust side (see `lib.rs`).
  *
+ * Storage is handled by VueUse's `useLocalStorage`: it reads once at module load, keeps the value
+ * reactive and writes on change, including removing the key when the value is set to `null`. Each
+ * entry keeps the validation the hand-written accessors used to do in its `read` serializer.
+ *
  * The backend no longer writes settings.json — the frontend remembers the directory and hands it
  * back for validation on startup, so all setting reads/writes stay in the Web layer while the
  * backend only validates and uses it.
  */
 
+import {useLocalStorage} from '@vueuse/core'
+
 const GAME_PATH_KEY = 'assets-lens.game-path'
 const LOCALE_KEY = 'assets-lens.locale'
 const THEME_KEY = 'assets-lens.theme'
 
-/** Read the remembered game data directory; returns null when localStorage is unavailable (private mode, etc.) */
-export function readGamePath(): string | null {
-    try {
-        const raw = localStorage.getItem(GAME_PATH_KEY)
-        return raw && raw.trim() ? raw : null
-    } catch {
-        return null
-    }
-}
-
-/** Remember the current game data directory */
-export function writeGamePath(path: string): void {
-    try {
-        localStorage.setItem(GAME_PATH_KEY, path)
-    } catch {
-        // A failed write only costs the memory for the next launch; this session is unaffected
-    }
-}
-
-/** Drop the record when the directory no longer exists, so the next launch does not retry it */
-export function clearGamePath(): void {
-    try {
-        localStorage.removeItem(GAME_PATH_KEY)
-    } catch {
-        // Same as above: safe to ignore
-    }
-}
+/** Read the remembered game data directory; null when unset or blank */
+const gamePath = useLocalStorage<string | null>(GAME_PATH_KEY, null, {
+    // The first launch must not write a default into storage
+    writeDefaults: false,
+    serializer: {
+        read: (raw) => (raw.trim() ? raw : null),
+        write: (value) => value ?? '',
+    },
+})
 
 /**
  * Stored language preference. `manual` marks an explicit user choice, which is kept forever;
@@ -52,52 +40,70 @@ export interface LocaleSetting {
     manual?: boolean
 }
 
-/** Read the stored language preference; returns null when unset, unreadable or corrupted */
-export function readLocaleSetting(): LocaleSetting | null {
-    try {
-        const raw = localStorage.getItem(LOCALE_KEY)
-        if (!raw) return null
-        const parsed: unknown = JSON.parse(raw)
-        if (
-            parsed &&
-            typeof parsed === 'object' &&
-            typeof (parsed as LocaleSetting).locale === 'string'
-        ) {
-            return parsed as LocaleSetting
-        }
-        return null
-    } catch {
-        // Unavailable (private mode) or corrupted data: fall back to the system language
-        return null
-    }
-}
-
-/** Remember the language preference */
-export function writeLocaleSetting(locale: string, manual: boolean): void {
-    try {
-        localStorage.setItem(LOCALE_KEY, JSON.stringify({locale, manual} satisfies LocaleSetting))
-    } catch {
-        // A failed write only costs the memory for the next launch; this session is unaffected
-    }
-}
+/** Read the stored language preference; null when unset, unreadable or corrupted */
+const localeSetting = useLocalStorage<LocaleSetting | null>(LOCALE_KEY, null, {
+    writeDefaults: false,
+    serializer: {
+        read: (raw) => {
+            try {
+                const parsed: unknown = JSON.parse(raw)
+                return parsed &&
+                    typeof parsed === 'object' &&
+                    typeof (parsed as LocaleSetting).locale === 'string'
+                    ? (parsed as LocaleSetting)
+                    : null
+            } catch {
+                // Corrupted data: fall back to the system language
+                return null
+            }
+        },
+        write: (value) => JSON.stringify(value satisfies LocaleSetting | null),
+    },
+})
 
 /**
  * Stored palette choice. Dark is what the app has always shipped with, so anything missing,
  * unreadable or unexpected falls back to it rather than to the system preference.
  */
+const themeSetting = useLocalStorage<'dark' | 'light'>(THEME_KEY, 'dark', {
+    writeDefaults: false,
+    serializer: {
+        read: (raw) => (raw === 'light' ? 'light' : 'dark'),
+        write: (value) => value,
+    },
+})
+
+/** Read the remembered game data directory; returns null when localStorage is unavailable (private mode, etc.) */
+export function readGamePath(): string | null {
+    return gamePath.value
+}
+
+/** Remember the current game data directory */
+export function writeGamePath(path: string): void {
+    gamePath.value = path
+}
+
+/** Drop the record when the directory no longer exists, so the next launch does not retry it */
+export function clearGamePath(): void {
+    gamePath.value = null
+}
+
+/** Read the stored language preference; returns null when unset, unreadable or corrupted */
+export function readLocaleSetting(): LocaleSetting | null {
+    return localeSetting.value
+}
+
+/** Remember the language preference */
+export function writeLocaleSetting(locale: string, manual: boolean): void {
+    localeSetting.value = {locale, manual}
+}
+
+/** Read the stored palette choice */
 export function readThemeSetting(): 'dark' | 'light' {
-    try {
-        return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'
-    } catch {
-        return 'dark'
-    }
+    return themeSetting.value
 }
 
 /** Remember the palette choice */
 export function writeThemeSetting(theme: 'dark' | 'light'): void {
-    try {
-        localStorage.setItem(THEME_KEY, theme)
-    } catch {
-        // A failed write only costs the memory for the next launch; this session is unaffected
-    }
+    themeSetting.value = theme
 }

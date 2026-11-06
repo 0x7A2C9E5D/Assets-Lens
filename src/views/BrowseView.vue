@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-import {computed, onMounted, onUnmounted, ref, watch} from 'vue'
+import {computed, onMounted, ref, watch} from 'vue'
+import {useDebounceFn} from '@vueuse/core'
 import {useRouter} from 'vue-router'
 import {useI18n} from 'vue-i18n'
 import {Database, Search, X} from 'lucide-vue-next'
@@ -39,7 +40,6 @@ const sortDesc = ref(false)
 
 const searchTerm = ref('')
 const searchActive = computed(() => searchTerm.value.trim().length > 0)
-let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 function load() {
   loading.value = true
@@ -110,19 +110,15 @@ function clearSearch() {
   searchTerm.value = ''
 }
 
-watch(searchTerm, () => {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    offset.value = 0
-    selected.value = null
-    asset.value = null
-    load()
-  }, 200)
-})
+/** Typing restarts the wait, so a query only goes out once the keystrokes settle */
+const applySearch = useDebounceFn(() => {
+  offset.value = 0
+  selected.value = null
+  asset.value = null
+  load()
+}, 200)
 
-onUnmounted(() => {
-  if (searchTimer) clearTimeout(searchTimer)
-})
+watch(searchTerm, applySearch)
 
 onMounted(() => {
   dbStats()

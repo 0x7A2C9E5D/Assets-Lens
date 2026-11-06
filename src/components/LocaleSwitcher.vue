@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
+import {computed, ref} from 'vue'
+import {onClickOutside} from '@vueuse/core'
 import {Check, ChevronDown, Languages} from 'lucide-vue-next'
 import {useI18n} from 'vue-i18n'
 import {type LocaleCode, setLocale, SUPPORTED_LOCALES} from '../i18n'
@@ -24,12 +25,10 @@ function select(code: LocaleCode) {
   open.value = false
 }
 
-function onPointerDown(event: MouseEvent) {
-  if (root.value && !root.value.contains(event.target as Node)) open.value = false
-}
-
-onMounted(() => document.addEventListener('mousedown', onPointerDown))
-onBeforeUnmount(() => document.removeEventListener('mousedown', onPointerDown))
+/** A press anywhere else closes the menu */
+onClickOutside(root, () => {
+  open.value = false
+})
 </script>
 
 <template>
