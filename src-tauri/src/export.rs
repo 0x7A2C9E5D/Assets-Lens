@@ -52,25 +52,25 @@ fn push_warning(warnings: &mut Vec<ExportWarning>, code: &str, detail: impl Into
     });
 }
 
-/// Sanitize a file/directory name: strip Windows-forbidden and control characters, cap the length
+/// Sanitize a file/directory name: `sanitize-filename` strips forbidden/control characters, Windows
+/// reserved names (`CON`, `NUL`, `COM1`…) and trailing dots/spaces; the remaining steps cap the
+/// length and fall back to `asset` for a name that sanitizes to nothing
 fn sanitize_file_name(raw: &str) -> String {
-    let cleaned: String = raw
-        .chars()
-        .filter(|c| !c.is_control())
-        .map(|c| {
-            if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
-                '_'
-            } else {
-                c
-            }
-        })
-        .collect();
+    let cleaned = sanitize_filename::sanitize_with_options(
+        // Leading/trailing dots are trimmed here rather than by the library, which would turn a
+        // trailing `.` into `_` because of the replacement below
+        raw.trim().trim_matches('.'),
+        sanitize_filename::Options {
+            // Keep the `_` substitution the export has always used instead of the default removal
+            replacement: "_",
+            ..Default::default()
+        },
+    );
 
-    let trimmed = cleaned.trim().trim_matches('.').to_string();
-    if trimmed.is_empty() {
+    if cleaned.is_empty() {
         "asset".to_string()
     } else {
-        trimmed.chars().take(80).collect()
+        cleaned.chars().take(80).collect()
     }
 }
 
