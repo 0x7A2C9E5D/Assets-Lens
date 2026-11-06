@@ -1,6 +1,7 @@
 /**
  * Web-side persistence for app settings: the game data directory, the language preference and the
- * window rectangle all live in localStorage.
+ * palette choice all live in localStorage. The window rectangle is not here — the window-state
+ * plugin owns it on the Rust side (see `lib.rs`).
  *
  * The backend no longer writes settings.json — the frontend remembers the directory and hands it
  * back for validation on startup, so all setting reads/writes stay in the Web layer while the
@@ -10,7 +11,6 @@
 const GAME_PATH_KEY = 'assets-lens.game-path'
 const LOCALE_KEY = 'assets-lens.locale'
 const THEME_KEY = 'assets-lens.theme'
-const WINDOW_KEY = 'assets-lens.window'
 
 /** Read the remembered game data directory; returns null when localStorage is unavailable (private mode, etc.) */
 export function readGamePath(): string | null {
@@ -76,47 +76,6 @@ export function readLocaleSetting(): LocaleSetting | null {
 export function writeLocaleSetting(locale: string, manual: boolean): void {
     try {
         localStorage.setItem(LOCALE_KEY, JSON.stringify({locale, manual} satisfies LocaleSetting))
-    } catch {
-        // A failed write only costs the memory for the next launch; this session is unaffected
-    }
-}
-
-/**
- * The window rectangle to come back to, in physical pixels, plus whether the window was left
- * maximized. Only the normal rectangle is ever stored: a maximized window reports the work area,
- * which is not the size it returns to when un-maximized.
- */
-export interface WindowGeometry {
-    x: number
-    y: number
-    width: number
-    height: number
-    maximized: boolean
-}
-
-/** Read the remembered window rectangle; returns null when unset, unreadable or malformed */
-export function readWindowGeometry(): WindowGeometry | null {
-    try {
-        const raw = localStorage.getItem(WINDOW_KEY)
-        if (!raw) return null
-        const parsed: unknown = JSON.parse(raw)
-        if (!parsed || typeof parsed !== 'object') return null
-        const {x, y, width, height, maximized} = parsed as WindowGeometry
-        const values = [x, y, width, height]
-        if (!values.every((value) => typeof value === 'number' && Number.isFinite(value))) return null
-        // A zero-sized or inverted rectangle would be applied as a window nobody can use
-        if (width <= 0 || height <= 0) return null
-        return {x, y, width, height, maximized: maximized}
-    } catch {
-        // Unavailable (private mode) or corrupted data: the window keeps its configured rectangle
-        return null
-    }
-}
-
-/** Remember the window rectangle */
-export function writeWindowGeometry(geometry: WindowGeometry): void {
-    try {
-        localStorage.setItem(WINDOW_KEY, JSON.stringify(geometry))
     } catch {
         // A failed write only costs the memory for the next launch; this session is unaffected
     }

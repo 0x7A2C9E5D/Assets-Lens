@@ -9,6 +9,7 @@ mod virtual_textures;
 use std::sync::{Arc, Mutex};
 
 use state::AppState;
+use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
 
 use commands::{
     app_info, build_database, db_stats, detect_game_path, export_visual_asset, get_game_path,
@@ -21,6 +22,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Opens the project's external links (GitHub / Nexus Mods) in the system browser
         .plugin(tauri_plugin_opener::init())
+        // Restores and persists the window rectangle across launches; the frontend only shows the
+        // window once its first frame is ready (see `utils/window.ts`)
+        .plugin(
+            WindowStateBuilder::new()
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+                .build(),
+        )
         // Session state only: the game directory lives in the frontend's Web storage and is handed
         // back through `set_game_path` on startup, so nothing is restored from disk here
         .manage(Arc::new(Mutex::new(AppState::new())))
