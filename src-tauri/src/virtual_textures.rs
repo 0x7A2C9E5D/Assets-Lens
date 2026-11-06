@@ -10,7 +10,6 @@
 //! they are written to a staging directory first. Finding them is archive work rather than export
 //! work: this module only produces paths, and `export.rs` turns them into exported artifacts.
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -60,6 +59,14 @@ pub fn stage_sources(
 /// for a page file that stores no layer 0 tiles.
 pub type PageFileSizes = Vec<(String, Option<(u32, u32)>)>;
 
+/// Page file sizes by GTS path. One GTS serves every page file of its tile set, so the tiles read
+/// for one detail view would otherwise be read again for the next one. Bounded, because the working
+/// set grows with every asset the user browses and the tile sets are never needed again afterwards.
+pub type PageFileSizeCache = moka::sync::Cache<String, PageFileSizes>;
+
+/// Upper bound on cached tile sets; each entry is the page file list of one GTS (tens of rows)
+pub const PAGE_FILE_SIZE_CACHE_CAPACITY: u64 = 2048;
+
 /// Pixel size of the page file `hash` names, in the resolution that page file really stores.
 ///
 /// A GTS header carries the tile geometry (`tile_width` / `tile_height` / `tile_border`) and, per
@@ -74,25 +81,30 @@ pub type PageFileSizes = Vec<(String, Option<(u32, u32)>)>;
 /// `sizes` caches by GTS path, since one GTS serves every page file of its tile set.
 pub fn page_file_size(
     pak: &mut Archives,
-    sizes: &mut HashMap<String, PageFileSizes>,
+    sizes: &PageFileSizeCache,
     matched: &GtpMatch,
     hash: &str,
 ) -> Option<(u32, u32)> {
     let gts_rel = derive_gts_path(&matched.gtp_path);
-    if !sizes.contains_key(&gts_rel) {
-        let parsed = pak
-            .read_from(Pak::VirtualTextures, &gts_rel)
-            .ok()
-            .and_then(|bytes| parse_page_file_sizes(&bytes))
-            .unwrap_or_default();
-        sizes.insert(gts_rel.clone(), parsed);
-    }
+    let size_list = match sizes.get(&gts_rel) {
+        Some(cached) => cached,
+        None => {
+            let parsed = pak
+                .read_from(Pak::VirtualTextures, &gts_rel)
+                .ok()
+                .and_then(|bytes| parse_page_file_sizes(&bytes))
+                .unwrap_or_default();
+            // Inserted even when parsing failed: "no sizes here" is an answer worth caching, so
+            // an unreadable GTS is not read again for every page file of its tile set
+            sizes.insert(gts_rel.clone(), parsed.clone());
+            parsed
+        }
+    };
 
     // Page files are looked up by substring, the way maclarian resolves them
     // (`GtsFile::find_page_file_index`), so the names accepted here are exactly the ones the
     // extractor accepts
-    sizes
-        .get(&gts_rel)?
+    size_list
         .iter()
         .find(|(name, _)| name.contains(hash))
         .and_then(|(_, size)| *size)

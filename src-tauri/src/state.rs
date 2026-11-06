@@ -6,7 +6,7 @@ use maclarian::merged::{GameDataResolver, GtpMatch, MergedDatabase, MergedResolv
 use serde::Deserialize;
 
 use crate::archives::{Archives, Pak};
-use crate::virtual_textures::PageFileSizes;
+use crate::virtual_textures::{PageFileSizeCache, PAGE_FILE_SIZE_CACHE_CAPACITY};
 
 /// One material of the built database: the name that makes its GUID readable, plus the resources it
 /// binds (GUIDs, in parameter order).
@@ -176,8 +176,9 @@ pub struct AppState {
     /// Page file sizes by GTS path, filled by `virtual_textures::page_file_size`. Reading a GTS
     /// costs a full extraction while one GTS serves every page file of its tile set, so browsing a
     /// model whose virtual textures share a tile set would otherwise read the same file repeatedly.
-    /// An empty list is a cached "no sizes here" answer, not a missing entry.
-    pub page_file_sizes: HashMap<String, PageFileSizes>,
+    /// An empty list is a cached "no sizes here" answer, not a missing entry. `moka` keeps the cache
+    /// bounded and lets commands share it by cloning the handle instead of taking it out of the state.
+    pub page_file_sizes: PageFileSizeCache,
 }
 
 impl AppState {
@@ -190,7 +191,7 @@ impl AppState {
             visual_ids_by_id: Vec::new(),
             materials: HashMap::new(),
             archives: None,
-            page_file_sizes: HashMap::new(),
+            page_file_sizes: PageFileSizeCache::new(PAGE_FILE_SIZE_CACHE_CAPACITY),
         }
     }
 
@@ -204,7 +205,7 @@ impl AppState {
         // The archives still open belong to the previous directory
         self.archives = None;
         // Page file sizes were read from those archives
-        self.page_file_sizes.clear();
+        self.page_file_sizes.invalidate_all();
     }
 
     /// The shared PAK pool, created on the first command that needs an archive. Callers clone the

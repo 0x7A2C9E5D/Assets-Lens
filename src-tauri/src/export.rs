@@ -27,7 +27,9 @@ use crate::models::{
     MeshFormat, VirtualTextureSummary,
 };
 use crate::state::MaterialInfo;
-use crate::virtual_textures::{self, PageFileSizes, StagedSources};
+use crate::virtual_textures::{
+    self, PageFileSizeCache, StagedSources, PAGE_FILE_SIZE_CACHE_CAPACITY,
+};
 
 /// Progress phases (the frontend uses these to look up i18n copy)
 const PHASE_PREPARE: &str = "prepare";
@@ -684,10 +686,10 @@ fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest:
 
     // One GTS serves every page file of its tile set, so a shared cache reads each of them once — also
     // when two materials of the asset bind the same virtual texture
-    let mut sizes: HashMap<String, PageFileSizes> = HashMap::new();
+    let sizes = PageFileSizeCache::new(PAGE_FILE_SIZE_CACHE_CAPACITY);
     for material in &mut manifest.materials {
         for row in &mut material.virtual_textures {
-            fill_vt_size(&mut archives, vt_matches, &mut sizes, row);
+            fill_vt_size(&mut archives, vt_matches, &sizes, row);
         }
     }
 }
@@ -696,7 +698,7 @@ fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest:
 fn fill_vt_size(
     archives: &mut Archives,
     vt_matches: &[GtpMatch],
-    sizes: &mut HashMap<String, PageFileSizes>,
+    sizes: &PageFileSizeCache,
     row: &mut VirtualTextureSummary,
 ) {
     let size = match_for_hash(vt_matches, &row.hash)

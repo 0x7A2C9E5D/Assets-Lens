@@ -393,7 +393,7 @@ pub async fn get_visual(
         // `ensure_virtual_texture_parameters`).
         ensure_virtual_texture_parameters(&state, &id)?;
 
-        let (mut detail, matches, pool, mut page_file_sizes) = {
+        let (mut detail, matches, pool, page_file_sizes) = {
             let mut st = lock(&state)?;
             // Owned rather than borrowed: the GTex lookup below needs `&mut` state (it hands the
             // database to a resolver and takes it back), which no borrow of the database outlives.
@@ -414,10 +414,10 @@ pub async fn get_visual(
             };
             let detail = VisualAssetDetail::new(&asset, &matches, &st.materials);
 
-            // The size cache travels with the detail and is put back at the end: it is only ever
-            // touched here, and holding the state lock while the archives are read is what the
-            // block below exists to avoid. `pool()` takes `&mut` as well, so it runs first
-            let page_file_sizes = std::mem::take(&mut st.page_file_sizes);
+            // The size cache travels with the detail: it is only ever touched here, and holding the
+            // state lock while the archives are read is what the block below exists to avoid.
+            // `pool()` takes `&mut` as well, so it runs first
+            let page_file_sizes = st.page_file_sizes.clone();
             (detail, matches, st.pool().ok(), page_file_sizes)
         };
 
@@ -431,7 +431,7 @@ pub async fn get_visual(
                         let size = match_for_hash(&matches, &vt.hash).and_then(|matched| {
                             virtual_textures::page_file_size(
                                 &mut archives,
-                                &mut page_file_sizes,
+                                &page_file_sizes,
                                 matched,
                                 &vt.hash,
                             )
@@ -443,9 +443,6 @@ pub async fn get_visual(
                 Err(err) => eprintln!("[maclarian] page file sizes unavailable: {err}"),
             }
         }
-
-        // Back into the state, for the next detail view of this game directory
-        lock(&state)?.page_file_sizes = page_file_sizes;
 
         Ok(Some(detail))
     })
