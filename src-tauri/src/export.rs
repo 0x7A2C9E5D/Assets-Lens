@@ -12,13 +12,13 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use maclarian::converter::dds_bytes_to_png_bytes;
 use maclarian::converter::gr2_gltf::convert_gr2_bytes_to_glb;
 use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use maclarian::virtual_texture::VirtualTextureExtractor;
+use tempfile::TempDir;
 
 use crate::archives::{lock_pool, Archives, Pak};
 use crate::models::{
@@ -436,9 +436,15 @@ fn export_virtual_textures(
     fs::create_dir_all(&vt_dir)
         .map_err(|e| format!("Failed to create virtual textures directory: {e}"))?;
 
-    let staging = VtStaging::new();
+    let staging = match VtStaging::new() {
+        Ok(staging) => staging,
+        Err(err) => {
+            push_warning(warnings, "vtStagingFailed", err);
+            return Ok(());
+        }
+    };
     if let Err(err) = staging.prepare() {
-        push_warning(warnings, "vtStagingFailed", err.to_string());
+        push_warning(warnings, "vtStagingFailed", err);
         return Ok(());
     }
 
@@ -490,21 +496,23 @@ fn export_vt_target(
 }
 
 /// Staging area of one export run: all page files share `files` (a GTS is read once no matter how
-/// many of them use it) while each get its own output directory `stage_N`. The whole area is
-/// removed when the run ends — also when it is aborted halfway
+/// many of them use it) while each get its own output directory `stage_N`. The directory is owned
+/// by a `TempDir`, so it is removed when the run ends — also when it is aborted halfway
 struct VtStaging {
     root: PathBuf,
+    _temp: TempDir,
 }
 
 impl VtStaging {
-    fn new() -> Self {
-        Self {
-            root: std::env::temp_dir().join(format!(
-                "bg3_asset_export_{}_{}",
-                std::process::id(),
-                next_temp_id()
-            )),
-        }
+    fn new() -> Result<Self, String> {
+        let temp = tempfile::Builder::new()
+            .prefix("bg3_asset_export_")
+            .tempdir()
+            .map_err(|e| format!("Failed to create staging directory: {e}"))?;
+        Ok(Self {
+            root: temp.path().to_path_buf(),
+            _temp: temp,
+        })
     }
 
     /// Files staged for all page files (`virtual_textures::stage_sources` reuses them by name)
@@ -520,17 +528,6 @@ impl VtStaging {
     fn prepare(&self) -> Result<(), String> {
         fs::create_dir_all(self.shared()).map_err(|e| e.to_string())
     }
-}
-
-impl Drop for VtStaging {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
-    }
-}
-
-fn next_temp_id() -> u64 {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
 /// Extract a single virtual texture: pull the page file `matched` names (plus the GTS beside it),
