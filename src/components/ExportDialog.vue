@@ -126,7 +126,7 @@ function baseName(path: string): string {
       <DialogOverlay class="fixed inset-0 z-50 bg-veil animate-fade-in"/>
       <!-- Fluent dialog: the card surface raised all the way to shadow64 -->
       <DialogContent
-          class="card fixed left-1/2 top-1/2 z-50 flex max-h-[86vh] w-[460px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden shadow-[var(--shadow-dialog)] animate-fade-in focus:outline-none"
+          class="card fixed left-1/2 top-1/2 z-50 flex max-h-[86vh] w-[460px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden shadow-[var(--shadow-dialog)] animate-fade focus:outline-none"
       >
         <!-- Title -->
         <header class="flex shrink-0 items-start justify-between gap-3 border-b border-hairline px-5 py-4">

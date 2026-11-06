@@ -91,10 +91,17 @@ export default {
                     '0%': {opacity: '0', transform: 'translateY(2px)'},
                     '100%': {opacity: '1', transform: 'translateY(0)'},
                 },
+                // Opacity only: the `both` fill of `fade-in` would pin `transform` and wipe out the
+                // translate utilities a centred dialog relies on
+                'fade': {
+                    '0%': {opacity: '0'},
+                    '100%': {opacity: '1'},
+                },
             },
             animation: {
                 // Fluent durationNormal; the old shimmed skeleton bar is gone with the glass look
                 'fade-in': 'fade-in 0.2s cubic-bezier(0.33, 0, 0.67, 1) both',
+                'fade': 'fade 0.2s cubic-bezier(0.33, 0, 0.67, 1) both',
             },
         },
     },
