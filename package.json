@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@formatjs/intl-localematcher": "^0.10.1",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-dialog": "^2.0.3",
     "@tauri-apps/plugin-opener": "^2.5.5",
