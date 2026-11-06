@@ -1,48 +1,15 @@
 import {watch} from 'vue'
 import {createI18n} from 'vue-i18n'
 import {getCurrentWindow} from '@tauri-apps/api/window'
+import {match} from '@formatjs/intl-localematcher'
 import {readLocaleSetting, writeLocaleSetting} from '../utils/settings'
 import enUS, {type LocaleMessages} from './locales/en-US'
 import zhCN from './locales/zh-CN'
 import zhTW from './locales/zh-TW'
 
 /* ---------- Culture matching ---------- */
-// Matching leans on `Intl` and its CLDR likely sub-tags (`zh` → `zh-Hans-CN`) instead of handwritten
-// tag parsing, so a shipped language needs nothing but its bundle and one entry in `BUNDLES`.
-
-/** Parsed locale used by the matcher */
-interface LocaleInfo {
-    /** Tag with likely sub-tags filled in, e.g. `zh-Hans-CN` */
-    maximized: string
-    /** Language plus script, region dropped, e.g. `zh-Hans` */
-    neutral: string
-    /** Bare language subtag, e.g. `zh` */
-    language: string
-}
-
-/**
- * Parse an OS/browser locale tag. A malformed tag degrades to the cleaned string instead of
- * throwing, so callers never have to guard the result.
- */
-function parseCulture(raw: string): LocaleInfo {
-    // Clean up first: Intl rejects POSIX-style tags such as `zh_CN.UTF-8` outright
-    const cleaned = raw.trim().toLowerCase().replace(/_/g, '-').split(/[.@]/)[0]
-    try {
-        const maximized = new Intl.Locale(cleaned).maximize()
-        return {
-            maximized: maximized.baseName.toLowerCase(),
-            neutral: (maximized.script
-                    ? `${maximized.language}-${maximized.script}`
-                    : maximized.language
-            ).toLowerCase(),
-            language: maximized.language.toLowerCase(),
-        }
-    } catch {
-        // Malformed tag, or an engine without Intl.Locale
-        const language = cleaned.split('-')[0]
-        return {maximized: cleaned, neutral: language, language}
-    }
-}
+// Best-fit matching comes from `@formatjs/intl-localematcher` (the same negotiator FormatJS uses),
+// so a shipped language needs nothing but its TS bundle and one entry in `BUNDLES`.
 
 /**
  * Every shipped UI language: its bundle, under the code it answers to. Bundles are listed rather than
@@ -62,10 +29,18 @@ const CODES: readonly LocaleCode[] = (Object.keys(BUNDLES) as LocaleCode[]).sort
     a.localeCompare(b),
 )
 
+/** Canonical tags, in the shape the matcher expects */
+const CANONICAL_CODES: string[] = Intl.getCanonicalLocales([...CODES])
+
+/** The language subtag of a canonical tag, e.g. `zh` for `zh-Hans-CN` */
+function languageOf(tag: string): string {
+    return new Intl.Locale(tag).language
+}
+
 /** The only bundle for its language, so naming it after the language alone cannot be ambiguous */
 function isLoneBundleForLanguage(code: LocaleCode): boolean {
-    const language = parseCulture(code).language
-    return CODES.filter((other) => parseCulture(other).language === language).length === 1
+    const language = languageOf(code)
+    return CODES.filter((other) => languageOf(other) === language).length === 1
 }
 
 /**
@@ -90,8 +65,14 @@ function nativeLanguageName(code: LocaleCode): string {
     if (pinned) return pinned
     try {
         const names = new Intl.DisplayNames([code], {type: 'language'})
-        const parsed = parseCulture(code)
-        const name = names.of(isLoneBundleForLanguage(code) ? parsed.language : parsed.neutral)
+        const locale = new Intl.Locale(code).maximize()
+        const name = names.of(
+            isLoneBundleForLanguage(code)
+                ? locale.language
+                : locale.script
+                    ? `${locale.language}-${locale.script}`
+                    : locale.language,
+        )
         return name && name !== code ? name : code
     } catch {
         // No DisplayNames support: fall back to the raw code
@@ -106,36 +87,32 @@ export const SUPPORTED_LOCALES: readonly { code: LocaleCode; label: string }[] =
 
 /** Fallback language: English, looked up among the shipped bundles instead of spelled out */
 export const DEFAULT_LOCALE: LocaleCode =
-    SUPPORTED_LOCALES.find(({code}) => parseCulture(code).language === 'en')?.code ?? 'en-US'
+    SUPPORTED_LOCALES.find(({code}) => languageOf(code) === 'en')?.code ?? 'en-US'
 
 /** Only codes that actually ship a bundle are settable */
 function isSupported(value: unknown): value is LocaleCode {
     return typeof value === 'string' && SUPPORTED_LOCALES.some(({code}) => code === value)
 }
 
-/** A shipped locale: its parsed `Intl` info plus the language code it serves */
-interface AvailableCulture extends LocaleInfo {
-    code: LocaleCode
-}
-
-const AVAILABLE_CULTURES: readonly AvailableCulture[] = SUPPORTED_LOCALES.map(({code}) => ({
-    ...parseCulture(code),
-    code,
-}))
-
 /**
- * Best shipped locale for one tag, or null so the caller can try its next preference. Most specific
- * first: the same culture once likely sub-tags are filled in, then the same neutral culture (same
- * language and script, region ignored). There is no language-only level on purpose — Chinese written
- * in the wrong script is a wrong answer, not a graceful fallback.
+ * Best shipped locale for one tag, or null so the caller can try its next preference. The matcher
+ * fills in likely sub-tags, so `zh-Hant` lands on `zh-TW` and `zh-Hans-CN` on `zh-CN`. An answer that
+ * only exists because `match` fell back to the default language is rejected: Chinese written in the
+ * wrong script is a wrong answer, not a graceful fallback.
  */
 function resolveCulture(raw: string): LocaleCode | null {
-    const target = parseCulture(raw)
-    return (
-        AVAILABLE_CULTURES.find((locale) => locale.maximized === target.maximized)?.code ??
-        AVAILABLE_CULTURES.find((locale) => locale.neutral === target.neutral)?.code ??
-        null
-    )
+    // Clean up first: Intl rejects POSIX-style tags such as `zh_CN.UTF-8` outright
+    const cleaned = raw.trim().replace(/_/g, '-').split(/[.@]/)[0]
+    let requested: string[]
+    try {
+        requested = Intl.getCanonicalLocales(cleaned)
+    } catch {
+        return null
+    }
+    if (requested.length === 0) return null
+
+    const matched = match(requested, CANONICAL_CODES, DEFAULT_LOCALE)
+    return languageOf(matched) === languageOf(requested[0]) ? (matched as LocaleCode) : null
 }
 
 /** First match in the user's ordered preferences, else English */

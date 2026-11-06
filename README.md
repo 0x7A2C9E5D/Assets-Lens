@@ -29,8 +29,8 @@ virtual textures), with a live 3D preview and one-click export.
 - **About page**: the running version sits next to the app name — with a single amber arrow welded into the badge when a
   newer release is out, whose tooltip carries the published number — plus GitHub / Nexus Mods links, the tech stack,
   credits and the rights / privacy / license statements
-- **Localized UI**: bundles for `en-US` / `zh-CN` / `zh-TW`; the first launch follows the system language (`Intl` + CLDR
-  matching rules) and a manual choice is remembered permanently; switching also updates `<html lang>` and the window
+- **Localized UI**: TS bundles for `en-US` / `zh-CN` / `zh-TW`; the first launch follows the system language (FormatJS
+  best-fit matching) and a manual choice is remembered permanently; switching also updates `<html lang>` and the window
   title
 - **Frameless window**: a custom title bar with window controls; blank areas of the title bar and sidebar drag the
   window, double-click maximizes
@@ -81,7 +81,7 @@ tauri-app/
 │  ├─ api/tauri.ts             Frontend IPC: invoke commands + Channel + types
 │  ├─ api/nexus.ts             Nexus Mods GraphQL client + dotted-version comparison
 │  ├─ i18n/
-│  │  ├─ index.ts              vue-i18n setup, system-locale matching, persistence
+│  │  ├─ index.ts              vue-i18n setup, FormatJS locale matching, persistence
 │  │  └─ locales/              en-US.ts / zh-CN.ts / zh-TW.ts
 │  └─ utils/
 │     ├─ release.ts            App-wide release state: one update check per launch
@@ -264,8 +264,8 @@ Larian Studios. All trademarks and copyrights related to the game and its assets
   ；逐阶段推送进度，单项缺失只记「提示」不中断整个导出
 - **关于页**：应用名旁显示当前运行版本；当 Nexus Mods 上已发布更新的版本时，版本徽标内会多出一个琥珀色箭头（已发布版本号只出现在悬浮提示里），并提供
   GitHub / Nexus Mods 外链、技术栈、致谢与权利 / 隐私 / 许可声明
-- **多语言界面**：内置 `en-US` / `zh-CN` / `zh-TW` 三套语言包，首次启动按系统语言（`Intl` + CLDR 匹配规则）自动选择，手动切换后永久记住；切换同时更新
-  `<html lang>` 与窗口标题
+- **多语言界面**：内置 `en-US` / `zh-CN` / `zh-TW` 三套 TS 语言包，首次启动按系统语言（FormatJS best-fit 匹配规则）自动选择，
+  手动切换后永久记住；切换同时更新 `<html lang>` 与窗口标题
 - **无边框窗口**：自绘标题栏与窗口控制按钮，标题栏/侧边栏空白处可拖拽、双击最大化
 
 ### 网络访问
@@ -313,7 +313,7 @@ tauri-app/
 │  ├─ api/tauri.ts             前端 IPC 封装：invoke 命令 + Channel 进度 + 类型定义
 │  ├─ api/nexus.ts             Nexus Mods GraphQL 客户端 + 点分版本号比较
 │  ├─ i18n/
-│  │  ├─ index.ts              vue-i18n 实例、系统语言匹配（Intl）、语言持久化
+│  │  ├─ index.ts              vue-i18n 实例、FormatJS 语言匹配、语言持久化
 │  │  └─ locales/              en-US.ts / zh-CN.ts / zh-TW.ts
 │  └─ utils/
 │     ├─ release.ts            全局版本状态：每次启动只检查一次更新
