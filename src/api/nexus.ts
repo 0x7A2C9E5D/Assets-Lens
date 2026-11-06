@@ -7,6 +7,8 @@
  * no API key and no Rust-side proxy are needed.
  */
 
+import {compare} from 'compare-versions'
+
 /** This app is published on the Baldur's Gate 3 game page (game id 3474, see `game(domainName:)`) */
 const GAME_ID = 3474
 const MOD_ID = 24924
@@ -61,24 +63,14 @@ export async function fetchLatestRelease(): Promise<ModRelease> {
 }
 
 /**
- * Compare two dotted versions as numbers, so 0.10.0 counts as newer than 0.9.0. Any pre-release
- * or build suffix (`1.2.0-beta.3`) is ignored. Returns true only when `candidate` is strictly newer.
+ * Whether `candidate` is strictly newer than `current`. `compare-versions` handles the dotted
+ * forms this app publishes (including a fourth segment and a leading `v`); a version it cannot
+ * parse is not treated as an update, so the About page keeps reporting "latest".
  */
 export function isNewerVersion(candidate: string, current: string): boolean {
-    const next = versionParts(candidate)
-    const local = versionParts(current)
-    for (let i = 0; i < Math.max(next.length, local.length); i += 1) {
-        const diff = (next[i] ?? 0) - (local[i] ?? 0)
-        if (diff !== 0) return diff > 0
+    try {
+        return compare(candidate, current, '>')
+    } catch {
+        return false
     }
-    return false
-}
-
-/** Split a version into its numeric segments ("v1.2.3" → [1, 2, 3]) */
-function versionParts(version: string): number[] {
-    return version
-        .replace(/^v/i, '')
-        .split(/[.\-_+]/)
-        .map((part) => Number.parseInt(part, 10))
-        .filter((part) => Number.isFinite(part))
 }
