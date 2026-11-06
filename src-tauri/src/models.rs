@@ -2,13 +2,16 @@ use std::collections::HashMap;
 
 use maclarian::merged::{GtpMatch, TextureRef, VirtualTextureRef, VisualAsset};
 use serde::{Deserialize, Serialize};
+use specta::Type;
+use specta_typescript::Number;
 
 use crate::state::MaterialInfo;
 
 /// Build progress, pushed to the frontend through a Tauri Channel
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildProgress {
+    #[specta(type = Number)]
     pub percent: f32,
 }
 
@@ -17,7 +20,7 @@ pub struct BuildProgress {
 /// A row of the asset's texture list (the detail panel), and — copied, without `material_names` — the
 /// entry the export manifest material binding it carries: the resource stated in full (name, path,
 /// size, parameter) rather than a GUID to look up. Hence `Clone`.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureSummary {
     pub id: String,
@@ -51,7 +54,7 @@ impl From<&TextureRef> for TextureSummary {
 
 /// Material reference. The GUID stays the identity (names are not unique), the name is what makes
 /// a material row readable, and the template file is where the material is defined.
-#[derive(Serialize)]
+#[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MaterialSummary {
     pub id: String,
@@ -277,7 +280,7 @@ fn virtual_texture_parameter(
 /// `material_names` — the entry the export manifest material binding it carries, which is why it is
 /// `Clone`. Its `width` / `height` are filled by whoever holds the archives, for the detail rows and
 /// for the entries inside a material alike (see `export::fill_vt_sizes`).
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct VirtualTextureSummary {
     pub id: String,
@@ -405,7 +408,7 @@ pub fn virtual_texture_summaries(
 }
 
 /// Full visual asset information (detail panel)
-#[derive(Serialize)]
+#[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualAssetDetail {
     /// Visual resource ID (GUID) — the lookup key, since names are not unique
@@ -442,22 +445,25 @@ impl VisualAssetDetail {
 /// Stored as a Base64 string instead of `Vec<u8>`: a byte vector would serialize through serde into
 /// a JSON array of numbers (one per byte), inflating a multi-MB model to tens of MB of JSON;
 /// Base64 only grows by ~33% and keeps everything in memory without temp files
-#[derive(Serialize)]
+#[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelPreview {
     pub base64: String,
 }
 
 /// Visual asset list item: highlights the composition of the visual itself
-#[derive(Serialize)]
+#[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualSummary {
     /// Visual resource ID (GUID): the row identity — one name can belong to several visuals, so the
     /// list cannot be keyed by name
     pub id: String,
     pub name: String,
+    #[specta(type = Number)]
     pub material_count: usize,
+    #[specta(type = Number)]
     pub texture_count: usize,
+    #[specta(type = Number)]
     pub virtual_texture_count: usize,
 }
 
@@ -474,17 +480,21 @@ impl From<&VisualAsset> for VisualSummary {
 }
 
 /// Database statistics
-#[derive(Serialize)]
+#[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseStats {
+    #[specta(type = Number)]
     pub visual_count: usize,
+    #[specta(type = Number)]
     pub material_count: usize,
+    #[specta(type = Number)]
     pub texture_count: usize,
+    #[specta(type = Number)]
     pub virtual_texture_count: usize,
 }
 
 /// App metadata for the About page
-#[derive(Serialize)]
+#[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
     /// Application version (compile-time, kept in sync with tauri.conf.json)
@@ -492,18 +502,20 @@ pub struct AppInfo {
 }
 
 /// Generic pagination result
-#[derive(Serialize)]
+#[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Page<T> {
     pub items: Vec<T>,
+    #[specta(type = Number)]
     pub total: usize,
+    #[specta(type = Number)]
     pub offset: usize,
 }
 
 /* ---------- Asset export ---------- */
 
 /// Mesh export format: the raw GR2 out of the archive, or a converted GLB
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum MeshFormat {
     /// Raw GR2 bytes, straight out of the PAK (no conversion)
@@ -529,7 +541,7 @@ impl MeshFormat {
 
 /// Texture export format: no separate textures, DDS, or PNG.
 /// Applies to both regular textures and virtual textures.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum TextureFormat {
     /// Do not export texture files separately
@@ -552,7 +564,7 @@ impl TextureFormat {
 }
 
 /// Export options (submitted from the frontend)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportOptions {
     /// Mesh output format: raw GR2 or converted GLB
@@ -564,29 +576,31 @@ pub struct ExportOptions {
 }
 
 /// Export progress, pushed through a Channel
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportProgress {
     /// Phase: prepare / model / textures / virtualTextures / manifest / done
     pub phase: String,
     pub current_file: Option<String>,
+    #[specta(type = Number)]
     pub percent: f32,
 }
 
 /// One exported artifact
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedFile {
     pub path: String,
     /// Artifact kind: gr2 / glb / dds / png
     pub kind: String,
+    #[specta(type = Number)]
     pub size_bytes: usize,
 }
 
 /// Export warning: `code` is a stable enum (mapped to i18n copy on the frontend) while `detail`
 /// carries the raw detail (path / error); the frontend shows `detail` directly for unknown codes,
 /// so warnings passed through from maclarian never end up as a missing-copy gap
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportWarning {
     pub code: String,
@@ -594,7 +608,7 @@ pub struct ExportWarning {
 }
 
 /// Export result
-#[derive(Serialize)]
+#[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportResult {
     /// The directory actually written to (destDir/<asset name>)

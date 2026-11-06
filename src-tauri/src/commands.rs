@@ -74,6 +74,7 @@ fn sorted_visual_ids(db: &MergedDatabase) -> (Vec<String>, Vec<String>) {
 
 /// Auto-detect the BG3 Data directory (default Steam install location)
 #[tauri::command]
+#[specta::specta]
 pub fn detect_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
     let mut st = lock(&state)?;
 
@@ -99,6 +100,7 @@ pub fn detect_game_path(state: State<'_, SharedState>) -> Result<Option<String>,
 /// Read the BG3 Data directory currently recorded by the backend
 /// (used to restore the UI state after switching pages)
 #[tauri::command]
+#[specta::specta]
 pub fn get_game_path(state: State<'_, SharedState>) -> Result<Option<String>, String> {
     let st = lock(&state)?;
     Ok(st.game_path.as_ref().map(|p| p.display().to_string()))
@@ -106,6 +108,7 @@ pub fn get_game_path(state: State<'_, SharedState>) -> Result<Option<String>, St
 
 /// Manually set the BG3 Data directory (must contain Shared.pak)
 #[tauri::command]
+#[specta::specta]
 pub fn set_game_path(state: State<'_, SharedState>, path: String) -> Result<String, String> {
     let dir = PathBuf::from(&path);
 
@@ -131,6 +134,7 @@ pub fn set_game_path(state: State<'_, SharedState>, path: String) -> Result<Stri
 
 /// Build the _merged resource database; progress is pushed through a Channel
 #[tauri::command]
+#[specta::specta]
 pub async fn build_database(
     app: AppHandle,
     on_progress: Channel<BuildProgress>,
@@ -287,6 +291,7 @@ fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Re
 
 /// Current database statistics (None when not built yet)
 #[tauri::command]
+#[specta::specta]
 pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, String> {
     let st = lock(&state)?;
 
@@ -307,6 +312,7 @@ pub fn db_stats(state: State<'_, SharedState>) -> Result<Option<DatabaseStats>, 
 
 /// App metadata for the About page (compile-time values, no state required)
 #[tauri::command]
+#[specta::specta]
 pub fn app_info() -> AppInfo {
     AppInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -317,10 +323,11 @@ pub fn app_info() -> AppInfo {
 /// name or its GUID (so a pasted ID finds its row); `sort` picks the column and `descending` the
 /// direction, both resolved against the orders cached when the database was built.
 #[tauri::command]
+#[specta::specta]
 pub fn list_visuals(
     state: State<'_, SharedState>,
-    offset: usize,
-    limit: usize,
+    offset: u32,
+    limit: u32,
     keyword: Option<String>,
     sort: Option<String>,
     descending: Option<bool>,
@@ -360,8 +367,8 @@ pub fn list_visuals(
     }
 
     let total = matched.len();
-    let start = offset.min(total);
-    let end = (start + limit).min(total);
+    let start = (offset as usize).min(total);
+    let end = (start + limit as usize).min(total);
     let items: Vec<VisualSummary> = matched[start..end]
         .iter()
         .filter_map(|id| db.visuals_by_id.get(*id))
@@ -380,6 +387,7 @@ pub fn list_visuals(
 /// Reading a page file size is the only archive work here, and it is off the main thread: the GTS
 /// that carries it is one file read, not a scan.
 #[tauri::command]
+#[specta::specta]
 pub async fn get_visual(
     app: AppHandle,
     id: String,
@@ -456,6 +464,7 @@ pub async fn get_visual(
 /// The conversion (BitKnit decompression + parsing) can take several seconds, so it runs inside
 /// spawn_blocking to avoid freezing the UI
 #[tauri::command]
+#[specta::specta]
 pub async fn get_visual_preview(
     app: AppHandle,
     path: String,
@@ -503,6 +512,7 @@ pub async fn get_visual_preview(
 /// Reading PAKs, converting and writing to disk are all slow, so this runs inside spawn_blocking;
 /// the state lock is released as soon as the needed data has been fetched.
 #[tauri::command]
+#[specta::specta]
 pub async fn export_visual_asset(
     app: AppHandle,
     id: String,
