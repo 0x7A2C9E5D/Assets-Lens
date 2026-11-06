@@ -15,6 +15,7 @@
     "@tauri-apps/plugin-opener": "^2.5.5",
     "@vueuse/core": "^15.0.0",
     "compare-versions": "^6.1.1",
+    "reka-ui": "^2.11.0",
     "vue": "^3.5.13",
     "vue-i18n": "^11.4.10",
     "vue-router": "^4.5.0"

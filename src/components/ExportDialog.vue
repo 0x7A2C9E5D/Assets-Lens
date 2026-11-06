@@ -1,7 +1,8 @@
 <script lang="ts" setup>
-import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
+import {computed, ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import {Channel} from '@tauri-apps/api/core'
+import {DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle,} from 'reka-ui'
 import {AlertTriangle, CheckCircle2, Download, FolderOpen, Loader2, RotateCcw, X,} from 'lucide-vue-next'
 import {
   type ExportOptions,
@@ -95,6 +96,11 @@ function requestClose() {
   emit('close')
 }
 
+/** Escape, overlay click and the close button all land here through `update:open` */
+function onOpenChange(open: boolean) {
+  if (!open) requestClose()
+}
+
 /** Warnings are localized by code; unknown codes (passed through from maclarian) fall back to the raw detail */
 function warningText(warning: ExportWarning): string {
   const key = `export.warning.${warning.code}`
@@ -110,39 +116,32 @@ function formatSize(bytes: number): string {
 function baseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
 }
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') requestClose()
-}
-
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-veil p-4 animate-fade-in"
-        @click.self="requestClose"
-    >
+  <!-- Focus trap, scroll lock and Escape/overlay dismissal come from the dialog primitive; it stays
+       open while an export runs because the controlled `open` only changes through `onOpenChange` -->
+  <DialogRoot :open="true" @update:open="onOpenChange">
+    <DialogPortal>
+      <DialogOverlay class="fixed inset-0 z-50 bg-veil animate-fade-in"/>
       <!-- Fluent dialog: the card surface raised all the way to shadow64 -->
-      <div
-          class="card flex max-h-[86vh] w-[460px] max-w-full flex-col overflow-hidden shadow-[var(--shadow-dialog)] animate-fade-in"
-          @click.stop
+      <DialogContent
+          class="card fixed left-1/2 top-1/2 z-50 flex max-h-[86vh] w-[460px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden shadow-[var(--shadow-dialog)] animate-fade-in focus:outline-none"
       >
         <!-- Title -->
         <header class="flex shrink-0 items-start justify-between gap-3 border-b border-hairline px-5 py-4">
           <div class="min-w-0">
-            <h2 class="flex items-center gap-2 text-base font-semibold text-fg">
+            <DialogTitle as="h2" class="flex items-center gap-2 text-base font-semibold text-fg">
               <Download class="h-4 w-4 text-accent"/>
               {{ $t('export.title') }}
-            </h2>
-            <p
+            </DialogTitle>
+            <DialogDescription
+                as="p"
                 :title="asset?.name"
                 class="mt-1 truncate font-mono text-[12px] text-accent"
             >
               {{ asset ? asset.name : $t('export.emptyName') }}
-            </p>
+            </DialogDescription>
           </div>
           <button
               :aria-label="$t('export.close')"
@@ -331,7 +330,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             {{ running ? $t('export.running') : $t('export.start') }}
           </button>
         </footer>
-      </div>
-    </div>
-  </Teleport>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
