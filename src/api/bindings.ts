@@ -51,6 +51,14 @@ export const commands = {
 };
 
 /* Types */
+/**
+ *  Error returned by commands and the modules they call.
+ * 
+ *  Serialized as its `Display` output (`#[specta(type = String)]` mirrors that in the generated
+ *  bindings), which is why the messages below must stay verbatim.
+ */
+export type AppError = string;
+
 /**  App metadata for the About page */
 export type AppInfo = {
 	/**  Application version (compile-time, kept in sync with tauri.conf.json) */

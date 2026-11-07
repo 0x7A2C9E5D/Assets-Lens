@@ -38,6 +38,9 @@ fn specta_builder() -> SpectaBuilder<tauri::Wry> {
 }
 
 /// Write `src/api/bindings.ts`, kept in the repository so the frontend builds without Rust
+// Debug builds only: release builds never call it, so the function is compiled out (`run` gates
+// its call the same way) and does not trip an unused-function warning
+#[cfg(debug_assertions)]
 fn export_bindings(builder: &SpectaBuilder<tauri::Wry>) {
     builder
         .export(
