@@ -54,8 +54,8 @@ function goPage(target: number) {
         class="pager flex items-center justify-self-center gap-0.5 rounded-full border border-hairline-strong bg-page p-1"
     >
       <button
-          :disabled="offset === 0"
           :aria-label="$t('pagination.first')"
+          :disabled="offset === 0"
           class="pager-step"
           type="button"
           @click="go(0)"
@@ -63,8 +63,8 @@ function goPage(target: number) {
         <ChevronsLeft class="h-3.5 w-3.5"/>
       </button>
       <button
-          :disabled="offset === 0"
           :aria-label="$t('pagination.prev')"
+          :disabled="offset === 0"
           class="pager-step"
           type="button"
           @click="jump(-1)"
@@ -84,8 +84,8 @@ function goPage(target: number) {
       </button>
       <span v-if="pages.after" class="pager-gap">…</span>
       <button
-          :disabled="offset + limit >= total"
           :aria-label="$t('pagination.next')"
+          :disabled="offset + limit >= total"
           class="pager-step"
           type="button"
           @click="jump(1)"
@@ -93,8 +93,8 @@ function goPage(target: number) {
         <ChevronRight class="h-3.5 w-3.5"/>
       </button>
       <button
-          :disabled="offset + limit >= total"
           :aria-label="$t('pagination.last')"
+          :disabled="offset + limit >= total"
           class="pager-step"
           type="button"
           @click="go((pageCount - 1) * limit)"

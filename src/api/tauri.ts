@@ -3,7 +3,6 @@ import {getCurrentWindow} from '@tauri-apps/api/window'
 import {open} from '@tauri-apps/plugin-dialog'
 import {openUrl} from '@tauri-apps/plugin-opener'
 
-import {commands} from './bindings'
 import type {
     AppInfo,
     BuildProgress,
@@ -19,6 +18,7 @@ import type {
     VisualAssetDetail_Serialize,
     VisualSummary,
 } from './bindings'
+import {commands} from './bindings'
 
 /* Types generated from the Rust models; the views keep importing them under these names */
 export type {

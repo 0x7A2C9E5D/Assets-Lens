@@ -136,8 +136,8 @@ function baseName(path: string): string {
               {{ $t('export.title') }}
             </DialogTitle>
             <DialogDescription
-                as="p"
                 :title="asset?.name"
+                as="p"
                 class="mt-1 truncate font-mono text-[12px] text-accent"
             >
               {{ asset ? asset.name : $t('export.emptyName') }}

@@ -36,8 +36,8 @@ const localeSetting = useLocalStorage<LocaleSetting | null>(LOCALE_KEY, null, {
             try {
                 const parsed: unknown = JSON.parse(raw)
                 return parsed &&
-                    typeof parsed === 'object' &&
-                    typeof (parsed as LocaleSetting).locale === 'string'
+                typeof parsed === 'object' &&
+                typeof (parsed as LocaleSetting).locale === 'string'
                     ? (parsed as LocaleSetting)
                     : null
             } catch {
