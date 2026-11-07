@@ -23,33 +23,33 @@ const props = defineProps<{ path: string | null }>()
  *
  * The model is painted with a lit clay material rather than a flat fill: a texture-less BG3 mesh
  * carries no albedo, so its curvature — the only detail there is to see — is shaded normals and
- * nothing else. A palette swap therefore repaints the backdrop and its grid only: the albedo and
- * the light rig below are shared, so the same mesh is shaded the same way in both themes.
+ * nothing else. Both themes are built around the same neutral clay and the same light rig, but the
+ * clay is nudged a few steps per theme: a mid grey reads lighter against ink than against paper, so
+ * the dark theme takes it a touch down and the light theme a touch up to keep the material looking
+ * like the same thing in either well.
  */
 const SCENE_PALETTE = {
   dark: {
     backdrop: '#1f1f1f',
     grid: 0x525252,
     gridOpacity: 0.9,
+    // 0xa0a0a0, pulled down against the ink backdrop to offset simultaneous contrast
+    clay: 0x969696,
   },
   light: {
     backdrop: '#fafafa',
     grid: 0xd1d1d1,
     gridOpacity: 0.9,
+    // 0xa0a0a0, pushed up against the paper backdrop to offset simultaneous contrast
+    clay: 0xacacac,
   },
 } as const
 
 /**
- * The model's albedo, identical in both themes: the same neutral clay is lit by the same rig either
- * way, and a lighter tone than the old per-theme charcoal keeps the unlit half readable on paper
- * instead of turning the mesh into a silhouette.
- */
-const MODEL_CLAY = 0xa0a0a0
-
-/**
- * The rig's tones, shared by both themes for the same reason as the albedo: a palette swap must not
- * change how the mesh is shaded. `sky` / `ground` are the two ends of the hemisphere that fills the
- * shadow side, and `key` / `rim` shade the lit side and separate the silhouette from the backdrop.
+ * The rig's tones, identical in both themes so a palette swap does not change how the mesh is
+ * shaded; only the albedo takes the small contrast nudge above. `sky` / `ground` are the two ends of
+ * the hemisphere that fills the shadow side, and `key` / `rim` shade the lit side and separate the
+ * silhouette from the backdrop.
  * The ground is lifted so downward-facing normals keep some form instead of crushing.
  */
 const LIGHT_RIG = {
@@ -350,7 +350,7 @@ function renderGlb(bytes: Uint8Array) {
           // meshes, but every mesh is re-materialized here, so nothing keeps referencing it
           const parsed = mesh.material
           mesh.material = new core!.MeshStandardMaterial({
-            color: MODEL_CLAY,
+            color: palette.clay,
             roughness: CLAY_ROUGHNESS,
             metalness: 0,
             side: core!.DoubleSide,
@@ -444,10 +444,18 @@ watch(
     },
 )
 
-/** A palette swap only repaints the background: the backdrop is bound in the template and the grid
- *  is recolored here. The model and its rig keep the colors they were built with, so reloading is
- *  never needed (it would also throw away the camera angle the user orbited to) */
+/** A palette swap repaints the backdrop and its grid and nudges the albedo a few steps for the
+ *  background contrast shift; the light rig keeps its colors, so reloading is never needed (it
+ *  would also throw away the camera angle the user orbited to) */
 watch(scenePalette, (palette) => {
+  if (model) {
+    model.traverse((obj) => {
+      const mesh = obj as THREE.Mesh
+      if (!mesh.isMesh) return
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      mat.color.setHex(palette.clay)
+    })
+  }
   if (grid) {
     const gridMat = (grid as THREE.GridHelper).material as THREE.LineBasicMaterial
     gridMat.color.setHex(palette.grid)
