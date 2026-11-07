@@ -7,7 +7,7 @@ import {compare} from 'compare-versions'
 
 /** Published on the Baldur's Gate 3 page (game id 3474) */
 const GAME_ID = 3474
-const MOD_ID = 24924
+const MOD_ID = 26506
 const ENDPOINT = 'https://api.nexusmods.com/v2/graphql'
 
 /** Minimal document: one mod and its version */
