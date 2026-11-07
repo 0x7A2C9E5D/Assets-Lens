@@ -116,7 +116,11 @@ fn replace_dds_with_png(
             try_write_png_and_record(&png, &png_path, dds_path, files, warnings, source_label)
         }
         Err(err) => {
-            push_warning(warnings, "pngConvertFailed", format!("{source_label}: {err}"));
+            push_warning(
+                warnings,
+                "pngConvertFailed",
+                format!("{source_label}: {err}"),
+            );
             false
         }
     }
@@ -258,7 +262,14 @@ pub fn run_export(
 
     // 3. Virtual textures: GTP + GTS → three layer DDS files. Every hash was resolved to a
     // `GtpMatch` up front, which carries both the page file and the archive holding it
-    export_virtual_textures(pool, &plan, vt_matches, &mut files, &mut warnings, &mut progress)?;
+    export_virtual_textures(
+        pool,
+        &plan,
+        vt_matches,
+        &mut files,
+        &mut warnings,
+        &mut progress,
+    )?;
 
     // 4. Metadata manifest (always written, but never listed among the exported files)
     progress.item(PHASE_MANIFEST, None);
@@ -392,12 +403,24 @@ fn write_texture(
     // Same name, same place: a re-export overwrites the file the previous one left behind
     let dds_path = tex_dir.join(format!("{stem}.dds"));
     if let Err(err) = fs::write(&dds_path, dds) {
-        push_warning(warnings, "textureWriteFailed", format!("{}: {err}", tex.dds_path));
+        push_warning(
+            warnings,
+            "textureWriteFailed",
+            format!("{}: {err}", tex.dds_path),
+        );
         return;
     }
 
     let replaced = convert_to_png
-        && replace_dds_with_png(dds, tex_dir, &stem, &dds_path, files, warnings, &tex.dds_path);
+        && replace_dds_with_png(
+            dds,
+            tex_dir,
+            &stem,
+            &dds_path,
+            files,
+            warnings,
+            &tex.dds_path,
+        );
     if !replaced {
         record_file(files, &dds_path, "dds", dds.len());
     }
@@ -559,7 +582,14 @@ fn export_virtual_texture(
     extract_with_any_gts(&gtp, gts_candidates, &stage)?;
 
     let safe_name = sanitize_file_name(vt_name);
-    collect_vt_layers(&stage, &plan.vt_dir(), &safe_name, plan.convert_to_png, files, warnings)
+    collect_vt_layers(
+        &stage,
+        &plan.vt_dir(),
+        &safe_name,
+        plan.convert_to_png,
+        files,
+        warnings,
+    )
 }
 
 /// Run the extractor with each GTS candidate until one accepts the page file; the extractor checks
@@ -601,7 +631,15 @@ fn collect_vt_layers(
         let Some(src) = find_layer_output(stage, layer)? else {
             continue;
         };
-        export_vt_layer(layer, &src, vt_dir, safe_name, convert_to_png, files, warnings)?;
+        export_vt_layer(
+            layer,
+            &src,
+            vt_dir,
+            safe_name,
+            convert_to_png,
+            files,
+            warnings,
+        )?;
     }
 
     Ok(())
@@ -669,7 +707,11 @@ fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, AppEr
 ///
 /// The size comes from `virtual_textures::page_file_size`, so `asset.json` agrees with the detail
 /// view; an unavailable pool or unparsable GTS leaves it unset rather than failing an export.
-fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest: &mut ExportManifest) {
+fn fill_vt_sizes(
+    pool: &Arc<Mutex<Archives>>,
+    vt_matches: &[GtpMatch],
+    manifest: &mut ExportManifest,
+) {
     if manifest
         .materials
         .iter()

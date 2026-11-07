@@ -148,11 +148,12 @@ pub async fn build_database(
 
         let pak_path = game_path.join("Shared.pak");
         let mut db = MergedDatabase::new(game_path.display().to_string());
-        let parsed = resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, _| {
-            let _ = channel.send(BuildProgress {
-                percent: parse_fraction(current, total),
+        let parsed =
+            resolver.parse_pak_with_progress(&pak_path, &mut db, move |current, total, _| {
+                let _ = channel.send(BuildProgress {
+                    percent: parse_fraction(current, total),
+                });
             });
-        });
 
         match parsed {
             Ok(()) if db.stats().visual_count > 0 => {}
@@ -197,11 +198,11 @@ pub async fn build_database(
             virtual_texture_count: stats.virtual_texture_count,
         })
     })
-        .await
-        .map_err(|err| AppError::TaskTerminated {
-            task: "Build",
-            detail: err.to_string(),
-        })?
+    .await
+    .map_err(|err| AppError::TaskTerminated {
+        task: "Build",
+        detail: err.to_string(),
+    })?
 }
 
 /// Make sure the materials of `visual_id` carry the parameter name of every virtual texture binding.
@@ -321,9 +322,9 @@ pub fn list_visuals(
                 // DB. GUIDs are ASCII, so folding them stays a cheap ASCII-lowercase compare.
                 id.as_str().to_ascii_lowercase().contains(kw)
                     || db
-                    .visuals_by_id
-                    .get(*id)
-                    .is_some_and(|visual| visual.name.to_lowercase().contains(kw))
+                        .visuals_by_id
+                        .get(*id)
+                        .is_some_and(|visual| visual.name.to_lowercase().contains(kw))
             })
         })
         .collect();
@@ -412,11 +413,11 @@ pub async fn get_visual(app: AppHandle, id: String) -> Result<Option<VisualAsset
 
         Ok(Some(detail))
     })
-        .await
-        .map_err(|err| AppError::TaskTerminated {
-            task: "Detail",
-            detail: err.to_string(),
-        })?
+    .await
+    .map_err(|err| AppError::TaskTerminated {
+        task: "Detail",
+        detail: err.to_string(),
+    })?
 }
 
 /// Read the GR2 mesh of a visual asset and convert it to GLB for the three.js preview (geometry
@@ -435,13 +436,12 @@ pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPre
 
         // maclarian compares PAK entries with an exact `==`, which never matches Windows
         // separators; `Archives` normalizes instead.
-        let gr2_bytes =
-            lock_pool(&pool)?
-                .read_from(Pak::Models, &path)
-                .map_err(|err| {
-                    eprintln!("[maclarian] find gr2 {path} failed: {err}");
-                    err
-                })?;
+        let gr2_bytes = lock_pool(&pool)?
+            .read_from(Pak::Models, &path)
+            .map_err(|err| {
+                eprintln!("[maclarian] find gr2 {path} failed: {err}");
+                err
+            })?;
 
         let glb = convert_gr2_bytes_to_glb(&gr2_bytes).map_err(|err| {
             eprintln!("[maclarian] gr2 -> glb failed for {path}: {err}");
@@ -454,11 +454,11 @@ pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPre
             base64: base64::engine::general_purpose::STANDARD.encode(&glb),
         })
     })
-        .await
-        .map_err(|err| AppError::TaskTerminated {
-            task: "Preview",
-            detail: err.to_string(),
-        })?
+    .await
+    .map_err(|err| AppError::TaskTerminated {
+        task: "Preview",
+        detail: err.to_string(),
+    })?
 }
 
 /// Export a single visual asset: GR2 → GLB (or raw) + textures + virtual textures + asset.json.
@@ -517,9 +517,9 @@ pub async fn export_visual_asset(
             },
         )
     })
-        .await
-        .map_err(|err| AppError::TaskTerminated {
-            task: "Export",
-            detail: err.to_string(),
-        })?
+    .await
+    .map_err(|err| AppError::TaskTerminated {
+        task: "Export",
+        detail: err.to_string(),
+    })?
 }

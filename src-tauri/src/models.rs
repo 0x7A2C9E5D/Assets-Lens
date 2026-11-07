@@ -61,7 +61,9 @@ impl MaterialSummary {
     fn new(id: &str, known: Option<&MaterialInfo>) -> Self {
         Self {
             id: id.to_string(),
-            name: known.map(|material| material.name.clone()).unwrap_or_default(),
+            name: known
+                .map(|material| material.name.clone())
+                .unwrap_or_default(),
             source_file: known
                 .map(|material| material.source_file.clone())
                 .unwrap_or_default(),
@@ -166,10 +168,8 @@ pub fn manifest_materials(
     textures: &[TextureSummary],
     virtual_textures: &[VirtualTextureSummary],
 ) -> Vec<ExportMaterial> {
-    let textures: HashMap<&str, &TextureSummary> = textures
-        .iter()
-        .map(|row| (row.id.as_str(), row))
-        .collect();
+    let textures: HashMap<&str, &TextureSummary> =
+        textures.iter().map(|row| (row.id.as_str(), row)).collect();
     let virtual_textures: HashMap<&str, &VirtualTextureSummary> = virtual_textures
         .iter()
         .map(|row| (row.id.as_str(), row))
@@ -178,14 +178,7 @@ pub fn manifest_materials(
     value
         .material_ids
         .iter()
-        .map(|id| {
-            ExportMaterial::new(
-                id,
-                materials.get(id),
-                &textures,
-                &virtual_textures,
-            )
-        })
+        .map(|id| ExportMaterial::new(id, materials.get(id), &textures, &virtual_textures))
         .collect()
 }
 
@@ -196,7 +189,11 @@ pub fn materials_of(
 ) -> HashMap<String, MaterialInfo> {
     material_ids
         .iter()
-        .filter_map(|id| materials.get(id).map(|material| (id.clone(), material.clone())))
+        .filter_map(|id| {
+            materials
+                .get(id)
+                .map(|material| (id.clone(), material.clone()))
+        })
         .collect()
 }
 

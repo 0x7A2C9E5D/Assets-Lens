@@ -1,8 +1,8 @@
+pub mod archives;
 mod commands;
 mod error;
 pub mod export;
 mod models;
-pub mod archives;
 mod state;
 mod virtual_texture_params;
 mod virtual_textures;
