@@ -20,7 +20,7 @@ function handleSidebarDoubleClick() {
 /** Sidebar link styling: every entry shares the same base and active appearance. The row centers its
  *  children, so the icon lines up with the middle of the two-line label / hint block. Selection is
  *  the Fluent NavigationView treatment — a subtle fill plus the brand accent bar on the left edge,
- *  with the icon picking up the accent colour — and nothing moves on hover. */
+ *  with the icon picking up the accent color — and nothing moves on hover. */
 const NAV_LINK_CLASS =
     'group flex items-center gap-3 rounded-md px-3 py-2 text-muted transition-colors duration-150 ease-fluent hover:bg-tint hover:text-fg'
 const ACTIVE_CLASS =

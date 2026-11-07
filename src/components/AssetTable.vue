@@ -23,7 +23,7 @@ function isSorted(field: VisualSort) {
   return props.sortBy === field
 }
 
-/** Header label colour: the active sort column stays lit, the other one only lights up on hover */
+/** Header label color: the active sort column stays lit, the other one only lights up on hover */
 function headerClass(field: VisualSort) {
   return isSorted(field) ? 'text-accent' : 'hover:text-fg'
 }

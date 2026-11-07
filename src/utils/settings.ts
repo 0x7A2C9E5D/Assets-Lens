@@ -5,7 +5,7 @@
  *
  * Storage is handled by VueUse's `useLocalStorage`: it reads once at module load, keeps the value
  * reactive and writes on change, including removing the key when the value is set to `null`. Each
- * entry keeps the validation the hand-written accessors used to do in its `read` serializer.
+ * entry keeps the validation the handwritten accessors used to do in its `read` serializer.
  *
  * The backend no longer writes settings.json — the frontend remembers the directory and hands it
  * back for validation on startup, so all setting reads/writes stay in the Web layer while the

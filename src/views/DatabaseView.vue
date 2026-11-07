@@ -37,7 +37,7 @@ const errorMsg = ref('')
 const elapsed = ref(0)
 const progress = ref<BuildProgress>({percent: 0})
 
-/** The status chip is a Fluent Badge: an outline in the state's own colour over a neutral fill */
+/** The status chip is a Fluent Badge: an outline in the state's own color over a neutral fill */
 const status = computed(() => {
   if (building.value) return {text: t('database.status.building'), class: 'border-warning-line text-warning'}
   if (stats.value) return {text: t('database.status.ready'), class: 'border-success-line text-success'}
