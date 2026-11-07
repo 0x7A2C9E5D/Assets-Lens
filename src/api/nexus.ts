@@ -10,6 +10,9 @@ const GAME_ID = 3474
 const MOD_ID = 26506
 const ENDPOINT = 'https://api.nexusmods.com/v2/graphql'
 
+/** The app's own mod page, built from the same id the release check queries */
+export const MOD_PAGE_URL = `https://www.nexusmods.com/baldursgate3/mods/${MOD_ID}`
+
 /** Minimal document: one mod and its version */
 const MOD_RELEASE_QUERY = `
   query ModRelease($gameId: ID!, $modId: ID!) {
