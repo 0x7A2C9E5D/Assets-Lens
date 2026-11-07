@@ -140,8 +140,8 @@ impl ExportMaterial {
             id,
             name,
             source_file,
-            // In the material's own order (its parameter order); an id the asset's texture rows do
-            // not carry contributes anything
+            // In the material's own order (its parameter order); ids the asset's texture rows do
+            // not carry are dropped
             textures: known
                 .map(|material| {
                     material

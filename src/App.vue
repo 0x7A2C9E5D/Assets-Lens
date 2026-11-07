@@ -93,7 +93,7 @@ const aboutItems = computed(() => [
       </div>
     </aside>
 
-    <!-- Main area: fixed 72px title bar, body takes the remaining space. The title bar lives outside
+    <!-- Main area: fixed 48px title bar, body takes the remaining space. The title bar lives outside
          <main>, so it never moves while the body scrolls -->
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <WindowTitlebar/>
