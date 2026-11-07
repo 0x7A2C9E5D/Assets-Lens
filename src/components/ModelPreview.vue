@@ -33,14 +33,12 @@ const SCENE_PALETTE = {
     backdrop: '#1f1f1f',
     grid: 0x525252,
     gridOpacity: 0.9,
-    // 0xa0a0a0, pulled down against the ink backdrop to offset simultaneous contrast
     clay: 0x969696,
   },
   light: {
     backdrop: '#fafafa',
     grid: 0xd1d1d1,
     gridOpacity: 0.9,
-    // 0xa0a0a0, pushed up against the paper backdrop to offset simultaneous contrast
     clay: 0xacacac,
   },
 } as const
