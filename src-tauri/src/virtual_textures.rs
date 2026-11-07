@@ -1,14 +1,8 @@
 //! Virtual texture page files: stage the page file a `GtpMatch` names plus the GTS that covers it.
 //!
-//! A GTS is not the companion of one-page file: it is the metadata of a whole tile set
-//! (`<Base>_<index>.gts`), listing every page file of that set, so one GTS serves many GTPs. The
-//! extractor resolves a page file by looking its hash up in the GTS metadata, which is what makes
-//! trying several candidates safe — a GTS from another tile set fails instead of exporting the
-//! wrong pixels.
-//!
-//! Both live inside the archives as raw blocks, while `VirtualTextureExtractor` takes file paths, so
-//! they are written to a staging directory first. Finding them is archive work rather than export
-//! work: this module only produces paths, and `export.rs` turns them into exported artifacts.
+//! A GTS is the metadata of a whole tile set and serves many page files. Both live in the archives
+//! as raw blocks while `VirtualTextureExtractor` takes file paths, so they are staged to disk here;
+//! `export.rs` turns the staged paths into artifacts.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,16 +15,12 @@ use crate::archives::{Archives, Pak};
 pub struct StagedSources {
     /// Page file (`.gtp`), named after its archive entry
     pub gtp: PathBuf,
-    /// Candidate GTS files, ordered by likelihood. Normally the first one hits: a page file belongs
-    /// to exactly one tile set, and every page file of that set shares its GTS.
+    /// Candidate GTS files, ordered by likelihood; normally the first one hits.
     pub gts_candidates: Vec<PathBuf>,
 }
 
-/// Stage the page file `matched` names plus the GTS that covers it into `shared`.
-///
-/// Staged files are reused by file name: one GTS carries the metadata of a whole tile set and is
-/// shared by all of its page files, so re-reading it from the archives for every virtual texture
-/// would be wasted work.
+/// Stage the page file `matched` names plus the GTS that covers it into `shared`; staged files are
+/// reused by name, so one GTS is read once for all of its page files.
 pub fn stage_sources(
     pak: &mut Archives,
     matched: &GtpMatch,
@@ -55,13 +45,12 @@ pub fn stage_sources(
 
 /// Pixel size of every page file of one tile set, paired with the page file name it belongs to.
 ///
-/// Layer 0 only — the albedo page the game shows and the first one the extractor writes; `None`
-/// for a page file that stores no layer 0 tiles.
+/// Layer 0 only; `None` for a page file that stores no layer 0 tiles.
 pub type PageFileSizes = Vec<(String, Option<(u32, u32)>)>;
 
 /// Page file sizes by GTS path. One GTS serves every page file of its tile set, so the tiles read
-/// for one detail view would otherwise be read again for the next one. Bounded, because the working
-/// set grows with every asset the user browses and the tile sets are never needed again afterwards.
+/// for one detail view would otherwise be read again for the next one. Bounded, because the cache
+/// grows with every asset the user browses.
 pub type PageFileSizeCache = moka::sync::Cache<String, PageFileSizes>;
 
 /// Upper bound on cached tile sets; each entry is the page file list of one GTS (tens of rows)
@@ -69,16 +58,9 @@ pub const PAGE_FILE_SIZE_CACHE_CAPACITY: u64 = 2048;
 
 /// Pixel size of the page file `hash` names, in the resolution that page file really stores.
 ///
-/// A GTS header carries the tile geometry (`tile_width` / `tile_height` / `tile_border`) and, per
-/// mip level, that level's tile grid — but level 0's grid describes the whole *tile set*, not one-page file:
-/// `Albedo_Normal_Physical_2` claims 512 x 512 tiles = 65536 px, far beyond anything the
-/// game ever stores, because a set is sparse. What a single page file holds is the bounding box of
-/// its own tiles, and that box times a tile's content area is exactly the DDS size the extractor
-/// writes out (`export.rs` sizes it the same way), so that is what is reported here.
-///
-/// The bytes are parsed here rather than through `GtsFile`: that type exposes the per-tile content
-/// size but keeps its tile tables crate-private, and a detail view must not stage anything to disk.
-/// `sizes` caches by GTS path, since one GTS serves every page file of its tile set.
+/// Level 0's grid describes the whole sparse tile set, so the size is the bounding box of the page
+/// file's own tiles times a tile's content area — exactly the DDS the extractor writes. The bytes
+/// are parsed here because `GtsFile` keeps its tile tables crate-private.
 pub fn page_file_size(
     pak: &mut Archives,
     sizes: &PageFileSizeCache,
@@ -94,16 +76,13 @@ pub fn page_file_size(
                 .ok()
                 .and_then(|bytes| parse_page_file_sizes(&bytes))
                 .unwrap_or_default();
-            // Inserted even when parsing failed: "no sizes here" is an answer worth caching, so
-            // an unreadable GTS is not read again for every page file of its tile set
+            // Inserted even when parsing failed: "no sizes here" is worth caching
             sizes.insert(gts_rel.clone(), parsed.clone());
             parsed
         }
     };
 
-    // Page files are looked up by substring, the way maclarian resolves them
-    // (`GtsFile::find_page_file_index`), so the names accepted here are exactly the ones the
-    // extractor accepts
+    // Page files are looked up by substring, the way `GtsFile::find_page_file_index` resolves them
     size_list
         .iter()
         .find(|(name, _)| name.contains(hash))
@@ -112,10 +91,8 @@ pub fn page_file_size(
 
 /// Page file sizes out of a GTS buffer: one tile bounding box per page file, layer 0 only.
 ///
-/// Field offsets follow maclarian's own readers (`gts::read_header` / `gts::read_sections`):
-/// little endian throughout, `num_levels` at byte 40, the tile geometry at 52..64, the flat tile
-/// info table at 68..80 (12 bytes per record) and the packed tile ids at 88..100 (4 bytes per
-/// record), the page file table at 132..144.
+/// Offsets follow maclarian's readers: `num_levels` at 40, tile geometry at 52..64, flat tiles at
+/// 68..80 (12 bytes per record), packed ids at 88..100 (4 bytes), page file table at 132..144.
 fn parse_page_file_sizes(data: &[u8]) -> Option<PageFileSizes> {
     if u32::from_le_bytes(read_le(data, 0)?) != GTS_MAGIC {
         return None;
@@ -180,8 +157,7 @@ fn parse_page_file_sizes(data: &[u8]) -> Option<PageFileSizes> {
         // A truncated name only costs that row its size, so it is not a parse failure
         let name = read_page_file_name(data, page_files_offset + page_file * PAGE_FILE_RECORD_SIZE)
             .unwrap_or_default();
-        // The highest resolution that page file has: maclarian picks the levels the same way, since
-        // a page file does not have to store level 0 (material maps are often stored lower)
+        // The highest resolution that page file has; a page file need not store level 0
         let size = (0..num_levels)
             .filter_map(|level| bounds[page_file * num_levels + level].map(|box_| (level, box_)))
             .min_by_key(|(level, _)| *level)
@@ -217,8 +193,8 @@ const FLAT_TILE_INFO_SIZE: usize = 12;
 const PAGE_FILE_RECORD_SIZE: usize = 536;
 const PAGE_FILE_NAME_SIZE: usize = 512;
 
-/// Ceiling on the page file count of one tile set. The game's largest sets hold a few hundred; the
-/// cap only exists so a corrupt header cannot be turned into a huge allocation.
+/// Ceiling on the page file count of one tile set: the game's largest sets hold a few hundred, so
+/// the cap only stops a corrupt header becoming a huge allocation.
 const MAX_PAGE_FILES: usize = 1 << 14;
 
 /// Ceiling on the mip level count: a packed tile id stores its level in 4 bits
@@ -239,15 +215,9 @@ fn read_le<const N: usize>(data: &[u8], offset: usize) -> Option<[u8; N]> {
 }
 
 /// GTP path → GTS path: strip the trailing `_<32 hex digits>` and swap the extension
-/// (`Generated/Public/VirtualTextures/Albedo_Normal_Physical_5_<hash>.gtp` →
-/// `Generated/Public/VirtualTextures/Albedo_Normal_Physical_5.gts`)
-///
-/// What remains is the tile set index, not a per-file name: every page file of that set (same index,
-/// its own hash) derives the same GTS, which is how one GTS comes to serve many GTPs. maclarian
-/// derives the name the same way (`virtual_texture/utils.rs::find_gts_path`).
+/// (`..._5_<hash>.gtp` → `..._5.gts`). Every page file of a tile set derives the same GTS.
 fn derive_gts_path(gtp_path: &str) -> String {
-    // The directory is split off first and put back at the end: only the file name loses its hash
-    // suffix, while the directory has to survive into the result (a GTS sits beside its page file)
+    // Only the file name loses its hash suffix; the directory has to survive into the result
     let (dir, name) = gtp_path.rsplit_once('/').unwrap_or(("", gtp_path));
     let stem = name
         .strip_suffix(".gtp")
@@ -267,16 +237,11 @@ fn derive_gts_path(gtp_path: &str) -> String {
     }
 }
 
-/// Resolve GTS candidates and stage them into the `shared` directory, ordered by likelihood:
-/// 1. `<GTP with the `_<hash>` suffix stripped>.gts` — the tile set's own GTS (maclarian's standard
-///    derivation), the only candidate that is normally needed
-/// 2. `.gts` files in the same directory whose name is a prefix of the GTP file name (fallback for
-///    mismatched GTS/GTP naming); the longer the GTS name, the higher the priority
+/// Resolve GTS candidates and stage them into `shared`, ordered by likelihood:
+/// 1. `<GTP with the hash suffix stripped>.gts`, the tile set's own GTS
+/// 2. same-directory `.gts` files whose name prefixes the GTP name, longest first
 ///
-/// More than one candidate is staged because a GTS outlives the page file that led here — tile sets
-/// do not always share the index spelling of their page files — and `export.rs` tries them in order
-/// until one accepts the page file. Staged files are reused by file name, so the GTS of a tile set is
-/// read once no matter how many of its page files this export touches.
+/// `export.rs` tries them in order until one accepts the page file.
 fn stage_gts_candidates(
     pak: &mut Archives,
     matched: &GtpMatch,
@@ -303,8 +268,7 @@ fn stage_gts_candidates(
         return Ok(staged);
     }
 
-    // 2. Same-directory prefix fallback: the tile set names of the virtual texture archive, filtered
-    //    to the GTP's directory and a name prefix
+    // 2. Same-directory prefix fallback, longest GTS name first
     let mut fallbacks: Vec<String> = pak
         .list_in(Pak::VirtualTextures)?
         .into_iter()
@@ -326,8 +290,7 @@ fn stage_gts_candidates(
             !stem.is_empty() && gtp_stem.starts_with(&stem)
         })
         .collect();
-    // The closer the GTS name is to the GTP name, the more likely it hits; try in descending
-    // file-name length
+    // The closer the GTS name is to the GTP name, the more likely it hits
     fallbacks.sort_by_key(|p| std::cmp::Reverse(p.len()));
 
     for rel in fallbacks {

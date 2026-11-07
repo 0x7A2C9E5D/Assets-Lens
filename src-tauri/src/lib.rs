@@ -37,9 +37,8 @@ fn specta_builder() -> SpectaBuilder<tauri::Wry> {
         ])
 }
 
-/// Write `src/api/bindings.ts`, kept in the repository so the frontend builds without Rust
-// Debug builds only: release builds never call it, so the function is compiled out (`run` gates
-// its call the same way) and does not trip an unused-function warning
+/// Write `src/api/bindings.ts`, kept in the repository so the frontend builds without Rust.
+// Debug builds only: release builds never call it, so it is compiled out without a warning
 #[cfg(debug_assertions)]
 fn export_bindings(builder: &SpectaBuilder<tauri::Wry>) {
     builder
@@ -62,7 +61,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Opens the project's external links (GitHub / Nexus Mods) in the system browser
         .plugin(tauri_plugin_opener::init())
-        // Restores and persists the window rectangle across launches; the frontend only shows the
+        // Restores and persists the window rectangle across launches; the frontend shows the
         // window once its first frame is ready (see `utils/window.ts`)
         .plugin(
             WindowStateBuilder::new()

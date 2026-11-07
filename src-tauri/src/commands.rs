@@ -36,10 +36,8 @@ fn parse_fraction(current: usize, total: usize) -> f32 {
     }
 }
 
-/// GTex hashes worth looking up among a visual's virtual textures. Blank hashes are dropped: they
-/// cannot match a page file, and looking them up would only re-list the archive. Hashing is
-/// lowercased because maclarian matches it against the page file name case-sensitively, while the
-/// database does not promise a case.
+/// GTex hashes worth looking up: non-blank and lowercased, since maclarian matches them against
+/// the page file name case-sensitively.
 fn vt_hashes(asset: &VisualAsset) -> Vec<String> {
     asset
         .virtual_textures
@@ -49,13 +47,8 @@ fn vt_hashes(asset: &VisualAsset) -> Vec<String> {
         .collect()
 }
 
-/// Every visual GUID in both ascending orders the list can be sorted by: by (name, id) — the
-/// default — and by id. Names are only a sort key: they are not unique, so using them as the
-/// identity would collapse same-named visuals into one list row. Sorting by name first keeps those
-/// duplicates adjacent while the id tiebreak keeps pagination deterministic.
-///
-/// Both orders are built here, once, so a sort change only picks a different cached sequence
-/// instead of re-sorting every id on each page request.
+/// Every visual GUID in both ascending orders the list can be sorted by: by (name, id) and by id.
+/// Both are built once, so a sort change only picks a different cached sequence.
 fn sorted_visual_ids(db: &MergedDatabase) -> (Vec<String>, Vec<String>) {
     let mut rows: Vec<(&str, &str)> = db
         .visuals_by_id
@@ -141,8 +134,7 @@ pub async fn build_database(
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<DatabaseStats, AppError> {
-        // Take what the build needs, then release the lock immediately: parsing Shared.pak runs for
-        // minutes, and every other command needs that lock to answer.
+        // Take what the build needs, then release the lock: parsing Shared.pak runs for minutes.
         let (resolver, game_path) = {
             let st = lock(&state)?;
             (
@@ -175,21 +167,15 @@ pub async fn build_database(
         // has been parsed.
         db.resolve_references();
 
-        // Read out while the database is here rather than on the first detail view: maclarian does
-        // not expose a material's name any other way (see `extract_materials`), and a one-off cost
-        // inside a build that already runs for minutes is not something a click should pay for.
-        //
-        // The parameter names of the virtual texture bindings are *not* read here either: they come
-        // from the materials' own templates and are read per detail view (see
-        // `ensure_virtual_texture_parameters`).
+        // Read out while the database is here: maclarian exposes a material's name no other way.
+        // The virtual texture parameter names are read per detail view instead.
         let materials = extract_materials(&db);
 
         let stats = db.stats();
         let (visual_ids, visual_ids_by_id) = sorted_visual_ids(&db);
         let visual_count = visual_ids.len();
 
-        // The lock is taken again only to publish the result. A build that raced with a directory
-        // switch belongs to the directory that is no longer current, so it is dropped instead.
+        // A build that raced with a directory switch belongs to the old directory and is dropped.
         {
             let mut st = lock(&state)?;
             if st.game_path.as_deref() != Some(game_path.as_path()) {
@@ -220,16 +206,9 @@ pub async fn build_database(
 
 /// Make sure the materials of `visual_id` carry the parameter name of every virtual texture binding.
 ///
-/// maclarian parses a binding down to its GUID, so the name it fills (`virtualtexture`,
-/// `overlayvirtualtexture`, …) has to be read from the LSF documents — and the document a material
-/// itself lives in cannot be derived from that material, because a merged file is always named
-/// `_merged.lsf`. The material's `SourceFile` template is a real file, and it declares the same names
-/// in the same order, so only the templates of this one asset's materials are read: a couple of
-/// archive reads instead of a walk over every `_merged.lsf` of `Shared.pak` (see
-/// `virtual_texture_params`).
-///
-/// The names stay in `materials` once read, so an already-named material is skipped and a second view
-/// of the same asset reads nothing at all.
+/// maclarian parses a binding down to its GUID, and a merged document is always `_merged.lsf`, so
+/// the names are read from the material's `SourceFile` template — same names, same order. Names
+/// stay in `materials` once read, so a second view reads nothing at all.
 fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Result<(), AppError> {
     let (pending, pool, game_path) = {
         let mut st = lock(state)?;
@@ -264,16 +243,14 @@ fn ensure_virtual_texture_parameters(state: &SharedState, visual_id: &str) -> Re
         (pending, st.pool()?, game_path)
     };
 
-    // Read on its own: the templates come out of the archives, and the pool lock is not taken while
-    // the state lock is held
+    // Read on its own: the pool lock is not taken while the state lock is held
     let parameters = {
         let mut archives = lock_pool(&pool)?;
         virtual_texture_params::read_parameters(&mut archives, &pending)
     };
 
     let mut st = lock(state)?;
-    // A directory switch can land while the templates are read: the names then belong to materials
-    // that are already gone
+    // A directory switch can land while the templates are read: the names then belong to nothing
     if st.game_path.as_deref() != Some(game_path.as_path()) {
         return Ok(());
     }
@@ -311,9 +288,8 @@ pub fn app_info() -> AppInfo {
     }
 }
 
-/// Browse visual assets page by page. `keyword` is an optional filter matched against the asset
-/// name or its GUID (so a pasted ID finds its row); `sort` picks the column and `descending` the
-/// direction, both resolved against the orders cached when the database was built.
+/// Browse visual assets page by page; `keyword` matches the name or GUID, `sort` picks the cached
+/// order.
 #[tauri::command]
 #[specta::specta]
 pub fn list_visuals(
@@ -384,16 +360,12 @@ pub async fn get_visual(app: AppHandle, id: String) -> Result<Option<VisualAsset
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Option<VisualAssetDetail>, AppError> {
-        // The binding chips show the parameter each virtual texture fills. Those names are not in the
-        // parsed database, so they are read off this asset's material templates first — and only
-        // while some binding of this asset has no name yet (see
-        // `ensure_virtual_texture_parameters`).
+        // The chips show the parameter each virtual texture fills; read the names first.
         ensure_virtual_texture_parameters(&state, &id)?;
 
         let (mut detail, matches, pool, page_file_sizes) = {
             let mut st = lock(&state)?;
-            // Owned rather than borrowed: the GTex lookup below needs `&mut` state (it hands the
-            // database to a resolver and takes it back), which no borrow of the database outlives.
+            // Owned: the GTex lookup below needs `&mut` state.
             let asset = match st
                 .merged_db
                 .as_ref()
@@ -411,16 +383,13 @@ pub async fn get_visual(app: AppHandle, id: String) -> Result<Option<VisualAsset
             };
             let detail = VisualAssetDetail::new(&asset, &matches, &st.materials);
 
-            // The size cache travels with the detail: it is only ever touched here, and holding the
-            // state lock while the archives are read is what the block below exists to avoid.
-            // `pool()` takes `&mut` as well, so it runs first
+            // The size cache travels with the detail; the block below avoids holding the state lock
+            // while the archives are read. `pool()` takes `&mut` as well, so it runs first
             let page_file_sizes = st.page_file_sizes.clone();
             (detail, matches, st.pool().ok(), page_file_sizes)
         };
 
-        // Page file sizes need the archives: a GTS is one file read from the virtual texture archive
-        // (no scan), and each of them serves every page file of its tile set, so `page_file_size`
-        // sees to reading one only once
+        // Page file sizes need the archives; `page_file_size` reads each GTS once
         if let Some(pool) = pool {
             match lock_pool(&pool) {
                 Ok(mut archives) => {
@@ -450,27 +419,22 @@ pub async fn get_visual(app: AppHandle, id: String) -> Result<Option<VisualAsset
         })?
 }
 
-/// Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview
-/// (geometry only, no textures). Everything stays in memory: Shared.pak bytes → GLB → Base64, with
-/// no intermediate files.
-/// The conversion (BitKnit decompression + parsing) can take several seconds, so it runs inside
-/// spawn_blocking to avoid freezing the UI
+/// Read the GR2 mesh of a visual asset and convert it to GLB for the three.js preview (geometry
+/// only). Everything stays in memory, and the conversion runs in `spawn_blocking`.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPreview, AppError> {
     let state = app.state::<SharedState>().inner().clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ModelPreview, AppError> {
-        // The pool is shared with every other command, so a preview no longer re-opens the archives.
-        // Only the handle is taken here: the state lock is released before anything is read.
+        // The pool is shared with every other command; the state lock is released before any read.
         let pool = {
             let mut st = lock(&state)?;
             st.pool()?
         };
 
-        // maclarian's own reader compares PAK entries with an exact `==` on the raw path, which
-        // never matches on Windows (`\` vs `/`); the `Archives` pool normalizes separators and casing
-        // instead.
+        // maclarian compares PAK entries with an exact `==`, which never matches Windows
+        // separators; `Archives` normalizes instead.
         let gr2_bytes =
             lock_pool(&pool)?
                 .read_from(Pak::Models, &path)
@@ -481,9 +445,8 @@ pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPre
 
         let glb = convert_gr2_bytes_to_glb(&gr2_bytes).map_err(|err| {
             eprintln!("[maclarian] gr2 -> glb failed for {path}: {err}");
-            // Pass through unchanged: for a mesh-less GR2 maclarian returns
-            // "No meshes found in GR2 file (...)", which the frontend maps to dedicated copy;
-            // anything else falls through to the generic failure message
+            // Pass through unchanged: the frontend maps maclarian's "No meshes found" message to
+            // dedicated copy
             AppError::Message(err.to_string())
         })?;
 
@@ -498,11 +461,9 @@ pub async fn get_visual_preview(app: AppHandle, path: String) -> Result<ModelPre
         })?
 }
 
-/// Export a single visual asset: GR2 → GLB (optionally embedded textures) + textures +
-/// virtual textures + asset.json.
+/// Export a single visual asset: GR2 → GLB (or raw) + textures + virtual textures + asset.json.
 ///
-/// Reading PAKs, converting and writing to disk are all slow, so this runs inside spawn_blocking;
-/// the state lock is released as soon as the needed data has been fetched.
+/// Runs in `spawn_blocking`; the state lock is released once the needed data has been fetched.
 #[tauri::command]
 #[specta::specta]
 pub async fn export_visual_asset(
@@ -520,10 +481,8 @@ pub async fn export_visual_asset(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<ExportResult, AppError> {
-        // The manifest states the parameter of every virtual texture binding, both on the material
-        // rows and on the virtual texture rows. Those names are not in the parsed database, so they
-        // are read off this asset's material templates first — and only while some binding of this
-        // asset has no name yet (see `ensure_virtual_texture_parameters`).
+        // The manifest states the parameter of every virtual texture binding, so read the names
+        // first.
         ensure_virtual_texture_parameters(&state, &id)?;
 
         let (pool, asset, materials, vt_matches) = {
@@ -534,15 +493,13 @@ pub async fn export_visual_asset(
                 .and_then(|db| db.visuals_by_id.get(&id))
                 .cloned()
                 .ok_or(AppError::NotBuilt)?;
-            // Page files are looked up only when virtual textures are part of the export; with an
-            // empty list the manifest rows simply carry no path and no archive
+            // Page files are looked up only when virtual textures are part of the export
             let vt_matches = if options.texture_format.is_export() {
                 st.vt_matches(&vt_hashes(&asset))
             } else {
                 Vec::new()
             };
-            // Cut out of the cache while the state is held: the manifest names the materials of the
-            // asset, and the cache they live in is not handed to the export
+            // Cut out of the cache while the state is held: the export does not get the whole cache
             let materials = materials_of(&asset.material_ids, &st.materials);
             // Shared with the previews: the archives this export needs are usually open already
             (st.pool()?, asset, materials, vt_matches)

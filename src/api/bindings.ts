@@ -20,9 +20,8 @@ export const commands = {
 	/**  Current database statistics (None when not built yet) */
 	dbStats: () => __TAURI_INVOKE<DatabaseStats | null>("db_stats"),
 	/**
-	 *  Browse visual assets page by page. `keyword` is an optional filter matched against the asset
-	 *  name or its GUID (so a pasted ID finds its row); `sort` picks the column and `descending` the
-	 *  direction, both resolved against the orders cached when the database was built.
+	 *  Browse visual assets page by page; `keyword` matches the name or GUID, `sort` picks the cached
+	 *  order.
 	 */
 	listVisuals: (offset: number, limit: number, keyword: string | null, sort: string | null, descending: boolean | null) => __TAURI_INVOKE<Page<VisualSummary>>("list_visuals", { offset, limit, keyword, sort, descending }),
 	/**
@@ -33,29 +32,22 @@ export const commands = {
 	 */
 	getVisual: (id: string) => __TAURI_INVOKE<VisualAssetDetail_Serialize | null>("get_visual", { id }),
 	/**
-	 *  Read the GR2 mesh of a visual asset and convert it to GLB for the frontend three.js preview
-	 *  (geometry only, no textures). Everything stays in memory: Shared.pak bytes → GLB → Base64, with
-	 *  no intermediate files.
-	 *  The conversion (BitKnit decompression + parsing) can take several seconds, so it runs inside
-	 *  spawn_blocking to avoid freezing the UI
+	 *  Read the GR2 mesh of a visual asset and convert it to GLB for the three.js preview (geometry
+	 *  only). Everything stays in memory, and the conversion runs in `spawn_blocking`.
 	 */
 	getVisualPreview: (path: string) => __TAURI_INVOKE<ModelPreview>("get_visual_preview", { path }),
 	/**
-	 *  Export a single visual asset: GR2 → GLB (optionally embedded textures) + textures +
-	 *  virtual textures + asset.json.
+	 *  Export a single visual asset: GR2 → GLB (or raw) + textures + virtual textures + asset.json.
 	 * 
-	 *  Reading PAKs, converting and writing to disk are all slow, so this runs inside spawn_blocking;
-	 *  the state lock is released as soon as the needed data has been fetched.
+	 *  Runs in `spawn_blocking`; the state lock is released once the needed data has been fetched.
 	 */
 	exportVisualAsset: (id: string, destDir: string, options: ExportOptions_Deserialize, onProgress: Channel<ExportProgress_Deserialize>) => __TAURI_INVOKE<ExportResult>("export_visual_asset", { id, destDir, options, onProgress }),
 };
 
 /* Types */
 /**
- *  Error returned by commands and the modules they call.
- * 
- *  Serialized as its `Display` output (`#[specta(type = String)]` mirrors that in the generated
- *  bindings), which is why the messages below must stay verbatim.
+ *  Error returned by commands and the modules they call, serialized as its `Display` output
+ *  (`#[specta(type = String)]` mirrors that); the messages below must stay verbatim.
  */
 export type AppError = string;
 
@@ -85,7 +77,7 @@ export type ExportOptions = ExportOptions_Serialize | ExportOptions_Deserialize;
 export type ExportOptions_Deserialize = {
 	/**  Mesh output format: raw GR2 or converted GLB */
 	meshFormat?: MeshFormat,
-	/**  Texture output format for separate files — covers both regular textures and virtual textures */
+	/**  Texture output format, covering regular and virtual textures */
 	textureFormat?: TextureFormat,
 };
 
@@ -93,7 +85,7 @@ export type ExportOptions_Deserialize = {
 export type ExportOptions_Serialize = {
 	/**  Mesh output format: raw GR2 or converted GLB */
 	meshFormat: MeshFormat,
-	/**  Texture output format for separate files — covers both regular textures and virtual textures */
+	/**  Texture output format, covering regular and virtual textures */
 	textureFormat: TextureFormat,
 };
 
@@ -125,11 +117,7 @@ export type ExportResult = {
 	warnings: ExportWarning[],
 };
 
-/**
- *  Export warning: `code` is a stable enum (mapped to i18n copy on the frontend) while `detail`
- *  carries the raw detail (path / error); the frontend shows `detail` directly for unknown codes,
- *  so warnings passed through from maclarian never end up as a missing-copy gap
- */
+/**  Export warning: `code` is a stable key mapped to i18n copy, `detail` the raw path or error. */
 export type ExportWarning = {
 	code: string,
 	detail: string,
@@ -144,15 +132,12 @@ export type ExportedFile = {
 };
 
 /**
- *  Material reference. The GUID stays the identity (names are not unique), the name is what makes
- *  a material row readable, and the template file is where the material is defined.
+ *  Material reference: the GUID is the identity, the name makes the row readable, and `source_file`
+ *  is the template the material is defined in.
  */
 export type MaterialSummary = {
 	id: string,
-	/**
-	 *  Human-readable name from `MaterialBank`; empty when the material is unknown, in which case
-	 *  the detail panel falls back to the GUID
-	 */
+	/**  Human-readable name; empty when unknown, so the panel falls back to the GUID */
 	name: string,
 	/**  Base material template (`.lsf`) the material is derived from */
 	sourceFile: string,
@@ -165,12 +150,7 @@ export type MeshFormat =
 /**  Converted GLB mesh; textures are exported separately */
 "glb";
 
-/**
- *  3D preview payload: the GR2 mesh converted to GLB.
- *  Stored as a Base64 string instead of `Vec<u8>`: a byte vector would serialize through serde into
- *  a JSON array of numbers (one per byte), inflating a multi-MB model to tens of MB of JSON;
- *  Base64 only grows by ~33% and keeps everything in memory without temp files
- */
+/**  3D preview payload: the GR2 mesh converted to GLB, Base64-encoded to avoid a huge JSON byte array. */
 export type ModelPreview = {
 	base64: string,
 };
@@ -182,10 +162,7 @@ export type Page<T> = {
 	offset: number,
 };
 
-/**
- *  Texture export format: no separate textures, DDS, or PNG.
- *  Applies to both regular textures and virtual textures.
- */
+/**  Texture export format, applied to regular and virtual textures. */
 export type TextureFormat = 
 /**  Do not export texture files separately */
 "none" | 
@@ -194,22 +171,10 @@ export type TextureFormat =
 /**  Export as PNG (discard DDS after successful conversion) */
 "png";
 
-/**
- *  Texture reference (DDS).
- * 
- *  A row of the asset's texture list (the detail panel), and — copied, without `material_names` — the
- *  entry the export manifest material binding it carries: the resource stated in full (name, path,
- *  size, parameter) rather than a GUID to look up. Hence `Clone`.
- */
+/**  Texture reference (DDS): a detail row, and the cloned entry a material row of `asset.json` carries. */
 export type TextureSummary = TextureSummary_Serialize | TextureSummary_Deserialize;
 
-/**
- *  Texture reference (DDS).
- * 
- *  A row of the asset's texture list (the detail panel), and — copied, without `material_names` — the
- *  entry the export manifest material binding it carries: the resource stated in full (name, path,
- *  size, parameter) rather than a GUID to look up. Hence `Clone`.
- */
+/**  Texture reference (DDS): a detail row, and the cloned entry a material row of `asset.json` carries. */
 export type TextureSummary_Deserialize = {
 	id: string,
 	name: string,
@@ -217,23 +182,11 @@ export type TextureSummary_Deserialize = {
 	width: number,
 	height: number,
 	parameterName?: string | null,
-	/**
-	 *  Names of this asset's materials that bind this texture, in the asset's own material order —
-	 *  what the detail panel inverts to list a material's textures. Left out of the JSON while empty,
-	 *  which is what a material the cache does not know yields. A material row of the export manifest
-	 *  leaves it out as well: there the material already contains its textures, so the relation would
-	 *  only be repeated the wrong way round.
-	 */
+	/**  Names of this asset's materials that bind this texture, in material order; omitted while empty. */
 	materialNames: string[],
 };
 
-/**
- *  Texture reference (DDS).
- * 
- *  A row of the asset's texture list (the detail panel), and — copied, without `material_names` — the
- *  entry the export manifest material binding it carries: the resource stated in full (name, path,
- *  size, parameter) rather than a GUID to look up. Hence `Clone`.
- */
+/**  Texture reference (DDS): a detail row, and the cloned entry a material row of `asset.json` carries. */
 export type TextureSummary_Serialize = {
 	id: string,
 	name: string,
@@ -241,33 +194,19 @@ export type TextureSummary_Serialize = {
 	width: number,
 	height: number,
 	parameterName: string | null,
-	/**
-	 *  Names of this asset's materials that bind this texture, in the asset's own material order —
-	 *  what the detail panel inverts to list a material's textures. Left out of the JSON while empty,
-	 *  which is what a material the cache does not know yields. A material row of the export manifest
-	 *  leaves it out as well: there the material already contains its textures, so the relation would
-	 *  only be repeated the wrong way round.
-	 */
+	/**  Names of this asset's materials that bind this texture, in material order; omitted while empty. */
 	materialNames?: string[],
 };
 
 /**
- *  Streaming virtual texture reference (GTex).
- * 
- *  A row of the asset's virtual texture list (the detail panel), and — copied, without
- *  `material_names` — the entry the export manifest material binding it carries, which is why it is
- *  `Clone`. Its `width` / `height` are filled by whoever holds the archives, for the detail rows and
- *  for the entries inside a material alike (see `export::fill_vt_sizes`).
+ *  Streaming virtual texture reference (GTex): a detail row, and the cloned entry a material row
+ *  carries.
  */
 export type VirtualTextureSummary = VirtualTextureSummary_Serialize | VirtualTextureSummary_Deserialize;
 
 /**
- *  Streaming virtual texture reference (GTex).
- * 
- *  A row of the asset's virtual texture list (the detail panel), and — copied, without
- *  `material_names` — the entry the export manifest material binding it carries, which is why it is
- *  `Clone`. Its `width` / `height` are filled by whoever holds the archives, for the detail rows and
- *  for the entries inside a material alike (see `export::fill_vt_sizes`).
+ *  Streaming virtual texture reference (GTex): a detail row, and the cloned entry a material row
+ *  carries.
  */
 export type VirtualTextureSummary_Deserialize = {
 	id: string,
@@ -276,38 +215,23 @@ export type VirtualTextureSummary_Deserialize = {
 	/**  Page file (`.gtp`) inside its archive; empty when no lookup was run or nothing matched */
 	path: string,
 	/**
-	 *  Pixel size of this page file, read out of its tile set's GTS — by `get_visual` for a detail
-	 *  row and by `export::fill_vt_sizes` for the export manifest, both off the same
-	 *  `virtual_textures::page_file_size`. It is the same box the extractor writes as its DDS.
-	 *  `None` when the hash resolved to no page file, that GTS could not be parsed, or the caller
-	 *  does not read the GTS at all (the row then renders without a size)
+	 *  Pixel size read out of the page file's GTS; `None` when the hash did not resolve or the GTS
+	 *  could not be read.
 	 */
 	width?: number | null,
 	height?: number | null,
 	/**
-	 *  Names of this asset's materials that bind this virtual texture, in the asset's own material
-	 *  order — what the detail panel inverts to list a material's virtual textures. Left out of the
-	 *  JSON while empty, which is what a material the cache does not know yields. A material row of the
-	 *  export manifest leaves it out as well: there the material already contains its virtual textures,
-	 *  so the relation would only be repeated the wrong way round.
+	 *  Names of this asset's materials that bind this virtual texture, in material order; omitted
+	 *  while empty.
 	 */
 	materialNames: string[],
-	/**
-	 *  Parameter the binding fills (e.g. `virtualtexture`), read off the asset's materials — it
-	 *  belongs to the binding, not to the resource. Absent from the JSON while unset: the names come
-	 *  from the materials' templates (see `state::fill_virtual_texture_parameters`), which a detail view
-	 *  and an export both read up front (`commands::ensure_virtual_texture_parameters`)
-	 */
+	/**  Parameter the binding fills (e.g. `virtualtexture`); omitted while unset. */
 	parameterName?: string | null,
 };
 
 /**
- *  Streaming virtual texture reference (GTex).
- * 
- *  A row of the asset's virtual texture list (the detail panel), and — copied, without
- *  `material_names` — the entry the export manifest material binding it carries, which is why it is
- *  `Clone`. Its `width` / `height` are filled by whoever holds the archives, for the detail rows and
- *  for the entries inside a material alike (see `export::fill_vt_sizes`).
+ *  Streaming virtual texture reference (GTex): a detail row, and the cloned entry a material row
+ *  carries.
  */
 export type VirtualTextureSummary_Serialize = {
 	id: string,
@@ -316,28 +240,17 @@ export type VirtualTextureSummary_Serialize = {
 	/**  Page file (`.gtp`) inside its archive; empty when no lookup was run or nothing matched */
 	path: string,
 	/**
-	 *  Pixel size of this page file, read out of its tile set's GTS — by `get_visual` for a detail
-	 *  row and by `export::fill_vt_sizes` for the export manifest, both off the same
-	 *  `virtual_textures::page_file_size`. It is the same box the extractor writes as its DDS.
-	 *  `None` when the hash resolved to no page file, that GTS could not be parsed, or the caller
-	 *  does not read the GTS at all (the row then renders without a size)
+	 *  Pixel size read out of the page file's GTS; `None` when the hash did not resolve or the GTS
+	 *  could not be read.
 	 */
 	width: number | null,
 	height: number | null,
 	/**
-	 *  Names of this asset's materials that bind this virtual texture, in the asset's own material
-	 *  order — what the detail panel inverts to list a material's virtual textures. Left out of the
-	 *  JSON while empty, which is what a material the cache does not know yields. A material row of the
-	 *  export manifest leaves it out as well: there the material already contains its virtual textures,
-	 *  so the relation would only be repeated the wrong way round.
+	 *  Names of this asset's materials that bind this virtual texture, in material order; omitted
+	 *  while empty.
 	 */
 	materialNames?: string[],
-	/**
-	 *  Parameter the binding fills (e.g. `virtualtexture`), read off the asset's materials — it
-	 *  belongs to the binding, not to the resource. Absent from the JSON while unset: the names come
-	 *  from the materials' templates (see `state::fill_virtual_texture_parameters`), which a detail view
-	 *  and an export both read up front (`commands::ensure_virtual_texture_parameters`)
-	 */
+	/**  Parameter the binding fills (e.g. `virtualtexture`); omitted while unset. */
 	parameterName?: string,
 };
 
@@ -368,10 +281,7 @@ export type VisualAssetDetail_Serialize = {
 
 /**  Visual asset list item: highlights the composition of the visual itself */
 export type VisualSummary = {
-	/**
-	 *  Visual resource ID (GUID): the row identity — one name can belong to several visuals, so the
-	 *  list cannot be keyed by name
-	 */
+	/**  Visual GUID: the row identity, since names are not unique */
 	id: string,
 	name: string,
 	materialCount: number,

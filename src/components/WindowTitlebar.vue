@@ -32,7 +32,7 @@ async function handleClose() {
   await closeWindow()
 }
 
-/** Interactive controls inside the title bar (clicks must not trigger dragging / double-click maximize) */
+/** Interactive controls in the title bar (clicks must not start a drag or maximize) */
 const INTERACTIVE_SELECTOR =
     'button, a, input, select, [role="combobox"], [role="listbox"], [data-no-drag]'
 

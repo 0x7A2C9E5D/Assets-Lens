@@ -1,11 +1,8 @@
 //! PAK archive access: the four archives the app reads from, opened on demand.
 //!
 //! Opening an archive parses its whole file table, so each one is opened once and kept resident.
-//! Which archives those are is fixed by resource kind — a GR2 comes out of `Models.pak`, a DDS out
-//! of `Textures.pak`, a material template out of `Materials.pak` and a virtual texture page file out
-//! of `VirtualTextures.pak` — so the data directory is never walked looking for a file, and no read
-//! falls back to another archive. Nothing here knows about assets or export formats: callers name
-//! the archive they expect (`read_from` / `list_in`).
+//! Which archive holds what is fixed by resource kind, so nothing is ever searched across archives;
+//! callers name the archive they expect (`read_from` / `list_in`).
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -17,9 +14,8 @@ use maclarian::pak::lspk::{FileTableEntry, LspkReader};
 
 use crate::error::AppError;
 
-/// The archives the app reads from. The variant is the resource kind, not a directory listing:
-/// every read names the kind it expects, which is what keeps a lookup from wandering into the
-/// wrong archive (and from parsing a 12 GB file table to answer a question about a texture).
+/// The archives the app reads from. The variant is the resource kind, so every read names the
+/// archive it expects instead of searching for one.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Pak {
     /// GR2 meshes
@@ -97,8 +93,7 @@ impl Archives {
         Ok(())
     }
 
-    /// Read file bytes out of one archive. The archive is named by kind, so a missing file is an
-    /// error rather than the start of a search: `Models.pak` is the only archive a GR2 is read from
+    /// Read file bytes out of one archive; a missing file is an error, not the start of a search.
     pub fn read_from(&mut self, pak: Pak, target: &str) -> Result<Vec<u8>, AppError> {
         self.ensure(pak)?;
 

@@ -101,7 +101,7 @@ function onOpenChange(open: boolean) {
   if (!open) requestClose()
 }
 
-/** Warnings are localized by code; unknown codes (passed through from maclarian) fall back to the raw detail */
+/** Warnings are localized by code; unknown codes fall back to the raw detail */
 function warningText(warning: ExportWarning): string {
   const key = `export.warning.${warning.code}`
   return te(key) ? t(key, {detail: warning.detail}) : warning.detail

@@ -8,11 +8,8 @@ use serde::Deserialize;
 use crate::archives::{Archives, Pak};
 use crate::virtual_textures::{PageFileSizeCache, PAGE_FILE_SIZE_CACHE_CAPACITY};
 
-/// One material of the built database: the name that makes its GUID readable, plus the resources it
-/// binds (GUIDs, in parameter order).
-///
-/// `Clone` so a command can hand the entries of one asset to an export task without copying the whole
-/// cache (see `models::materials_of`).
+/// One material of the built database: its name and the resources it binds (GUIDs, in parameter
+/// order). `Clone` so an export task can take a subset without copying the whole cache.
 #[derive(Clone)]
 pub struct MaterialInfo {
     /// Human-readable name from `MaterialBank` (e.g. `BEAR_Body_A`); empty when the resource has none
@@ -21,9 +18,7 @@ pub struct MaterialInfo {
     pub source_file: String,
     /// GUIDs of the textures this material binds
     pub texture_ids: Vec<String>,
-    /// The virtual textures this material binds. An asset's virtual texture list is the union over
-    /// its materials, so this is what tells those rows which material they came from: a virtual
-    /// texture is only ever reachable through the material that parameterizes it.
+    /// The virtual textures this material binds; an asset's list is the union over its materials.
     pub virtual_textures: Vec<VirtualTextureBinding>,
 }
 
@@ -32,19 +27,12 @@ pub struct MaterialInfo {
 pub struct VirtualTextureBinding {
     /// GUID of the virtual texture resource (`VirtualTextureBank`)
     pub id: String,
-    /// `ParameterName` of the binding node (e.g. `virtualtexture`, `overlayvirtualtexture`). Empty
-    /// until a detail view resolves it: maclarian keeps only the GUID of a binding
-    /// (see `virtual_texture_params`), so the name is read off the material's template on demand
-    /// (`commands::ensure_virtual_texture_parameters`) and stays empty only until then.
+    /// `ParameterName` of the binding node (e.g. `virtualtexture`); filled on demand from the
+    /// material's template, empty until then.
     pub parameter_name: String,
 }
 
 /// One material as it appears in the serialized database, carrying only what the panel needs.
-///
-/// Deserialized into this shape rather than picked out of a `serde_json::Value`: the database
-/// holds every visual and texture as well, and building that whole tree only to reach `materials`
-/// is a memory spike worth skipping. Unknown fields are ignored, while `name` is required — a
-/// renamed field stops here instead of quietly leaving every material without a label.
 #[derive(Deserialize)]
 struct RawMaterial {
     name: String,
@@ -52,15 +40,13 @@ struct RawMaterial {
     source_file: String,
     #[serde(default)]
     texture_ids: Vec<RawTextureParam>,
-    /// Bare GUIDs, unlike `texture_ids`: maclarian parses a binding down to its `ID` and drops the
-    /// parameter name that goes with it (see `virtual_texture_params`). Absent — not empty — for
-    /// the materials that bind no virtual texture, hence the default.
+    /// Bare GUIDs, unlike `texture_ids`: maclarian drops the binding's parameter name. Absent for
+    /// materials that bind no virtual texture, hence the default.
     #[serde(default)]
     virtual_texture_ids: Vec<String>,
 }
 
-/// A texture binding inside a material; the parameter name it also carries is already on the
-/// texture itself
+/// A texture binding inside a material; its parameter name is already on the texture itself
 #[derive(Deserialize)]
 struct RawTextureParam {
     texture_id: String,
@@ -75,9 +61,7 @@ struct RawMaterials {
 
 /// Read every material out of an already-built database, keyed by material GUID.
 ///
-/// maclarian keeps `MaterialDef` — and the map holding it — crate-private, so serializing the
-/// database is the only door out. This runs once per build, where the cost disappears next to the
-/// parse itself; nothing is cached on disk, so a rebuilt database pays it again.
+/// maclarian keeps `MaterialDef` crate-private, so serializing the database is the only door out.
 pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
     let json = match serde_json::to_string(db) {
         Ok(json) => json,
@@ -108,8 +92,7 @@ pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
                         .into_iter()
                         .map(|param| param.texture_id)
                         .collect(),
-                    // The parameter name is not in the serialized database either — the field below
-                    // is a bare GUID, so `fill_virtual_texture_parameters` supplies the name later
+                    // The serialized database holds bare GUIDs; the name is filled in later
                     virtual_textures: material
                         .virtual_texture_ids
                         .into_iter()
@@ -124,12 +107,10 @@ pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
         .collect()
 }
 
-/// Fill in the parameter name of every virtual texture binding from the material's own template.
+/// Fill in the parameter name of every virtual texture binding from the material's template.
 ///
-/// The names are read separately from the database — maclarian drops them, and reading them is a
-/// per-detail-view job (see `virtual_texture_params`) — so the two are joined here. Bindings and
-/// names are paired by position, which holds because both come out in document order. A material the
-/// reader did not reach keeps its empty names, and the panel then renders the chip without one.
+/// Bindings and names pair by position because both come out in document order; an unreached
+/// material keeps its empty names.
 pub fn fill_virtual_texture_parameters(
     materials: &mut HashMap<String, MaterialInfo>,
     parameters: &HashMap<String, Vec<String>>,
@@ -147,37 +128,23 @@ pub fn fill_virtual_texture_parameters(
     }
 }
 
-/// Global application state: BG3 data directory, resource resolver, the built database,
-/// and a stable name cache for consistent pagination order.
-///
-/// The game directory is not persisted here: the frontend remembers it (Web storage) and hands it
-/// back through `set_game_path` on startup, so this state only lives for the current session.
+/// Global application state: game directory, resolver, built database, and the caches that keep
+/// pagination order stable. Only the frontend persists the game directory (Web storage).
 pub struct AppState {
-    /// Shared rather than owned: building the database runs for minutes, and the build has to keep
-    /// working on the resolver after the state lock has been released (see `build_database`).
-    /// It is not cloned — `GameDataResolver` is not `Clone`.
+    /// Shared so a build can keep working after the state lock is released; not `Clone`.
     pub resolver: Option<Arc<GameDataResolver>>,
     pub game_path: Option<PathBuf>,
     pub merged_db: Option<MergedDatabase>,
-    /// Sorted visual GUIDs kept after building, so pagination order stays stable
-    /// (HashMap iteration order is not deterministic). Ids rather than names: a name can belong to
-    /// several visuals, so keying the list by name would silently drop the duplicates.
+    /// Sorted visual GUIDs, so pagination order stays stable; keyed by id because names repeat.
     pub visual_ids: Vec<String>,
-    /// The same GUIDs ordered by GUID: cached next to the name order so sorting the list by ID
-    /// picks a sequence instead of re-sorting every id on each page request.
+    /// The same GUIDs ordered by GUID, cached so sorting by ID picks a sequence instead of re-sorting.
     pub visual_ids_by_id: Vec<String>,
-    /// Materials by GUID, filled once per build. The database itself cannot be queried for them
-    /// (see `extract_materials`), so the names are read out at build time and kept here.
+    /// Materials by GUID, filled once per build (see `extract_materials`).
     pub materials: HashMap<String, MaterialInfo>,
-    /// PAK read pool shared by every command: opening an archive parses its whole file table, so the
-    /// pool is created once per game directory instead of once per preview / export. `Mutex` because
-    /// reading an archive needs `&mut` on its reader.
+    /// PAK read pool shared by every command; `Mutex` because reading needs `&mut`.
     pub archives: Option<Arc<Mutex<Archives>>>,
-    /// Page file sizes by GTS path, filled by `virtual_textures::page_file_size`. Reading a GTS
-    /// costs a full extraction while one GTS serves every page file of its tile set, so browsing a
-    /// model whose virtual textures share a tile set would otherwise read the same file repeatedly.
-    /// An empty list is a cached "no sizes here" answer, not a missing entry. `moka` keeps the cache
-    /// bounded and lets commands share it by cloning the handle instead of taking it out of the state.
+    /// Page file sizes by GTS path; an empty list is a cached "no sizes here" answer.
+    /// `moka` keeps it bounded and shares it by cloning the handle.
     pub page_file_sizes: PageFileSizeCache,
 }
 
@@ -208,9 +175,7 @@ impl AppState {
         self.page_file_sizes.invalidate_all();
     }
 
-    /// The shared PAK pool, created on the first command that needs an archive. Callers clone the
-    /// `Arc` back out and lock it only around a single read, so the state lock and the pool never
-    /// have to be held at the same time.
+    /// The shared PAK pool, created on first use; callers clone the `Arc` and lock only around a read.
     pub fn pool(&mut self) -> Result<Arc<Mutex<Archives>>, String> {
         if let Some(pool) = &self.archives {
             return Ok(pool.clone());
@@ -225,9 +190,7 @@ impl AppState {
         Ok(pool)
     }
 
-    /// The archive that holds the virtual texture page files. maclarian's lookup needs one archive
-    /// to list; which one that is cannot come from a page file (finding it is the lookup's job), so
-    /// it is spelled out by kind.
+    /// The archive holding the virtual texture page files; the lookup needs one to list.
     fn vt_pak(&self) -> Result<PathBuf, String> {
         let game_path = self
             .game_path
@@ -244,14 +207,10 @@ impl AppState {
         Ok(vt_pak)
     }
 
-    /// Resolve GTex hashes to their page files through maclarian's own lookup. Each `GtpMatch`
-    /// carries the path inside the archive *and* the archive itself, so neither has to be guessed
-    /// downstream — and unlike a hash-to-path index, a match can only exist for a hash that is
-    /// actually present. A missing archive or a failed lookup degrades to "no virtual textures":
-    /// they are optional, and must not abort a detail view or an export.
+    /// Resolve GTex hashes to page files through maclarian's lookup; a missing archive or failed
+    /// lookup degrades to no virtual textures.
     ///
-    /// `MergedResolver` owns the database it is built from, so the database moves out and back in
-    /// (pointers move, nothing is copied); the state is left exactly as it was found.
+    /// `MergedResolver` owns the database, so it moves out and back in.
     pub fn vt_matches(&mut self, hashes: &[String]) -> Vec<GtpMatch> {
         let Some(db) = self.merged_db.take() else {
             return Vec::new();

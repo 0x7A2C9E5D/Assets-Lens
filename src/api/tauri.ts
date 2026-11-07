@@ -69,10 +69,7 @@ export function dbStats(): Promise<DatabaseStats | null> {
 /** Sort columns the browse list offers; each maps to an order cached by the backend */
 export type VisualSort = 'name' | 'id'
 
-/**
- * One page of visual assets. `keyword` matches the asset name or its GUID; `sort` / `descending`
- * select the backend's cached order — sorting has to happen there, because the list is paged there.
- */
+/** One page of visual assets; sorting happens in the backend, where the list is paged. */
 export function listVisuals(
     offset: number,
     limit: number,
@@ -87,15 +84,14 @@ export function getVisual(id: string): Promise<VisualAsset | null> {
     return commands.getVisual(id)
 }
 
-/** Fetch the GLB mesh geometry (no textures) converted from the asset's GR2 file for the three.js preview */
+/** Fetch the GLB mesh geometry (no textures) for the three.js preview */
 export function getVisualPreview(path: string): Promise<ModelPreview> {
     return commands.getVisualPreview(path)
 }
 
 /**
- * Export a single visual asset (addressed by its GUID — the name is not unique) to the given
- * directory; the backend creates a subdirectory named after the asset. Progress is pushed stage by
- * stage through the Channel.
+ * Export a visual asset (by GUID) into a subdirectory of `destDir`; progress is pushed through the
+ * Channel.
  */
 export function exportVisualAsset(
     id: string,
@@ -116,14 +112,13 @@ export async function pickDirectory(defaultPath?: string): Promise<string | null
     return typeof selected === 'string' ? selected : null
 }
 
-/** Open an external URL in the system's default browser (used by the project links on the About page) */
+/** Open an external URL in the system browser (used by the About page links) */
 export function openExternal(url: string): Promise<void> {
     return openUrl(url)
 }
 
 /**
- * Start dragging the window when the title bar is pressed (a frameless window needs this explicit
- * call; the data-tauri-drag-region attribute is not reliable)
+ * Start dragging the window from the title bar (`data-tauri-drag-region` is not reliable).
  */
 export function startWindowDrag(): Promise<void> {
     return getCurrentWindow().startDragging()

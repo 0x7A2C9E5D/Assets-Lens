@@ -20,16 +20,12 @@ import {useReleaseCheck} from '../utils/release'
 const {t} = useI18n()
 
 /**
- * Version state is app-wide: both versions are resolved once per launch (see `utils/release`), so
- * opening this page only reads the outcome instead of querying again. `remoteVersion` is only ever
- * shown as the tooltip of the update arrow, never as text on the page.
+ * Versions are resolved once per launch (see `utils/release`), so this page only reads the outcome;
+ * `remoteVersion` is the tooltip of the update arrow, never page text.
  */
 const {localVersion, remoteVersion, releaseState} = useReleaseCheck()
 
-/**
- * Credits rows: every entry links to the project it thanks (the Vue row credits two separate
- * projects, so its two names are independent links), while the role text stays untranslated-free
- */
+/** Credits rows: each entry links to the project it thanks; a row may credit two projects. */
 const stack = computed(() => [
   {
     icon: Monitor,
@@ -95,7 +91,7 @@ function openLink(url: string) {
       <p class="mt-1 text-sm text-muted">{{ $t('about.subtitle') }}</p>
     </header>
 
-    <!-- App header + project links: a single card so the hero identity and the external resources share one panel -->
+    <!-- Hero identity and external links share one card -->
     <div class="card p-6">
       <div class="flex flex-wrap items-center gap-3">
         <!-- The mark stands on its own: the glyph is the whole element, so the gap to the title is just

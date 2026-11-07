@@ -1,10 +1,6 @@
 /**
- * Boot step of the main window. Its rectangle is restored and persisted by the window-state plugin
- * on the Rust side (see `lib.rs`), which runs while the window is created — before the webview loads.
- *
- * The window is therefore created hidden (`"visible": false` in tauri.conf.json): showing it is the
- * last step, and it happens once the app has mounted so the window arrives with its content rather
- * than as an empty frame.
+ * Boot step of the main window. The window is created hidden (`"visible": false` in
+ * tauri.conf.json), so showing it is the last step of the boot and it arrives with its content.
  */
 
 import {getCurrentWindow} from '@tauri-apps/api/window'

@@ -7,7 +7,7 @@ import {startWindowDrag, toggleMaximizeWindow} from './api/tauri'
 
 const {t} = useI18n()
 
-/** The sidebar top is also a window drag area (the sidebar is fixed and independent of WindowTitlebar, so dragging must be bound here) */
+/** The sidebar top is also a window drag area, so dragging is bound here. */
 function handleSidebarDrag(e: MouseEvent) {
   if (e.button !== 0) return
   void startWindowDrag()
@@ -17,10 +17,7 @@ function handleSidebarDoubleClick() {
   void toggleMaximizeWindow()
 }
 
-/** Sidebar link styling: every entry shares the same base and active appearance. The row centers its
- *  children, so the icon lines up with the middle of the two-line label / hint block. Selection is
- *  the Fluent NavigationView treatment — a subtle fill plus the brand accent bar on the left edge,
- *  with the icon picking up the accent color — and nothing moves on hover. */
+/** Sidebar link styling: shared base and active appearance, Fluent NavigationView treatment. */
 const NAV_LINK_CLASS =
     'group flex items-center gap-3 rounded-md px-3 py-2 text-muted transition-colors duration-150 ease-fluent hover:bg-tint hover:text-fg'
 const ACTIVE_CLASS =
@@ -38,13 +35,12 @@ const aboutItems = computed(() => [
 </script>
 
 <template>
-  <!-- Fill the whole window: 300px sidebar + adaptive main area; every window size fills completely, no central canvas and no gutters -->
+  <!-- 300px sidebar + adaptive main area, filling the window -->
   <div class="flex h-screen w-screen overflow-hidden bg-page">
     <aside
         class="z-20 flex h-full w-[300px] shrink-0 flex-col border-r border-hairline-strong bg-ink-800"
     >
-      <!-- Sidebar top: icon (spans both rows, centered with the text block) + app name + subtitle (window drag area).
-           It is exactly as tall as the title bar so the two columns share one horizontal line -->
+      <!-- Sidebar top: icon, app name and subtitle; same height as the title bar, and a window drag area -->
       <div
           class="flex h-12 select-none items-center gap-2.5 px-4"
           @mousedown.left.prevent="handleSidebarDrag"
@@ -93,17 +89,13 @@ const aboutItems = computed(() => [
       </div>
     </aside>
 
-    <!-- Main area: fixed 48px title bar, body takes the remaining space. The title bar lives outside
-         <main>, so it never moves while the body scrolls -->
+    <!-- Main area: fixed 48px title bar above the body -->
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <WindowTitlebar/>
 
-      <!-- Main content: page-level scrolling disabled; long content (tables/details) scrolls inside its own component -->
+      <!-- Page-level scrolling is disabled; long content scrolls inside its own component -->
       <main class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-page">
-        <!-- Note: do not wrap RouterView in <Transition>. In WebView2 an out-in transition gets
-             stuck between leave/enter during route changes and renders a blank screen (with no
-             console error). Render directly and bind :key so every route change cleanly rebuilds
-             the page component. -->
+        <!-- Don't wrap RouterView in <Transition>: it gets stuck in WebView2 and renders a blank screen -->
         <RouterView v-slot="{ Component }">
           <component :is="Component" :key="$route.fullPath"/>
         </RouterView>

@@ -46,9 +46,8 @@ const status = computed(() => {
 })
 
 /**
- * Compare two directories: the backend returns `PathBuf::display()` output while localStorage
- * keeps the raw user input, so the two may only differ in separators or casing. Normalize before
- * comparing, otherwise an unchanged directory is mistaken for a new one.
+ * Compare two directories: the backend returns `PathBuf::display()` output while localStorage keeps
+ * raw user input, so separators or casing may differ.
  */
 function isSamePath(a: string | null, b: string | null): boolean {
   if (!a || !b) return false
@@ -57,8 +56,7 @@ function isSamePath(a: string | null, b: string | null): boolean {
 }
 
 /**
- * Hand a directory to the backend (it validates Shared.pak and rebuilds the resolver) and remember
- * it in localStorage on success. Returns whether it took effect; a failure clears the stale record.
+ * Hand a directory to the backend and remember it on success; a failure clears the stale record.
  */
 async function applyGamePath(path: string): Promise<boolean> {
   try {
@@ -76,10 +74,8 @@ async function applyGamePath(path: string): Promise<boolean> {
 }
 
 /**
- * Ask the backend for an auto-detected directory. Nothing is written to the UI before it answers:
- * the busy flag is only raised for a manual click, and the result is applied only when it differs
- * from what the page already shows — a silent probe on startup therefore never repaints or clears
- * anything of its own accord.
+ * Ask the backend for an auto-detected directory. Nothing is applied until it answers, and only
+ * when it differs from what the page shows.
  */
 function runDetect(manual = false) {
   if (manual) detecting.value = true
@@ -158,10 +154,9 @@ onMounted(() => {
       })
       .catch((err) => console.error('[db_stats]', err))
 
-  // 2) Restore the game directory: the localStorage record wins (remembered across sessions); when
-  //    the backend already uses the same directory just reuse it instead of calling set again
-  //    (set clears the built database, so doing it on every page visit would force a rescan).
-  //    Auto-detection only runs when neither is available, so a manually chosen directory is safe
+  // 2) Restore the game directory: the localStorage record wins; when the backend already uses it,
+  //    reuse it instead of calling set (which clears the built database). Auto-detect only runs
+  //    when neither is available.
   const stored = readGamePath()
   getGamePath()
       .then((current) => {
@@ -182,7 +177,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- Full-page responsive layout: the section stretches with the main area; no central canvas or outer gutters -->
+  <!-- Full-page responsive layout; no central canvas or outer gutters -->
   <section class="flex min-h-0 w-full flex-1 flex-col gap-4 px-8 pt-3 pb-8">
     <header class="flex flex-wrap items-start justify-between gap-4">
       <div>

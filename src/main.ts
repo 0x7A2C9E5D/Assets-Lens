@@ -14,7 +14,5 @@ startReleaseCheck()
 
 createApp(App).use(router).use(i18n).mount('#app')
 
-// The window is created hidden so the plugin-restored rectangle is in place before it is ever
-// painted; showing it is the last step of the boot, after the mount, so the window arrives with its
-// content rather than as an empty frame
+// The window is created hidden and shown after the mount, so it arrives with its content
 showMainWindow()

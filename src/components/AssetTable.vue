@@ -28,12 +28,10 @@ function headerClass(field: VisualSort) {
   return isSorted(field) ? 'text-accent' : 'hover:text-fg'
 }
 
-/** Five-column layout: the UUID column leads and caps at 300px (a full 36-char GUID at 12px mono +
- *  padding) but starts at 0, so a narrow window shrinks it to a truncating stub — with a `title`
- *  fallback — instead of pushing the other columns out of the grid; the name column is ≥220px wide
- *  to fit asset names and its 1fr absorbs the remaining space, so the table always fills its
- *  wrapper with zero leftover; the three count columns are fixed at 80px (14px icon + padding) —
- *  they skip fr distribution for a compact, gap-free fit. */
+/**
+ * Five-column layout: a capped UUID column (≥0, so a narrow window truncates it), a flexible name
+ * column (min 220px), and three fixed 80px count columns.
+ */
 const GRID_COLS = 'minmax(0, 300px) minmax(220px, 1fr) repeat(3, 80px)'
 </script>
 

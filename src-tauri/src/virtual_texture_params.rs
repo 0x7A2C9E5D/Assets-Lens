@@ -1,16 +1,8 @@
-//! Virtual texture parameter names, read straight out of the LSF data.
+//! Virtual texture parameter names, read from the LSF data.
 //!
-//! maclarian parses a `VirtualTextureParameters` node down to its `ID` — `MaterialDef` carries a list
-//! of GUIDs — so the parameter a binding fills (`virtualtexture`, `overlayvirtualtexture`, …) never
-//! reaches the app and has to be read from the documents instead.
-//!
-//! It is read from the material's *template*, not from the document the material itself lives in: a
-//! merged document is always named `_merged.lsf`, so the file holding a given material cannot be
-//! derived from that material — its name, its GUID and its visual's `SourceFile` were all measured
-//! against the shipped data and never match. `MaterialDef::source_file`, by contrast, names a real
-//! template file, and its `VirtualTextureParameters` nodes carry the same parameter names in the same
-//! order. That turns the lookup into one archive read per distinct template, instead of a walk over
-//! every `_merged.lsf` of `Shared.pak`.
+//! maclarian keeps only the `ID` of a `VirtualTextureParameters` node, so the parameter name is read
+//! from the material's template (`MaterialDef::source_file`) rather than its `_merged.lsf` document:
+//! templates carry the same names in the same order, one archive read per distinct template.
 
 use std::collections::HashMap;
 
@@ -18,12 +10,8 @@ use maclarian::formats::lsf::parse_lsf_bytes;
 
 use crate::archives::{Archives, Pak};
 
-/// The parameter every binding fills, keyed by material GUID, in binding order — for the materials
-/// named by `materials`, each paired with its `SourceFile` template.
-///
-/// Templates are shared between materials, so every file is read at most once. A template that cannot
-/// be read contributes an empty list: the names decorate a chip, and a missing one must not fail a
-/// detail view.
+/// Parameter names keyed by material GUID, for the materials named by `materials`, each paired
+/// with its `SourceFile` template. An unreadable template contributes an empty list.
 pub fn read_parameters(
     pool: &mut Archives,
     materials: &[(String, String)],
@@ -46,11 +34,8 @@ pub fn read_parameters(
     parameters
 }
 
-/// Parameter names declared by one material template, in binding order.
-///
-/// The nodes are read flat rather than through a bank region: a template holds a single material, and
-/// `VirtualTextureParameters` only occurs under it. Node order is document order — the very order
-/// maclarian reports the bindings in — which is what lets the two pair up by position.
+/// Parameter names declared by one material template, in document order, so they pair with the
+/// bindings by position.
 fn read_template(pool: &mut Archives, source_file: &str) -> Vec<String> {
     // Read from `Materials.pak`, the one archive material templates ship in
     let Ok(bytes) = pool.read_from(Pak::Materials, source_file) else {

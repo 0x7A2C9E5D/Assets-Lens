@@ -1,13 +1,9 @@
 //! Asset export pipeline: exports a full visual asset (GR2 mesh + textures + virtual textures +
 //! metadata) into a target directory.
 //!
-//! All format conversions reuse maclarian instead of reimplementing anything:
-//! - `convert_gr2_bytes_to_glb`: GR2 → GLB (mesh only, no embedded textures)
-//! - `dds_bytes_to_png_bytes`: DDS → PNG (direct in-memory conversion, no intermediate files)
-//! - `VirtualTextureExtractor`: GTP + GTS → three layer DDS files (BaseMap / NormalMap / PhysicalMap)
-//!
-//! Reaching into the archives is not this module's job: `crate::archives` owns the PAK read pool and
-//! `crate::virtual_textures` stages the page files the extractor consumes.
+//! Format conversions all reuse maclarian: `convert_gr2_bytes_to_glb`, `dds_bytes_to_png_bytes`
+//! and `VirtualTextureExtractor`. Archive access belongs to `crate::archives`, page file staging to
+//! `crate::virtual_textures`.
 
 use std::collections::HashMap;
 use std::fs;
@@ -42,9 +38,8 @@ const PHASE_VIRTUAL: &str = "virtualTextures";
 const PHASE_MANIFEST: &str = "manifest";
 const PHASE_DONE: &str = "done";
 
-/// The three layers exported from a virtual texture (order matches `VirtualTextureLayer`).
-/// Extractor output is `<name>_<layer>.dds`; export file names follow the engine's naming for split
-/// virtual textures (`BaseMap` → `Albedo`, see `export_layer_name`)
+/// The three layers exported from a virtual texture (order matches `VirtualTextureLayer`); the
+/// engine calls the base layer `Albedo` (see `export_layer_name`).
 const VT_LAYERS: [&str; 3] = ["BaseMap", "NormalMap", "PhysicalMap"];
 
 /// Append a structured warning (code is localized by the frontend, detail keeps the raw message)
@@ -55,9 +50,8 @@ fn push_warning(warnings: &mut Vec<ExportWarning>, code: &str, detail: impl Into
     });
 }
 
-/// Sanitize a file/directory name: `sanitize-filename` strips forbidden/control characters, Windows
-/// reserved names (`CON`, `NUL`, `COM1`…) and trailing dots/spaces; the remaining steps cap the
-/// length and fall back to `asset` for a name that sanitizes to nothing
+/// Sanitize a file/directory name: `sanitize-filename` strips forbidden characters and reserved
+/// names, then the result is capped at 80 chars and falls back to `asset` when empty.
 fn sanitize_file_name(raw: &str) -> String {
     let cleaned = sanitize_filename::sanitize_with_options(
         // Leading/trailing dots are trimmed here rather than by the library, which would turn a
@@ -86,9 +80,8 @@ fn record_file(files: &mut Vec<ExportedFile>, path: &Path, kind: &str, size_byte
     });
 }
 
-/// Write a PNG; on success remove the intermediate DDS and record an export entry, on failure push
-/// a `pngWriteFailed` warning. Returns `true` when the PNG has been written (callers then skip the
-/// DDS fallback entry).
+/// Write a PNG, drop the intermediate DDS on success and record the artifact; returns whether the
+/// PNG has been written.
 fn try_write_png_and_record(
     png: &[u8],
     png_path: &Path,
@@ -107,9 +100,7 @@ fn try_write_png_and_record(
     }
 }
 
-/// Write the PNG form of `dds_path` and drop the DDS once the PNG is in place. Returns `true` when
-/// the PNG replaced the DDS (callers then skip the DDS entry), `false` when the DDS has to stay:
-/// either the conversion or to write failed, each reporting its own warning
+/// Write the PNG form of `dds_path` and drop the DDS on success; `false` leaves the DDS in place.
 fn replace_dds_with_png(
     dds_bytes: &[u8],
     dir: &Path,
@@ -131,8 +122,7 @@ fn replace_dds_with_png(
     }
 }
 
-/// Tracks export progress: counts finished items and reports the running percentage, so no step of
-/// the pipeline has to thread a `done` counter around
+/// Tracks export progress: counts finished items and reports the running percentage.
 struct ProgressTracker<'a> {
     total: usize,
     done: usize,
@@ -162,8 +152,7 @@ impl<'a> ProgressTracker<'a> {
         });
     }
 
-    /// Report a phase boundary without counting an item (`prepare` / `done`); those carry a fixed
-    /// percentage because they wrap the counted items instead of being one of them
+    /// Report a phase boundary without counting an item (`prepare` / `done`).
     fn phase(&self, phase: &str, percent: f32) {
         (self.on_progress)(ExportProgress {
             phase: phase.to_string(),
@@ -174,8 +163,7 @@ impl<'a> ProgressTracker<'a> {
 }
 
 /// Everything decided before the first artifact is written: where it goes, in which form, and how
-/// many items the progress bar will count. Bundling it keeps the steps below at four to six
-/// parameters instead of threading every path and flag through the whole pipeline
+/// many items the progress bar counts.
 struct ExportPlan<'a> {
     dir_name: String,
     out_dir: PathBuf,
@@ -242,13 +230,10 @@ fn vt_targets_of(asset: &VisualAsset, export_textures: bool) -> Vec<&VirtualText
         .collect()
 }
 
-/// Export a single visual asset. The GLB is the core artifact — its failure aborts the whole
-/// export, while a single texture / virtual texture failure only records a warning.
+/// Export a single visual asset. A mesh failure aborts the export; a texture or virtual texture
+/// failure only records a warning.
 ///
-/// `materials` are the material cache entries of this asset's materials, taken by the command that
-/// holds the cache (see `models::materials_of`). The manifest names the material rows with them and
-/// reads the bindings of every resource from them, so they are the one piece of state the export
-/// cannot do without.
+/// `materials` are the cache entries of this asset's materials, needed to name the manifest rows.
 pub fn run_export(
     asset: &VisualAsset,
     materials: &HashMap<String, MaterialInfo>,
@@ -291,8 +276,7 @@ pub fn run_export(
     })
 }
 
-/// Read the mesh and write it into the export directory. Unlike a texture, the mesh is not
-/// optional: any failure here aborts the whole export instead of recording a warning
+/// Read the mesh and write it into the export directory; any failure here aborts the export.
 fn export_mesh(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
@@ -347,8 +331,8 @@ fn read_mesh_bytes(
     }
 }
 
-/// Pull every regular texture of the asset out of the archives, optionally converting it to PNG.
-/// A missing texture is a warning: the rest of the export carries on
+/// Pull every regular texture out of the archives, optionally converting to PNG; a missing texture
+/// is a warning.
 fn export_textures(
     asset: &VisualAsset,
     pool: &Arc<Mutex<Archives>>,
@@ -386,8 +370,7 @@ fn export_texture(
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
 ) -> Result<(), AppError> {
-    // Locked per file only: decompressing one texture is quick, and it leaves the pool available to
-    // other commands (a preview) while the export runs
+    // Locked per file only: it leaves the pool available to other commands while the export runs
     match lock_pool(pool)?.read_from(Pak::Textures, &tex.dds_path) {
         Ok(dds) => write_texture(tex, &dds, tex_dir, convert_to_png, files, warnings),
         Err(err) => push_warning(warnings, "textureUnavailable", err.to_string()),
@@ -431,9 +414,8 @@ fn texture_stem(tex: &TextureRef) -> String {
     )
 }
 
-/// Extract every virtual texture of the asset. All of them share one staging directory — a GTS is
-/// read once no matter how many page files of its tile set pass through — while each get its own
-/// extraction output directory, so a failed candidate cannot leave artifacts behind for the next
+/// Extract every virtual texture of the asset. All share one staging directory, so a GTS is read
+/// once; each gets its own output directory.
 fn export_virtual_textures(
     pool: &Arc<Mutex<Archives>>,
     plan: &ExportPlan<'_>,
@@ -472,8 +454,7 @@ fn export_virtual_textures(
     Ok(())
 }
 
-/// Extract one virtual texture in its own staging directory. A failure is recorded as a warning:
-/// unlike the mesh, one broken virtual texture does not abort the export
+/// Extract one virtual texture in its own staging directory; a failure is only a warning.
 #[allow(clippy::too_many_arguments)]
 fn export_vt_target(
     pool: &Arc<Mutex<Archives>>,
@@ -511,9 +492,8 @@ fn export_vt_target(
     Ok(())
 }
 
-/// Staging area of one export run: all page files share `files` (a GTS is read once no matter how
-/// many of them use it) while each get its own output directory `stage_N`. The directory is owned
-/// by a `TempDir`, so it is removed when the run ends — also when it is aborted halfway
+/// Staging area of one export run: page files share `files`, each output goes to `stage_N`, and
+/// the `TempDir` removes it all when the run ends.
 struct VtStaging {
     root: PathBuf,
     _temp: TempDir,
@@ -551,8 +531,7 @@ impl VtStaging {
     }
 }
 
-/// Extract a single virtual texture: pull the page file `matched` names (plus the GTS beside it),
-/// resolve the three layer DDS files, and write them to the export dir.
+/// Extract one virtual texture: stage the page file and GTS, then write the three layer DDS files.
 #[allow(clippy::too_many_arguments)]
 fn export_virtual_texture(
     pak: &mut Archives,
@@ -583,9 +562,8 @@ fn export_virtual_texture(
     collect_vt_layers(&stage, &plan.vt_dir(), &safe_name, plan.convert_to_png, files, warnings)
 }
 
-/// Run the extractor with each GTS candidate until one accepts the page file: GTS naming does not
-/// always match the GTP, so the candidates are tried in likelihood order. Trying them is safe
-/// because the extractor checks the hash against the GTS metadata itself
+/// Run the extractor with each GTS candidate until one accepts the page file; the extractor checks
+/// the hash itself, so trying them is safe.
 fn extract_with_any_gts(
     gtp: &Path,
     gts_candidates: Vec<PathBuf>,
@@ -609,8 +587,8 @@ fn extract_with_any_gts(
     Err(AppError::VirtualTextureExtraction { detail: last_err })
 }
 
-/// Move the extracted layer files into `vt_dir`, named after the asset instead of the tile set, and
-/// convert them when PNG was asked for
+/// Move the extracted layer files into `vt_dir`, renamed after the asset and converted to PNG when
+/// asked.
 fn collect_vt_layers(
     stage: &Path,
     vt_dir: &Path,
@@ -629,9 +607,7 @@ fn collect_vt_layers(
     Ok(())
 }
 
-/// The name a layer takes in the export. The extractor calls the base layer `BaseMap` while the engine
-/// calls it Albedo — the export follows the engine, so `BaseMap` → `Albedo`; the other two layers just
-/// drop the trailing `Map` (`NormalMap` → `Normal`)
+/// The name a layer takes in the export: `BaseMap` → `Albedo`, others drop the trailing `Map`.
 fn export_layer_name(layer: &str) -> &str {
     match layer {
         "BaseMap" => "Albedo",
@@ -649,11 +625,10 @@ fn export_vt_layer(
     files: &mut Vec<ExportedFile>,
     warnings: &mut Vec<ExportWarning>,
 ) -> Result<(), AppError> {
-    // The extractor writes `<name>_<layer>.dds` (e.g. `..._basemap.dds`); the export file is named
-    // after the layer as the engine names it
+    // The extractor writes `<name>_<layer>.dds`; the export names it after the engine's layer.
+    // A rename onto an existing destination fails on Windows, hence the copy fallback
     let stem = format!("{safe_name}_{}", export_layer_name(layer));
-    // Same name, same place: a re-export overwrites the file the previous one left behind. A rename
-    // onto an existing destination fails on Windows, which is what the copy below covers
+    // Same name, same place: a re-export overwrites the previous file
     let dds_path = vt_dir.join(format!("{stem}.dds"));
     if fs::rename(src, &dds_path).is_err() {
         fs::copy(src, &dds_path).map_err(|e| AppError::MoveLayerOutput {
@@ -690,15 +665,10 @@ fn find_layer_output(stage: &Path, layer: &str) -> Result<Option<PathBuf>, AppEr
         }))
 }
 
-/// Fill in the pixel size of every virtual texture the materials of the manifest carry.
+/// Fill in the pixel size of every virtual texture the manifest carries.
 ///
-/// The size is the bounding box of that page file's own tiles, which is exactly the DDS the extractor
-/// wrote next to the manifest and the value the detail view shows for the same virtual texture (see
-/// `virtual_textures::page_file_size`), so `asset.json` and the UI agree on it.
-///
-/// The archives are read here, and a size is decoration: an unavailable pool, a hash that resolved to
-/// no page file or a GTS that does not parse all leave the field unset rather than failing an export
-/// whose files are already on disk.
+/// The size comes from `virtual_textures::page_file_size`, so `asset.json` agrees with the detail
+/// view; an unavailable pool or unparsable GTS leaves it unset rather than failing an export.
 fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest: &mut ExportManifest) {
     if manifest
         .materials
@@ -712,8 +682,7 @@ fn fill_vt_sizes(pool: &Arc<Mutex<Archives>>, vt_matches: &[GtpMatch], manifest:
         return;
     };
 
-    // One GTS serves every page file of its tile set, so a shared cache reads each of them once — also
-    // when two materials of the asset bind the same virtual texture
+    // One GTS serves every page file of its tile set, so a shared cache reads each one once
     let sizes = PageFileSizeCache::new(PAGE_FILE_SIZE_CACHE_CAPACITY);
     for material in &mut manifest.materials {
         for row in &mut material.virtual_textures {
@@ -734,15 +703,14 @@ fn fill_vt_size(
     row.set_size(size);
 }
 
-/// Assemble the `asset.json` content of one export. The virtual texture sizes are the one field that
-/// needs the archives, so they are settled by `fill_vt_sizes` before the manifest is written.
+/// Assemble the `asset.json` content; `fill_vt_sizes` settles the virtual texture sizes before it
+/// is written.
 fn build_manifest(
     asset: &VisualAsset,
     materials: &HashMap<String, MaterialInfo>,
     vt_matches: &[GtpMatch],
 ) -> ExportManifest {
-    // Built once and handed to the material rows, which carry these very rows for their own resources
-    // (see `manifest_materials`); the manifest lists the resources nowhere else
+    // Built once and handed to the material rows, which carry these very rows for their resources
     let textures = texture_summaries(asset, materials);
     let virtual_textures = virtual_texture_summaries(asset, vt_matches, materials);
 
@@ -759,8 +727,7 @@ fn build_manifest(
     }
 }
 
-/// Write `asset.json`; the artifacts are already on disk by then, so a manifest failure is recorded
-/// as a warning instead of failing the whole export
+/// Write `asset.json`; a manifest failure is a warning, as the artifacts are already on disk.
 fn write_manifest(manifest: &ExportManifest, out_dir: &Path, warnings: &mut Vec<ExportWarning>) {
     let manifest_path = out_dir.join("asset.json");
     match serde_json::to_string_pretty(manifest) {

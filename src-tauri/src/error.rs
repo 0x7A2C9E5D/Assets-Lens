@@ -1,17 +1,12 @@
 //! Errors crossing the Tauri command boundary.
 //!
-//! Every variant states what failed and where, instead of thin strings built at each call site.
-//! `Display` still renders the exact text the frontend has always received — it matches on message
-//! text in places (the mesh-less preview branch looks for `No meshes found in GR2 file`) — and the
-//! `Serialize` impl keeps the wire format a plain string, so rejecting a command looks identical to
-//! the previous `Result<_, String>`.
+//! Every variant states what failed and where. `Display` renders the exact text the frontend
+//! matches on, and `Serialize` keeps the wire format a plain string.
 
 use serde::ser::{Serialize, Serializer};
 
-/// Error returned by commands and the modules they call.
-///
-/// Serialized as its `Display` output (`#[specta(type = String)]` mirrors that in the generated
-/// bindings), which is why the messages below must stay verbatim.
+/// Error returned by commands and the modules they call, serialized as its `Display` output
+/// (`#[specta(type = String)]` mirrors that); the messages below must stay verbatim.
 #[derive(Debug, thiserror::Error, specta::Type)]
 #[specta(type = String)]
 pub enum AppError {
@@ -95,8 +90,7 @@ pub enum AppError {
     #[error("Failed to list extraction output: {detail}")]
     ListExtractionOutput { detail: String },
     /// A message that has to reach the frontend untouched, or comes from a module that still
-    /// returns plain strings (`virtual_textures`, `state`) — the bridge keeps this migration
-    /// incremental
+    /// returns plain strings
     #[error("{0}")]
     Message(String),
 }

@@ -11,10 +11,7 @@ import zhTW from './locales/zh-TW'
 // Best-fit matching comes from `@formatjs/intl-localematcher` (the same negotiator FormatJS uses),
 // so a shipped language needs nothing but its TS bundle and one entry in `BUNDLES`.
 
-/**
- * Every shipped UI language: its bundle, under the code it answers to. Bundles are listed rather than
- * discovered, so the compiler and the IDE see each one being used.
- */
+/** Every shipped UI language: its bundle, under the code it answers to. */
 const BUNDLES = {
     'en-US': enUS,
     'zh-CN': zhCN,
@@ -44,10 +41,8 @@ function isLoneBundleForLanguage(code: LocaleCode): boolean {
 }
 
 /**
- * Names pinned by hand for the codes whose conventional wording we want rather than whatever the
- * engine phrases. `Intl` cannot be trusted here: its wording comes from the runtime's CLDR data, and
- * Node and WebView2 disagree — `of('zh-Hans')` is `简体中文` on Node 24 but `中文（简体）` in the
- * WebView (which is also why the region form reads `中文（中国）`).
+ * Names pinned by hand for the codes whose wording we want; `Intl` wording differs between Node and
+ * WebView2, so it cannot be trusted here.
  */
 const LANGUAGE_LABELS: Partial<Record<LocaleCode, string>> = {
     'zh-CN': '简体中文',
@@ -55,10 +50,8 @@ const LANGUAGE_LABELS: Partial<Record<LocaleCode, string>> = {
 }
 
 /**
- * A language's own name, from `Intl` (`zh-CN` → 中文) rather than a hand-kept label table. The bare
- * language is preferred because the regional form is wordy (`en-US` → American English); when two
- * bundles share a language, the script is what keeps them apart, because Chinese differs by writing
- * system, not by region.
+ * A language's own name from `Intl`; the bare language is preferred because the regional form is
+ * wordy (`en-US` → American English).
  */
 function nativeLanguageName(code: LocaleCode): string {
     const pinned = LANGUAGE_LABELS[code]
@@ -95,10 +88,8 @@ function isSupported(value: unknown): value is LocaleCode {
 }
 
 /**
- * Best shipped locale for one tag, or null so the caller can try its next preference. The matcher
- * fills in likely sub-tags, so `zh-Hant` lands on `zh-TW` and `zh-Hans-CN` on `zh-CN`. An answer that
- * only exists because `match` fell back to the default language is rejected: Chinese written in the
- * wrong script is a wrong answer, not a graceful fallback.
+ * Best shipped locale for one tag, or null. A fallback to the default language is rejected: Chinese
+ * written in the wrong script is a wrong answer.
  */
 function resolveCulture(raw: string): LocaleCode | null {
     // Clean up first: Intl rejects POSIX-style tags such as `zh_CN.UTF-8` outright

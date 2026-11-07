@@ -59,9 +59,7 @@ function load() {
 }
 
 function selectRow(id: string) {
-  // Clicking the visual that is already selected (or arrowing back onto it) is not a new request:
-  // the panel shows that asset already and a repeat fetch would only flash the loading state while
-  // re-running an expensive lookup, so it is skipped
+  // Clicking the selected visual again is not a new request: the panel already shows it
   if (selected.value === id) return
 
   selected.value = id
@@ -131,7 +129,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- Full-page responsive layout: the section stretches with the main area; long lists scroll only inside the table area -->
+  <!-- Full-page responsive layout; long lists scroll only inside the table area -->
   <section class="flex min-h-0 w-full flex-1 flex-col gap-4 px-8 pt-3 pb-4">
     <header class="flex shrink-0 flex-wrap items-start justify-between gap-4">
       <div>
@@ -191,7 +189,7 @@ onMounted(() => {
         <span class="break-all">{{ errorMsg }}</span>
       </div>
 
-      <!-- Fixed two columns: list on the left, detail on the right; the list fills the area and scrolls internally -->
+      <!-- Two columns: asset list on the left, detail on the right -->
       <div class="flex min-h-0 flex-1 gap-4">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
           <AssetTable
@@ -212,7 +210,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Pagination bar sits as a section-level footer, spanning full width and aligned with the detail panel's right edge -->
+      <!-- Pagination bar as a section footer, spanning the full width -->
       <PaginationBar :limit="limit" :offset="offset" :total="total" @change="changePage"/>
     </template>
   </section>

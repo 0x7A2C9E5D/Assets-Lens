@@ -1,15 +1,7 @@
 /**
  * Web-side persistence for app settings: the game data directory and the language preference live
- * in localStorage. The window rectangle is not here — the window-state plugin owns it on the Rust
- * side (see `lib.rs`) — and neither is the palette, which `theme.ts` keeps through `useColorMode`.
- *
- * Storage is handled by VueUse's `useLocalStorage`: it reads once at module load, keeps the value
- * reactive and writes on change, including removing the key when the value is set to `null`. Each
- * entry keeps the validation the handwritten accessors used to do in its `read` serializer.
- *
- * The backend no longer writes settings.json — the frontend remembers the directory and hands it
- * back for validation on startup, so all setting reads/writes stay in the Web layer while the
- * backend only validates and uses it.
+ * in localStorage. The window rectangle is owned by the window-state plugin and the palette by
+ * `theme.ts`.
  */
 
 import {useLocalStorage} from '@vueuse/core'
@@ -28,11 +20,8 @@ const gamePath = useLocalStorage<string | null>(GAME_PATH_KEY, null, {
 })
 
 /**
- * Stored language preference. `manual` marks an explicit user choice, which is kept forever;
- * without it the language keeps following the system on every launch.
- *
- * The locale is typed as a plain string here: the supported list lives in `i18n`, and keeping this
- * module free of that dependency avoids an import cycle.
+ * Stored language preference; `manual` marks an explicit user choice, kept forever. Typed as a
+ * plain string to keep this module free of the `i18n` import cycle.
  */
 export interface LocaleSetting {
     locale: string
@@ -60,7 +49,7 @@ const localeSetting = useLocalStorage<LocaleSetting | null>(LOCALE_KEY, null, {
     },
 })
 
-/** Read the remembered game data directory; returns null when localStorage is unavailable (private mode, etc.) */
+/** Read the remembered game data directory; null when storage is unavailable */
 export function readGamePath(): string | null {
     return gamePath.value
 }

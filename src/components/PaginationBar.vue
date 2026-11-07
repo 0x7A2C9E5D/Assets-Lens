@@ -17,7 +17,7 @@ const rangeText = computed(() => {
   return t('pagination.range', {from, to, total: props.total.toLocaleString(locale.value)})
 })
 
-/** At most ten page buttons; the window slides with the current page and the gaps become ellipses */
+/** At most ten page buttons; the window follows the current page */
 const WINDOW = 10
 const pages = computed(() => {
   const last = pageCount.value

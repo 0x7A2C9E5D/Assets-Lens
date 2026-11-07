@@ -104,7 +104,7 @@
         height: 100%;
     }
 
-    /* No window/page-level scrolling: only the <main> content area scrolls, never the title bar or sidebar */
+    /* No window/page-level scrolling: only the content area scrolls */
     html,
     body,
     #app {

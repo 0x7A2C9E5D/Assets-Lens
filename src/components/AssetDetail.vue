@@ -4,21 +4,14 @@ import {ChevronDown, Download, FileBox, Grid2x2, Image as ImageIcon, MousePointe
 import type {VisualAsset} from '../api/tauri'
 import ExportDialog from './ExportDialog.vue'
 
-/**
- * The preview is loaded on demand: it only mounts once an asset is selected, and it is itself the
- * component that pulls three.js in through `import()`, so deferring it keeps the renderer one step
- * further from the first paint.
- */
+/** The preview only mounts once an asset is selected, keeping three.js out of the first paint. */
 const ModelPreview = defineAsyncComponent(() => import('./ModelPreview.vue'))
 
 const props = defineProps<{ asset: VisualAsset | null; loading: boolean }>()
 
 const exportOpen = ref(false)
 
-/**
- * One resource a material binds. Regular and virtual textures arrive in separate lists while a
- * material row shows them as one run of chips, so the kind is carried along: it picks the icon.
- */
+/** One resource a material binds; `kind` picks the chip icon. */
 interface MaterialBinding {
   kind: 'texture' | 'virtual'
   id: string
@@ -27,11 +20,9 @@ interface MaterialBinding {
 }
 
 /**
- * Material → bindings. The payload only carries the relation one way round: every texture row
- * lists the material names that bind it, regular and virtual alike, so the material section has to
- * invert both. A name is the only key available (that is what the backend fills in), which also
- * means an unnamed material shows no bindings. Both lists are walked once per asset instead of
- * rescanning them for every material.
+ * Material → bindings. The payload only carries the relation one way round (each texture row lists
+ * the materials that bind it), so both lists are inverted once per asset. An unnamed material shows
+ * no bindings.
  */
 const bindingsByMaterial = computed(() => {
   const byMaterial = new Map<string, MaterialBinding[]>()
@@ -74,12 +65,8 @@ const materialsWithBindings = computed(() =>
 )
 
 /**
- * Section collapsing: every section starts folded, so the panel opens as a compact summary — the
- * count in each title row is what tells the user whether a section is worth opening — and the rows
- * are pulled in on demand. A plain `ref` is enough: the state lives as long as the panel does (the
- * whole session) and deliberately survives switching assets, so a section the user opened stays
- * open. Content is toggled with `v-show`, not `v-if`: the rows are cheap to keep, and keeping them
- * avoids rebuilding dozens of cards on every expand.
+ * Every section starts folded and stays that way across assets. `v-show` keeps the rows mounted, so
+ * expanding does not rebuild dozens of cards.
  */
 type SectionKey = 'mesh' | 'materials' | 'textures' | 'virtualTextures'
 
@@ -296,7 +283,7 @@ function toggle(section: SectionKey) {
       </div>
     </div>
 
-    <!-- Export dialog: teleported to body so it is unaffected by the detail panel's scrolling and stacking context -->
+    <!-- Export dialog: teleported to body, so panel scrolling and stacking do not affect it -->
     <ExportDialog v-if="exportOpen" :asset="asset" @close="exportOpen = false"/>
   </aside>
 </template>

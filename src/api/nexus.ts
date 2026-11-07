@@ -1,15 +1,11 @@
 /**
- * Nexus Mods GraphQL client: resolves the latest version published on this app's mod page.
- *
- * The V2 GraphQL endpoint (`https://api.nexusmods.com/v2/graphql`) serves mod metadata to
- * anonymous callers and answers with `access-control-allow-origin: *` plus a matching
- * `access-control-allow-headers: content-type` preflight, so the WebView can query it directly —
- * no API key and no Rust-side proxy are needed.
+ * Nexus Mods GraphQL client: resolves the latest version published on this app's mod page. The V2
+ * endpoint allows anonymous cross-origin requests, so no API key or Rust proxy is needed.
  */
 
 import {compare} from 'compare-versions'
 
-/** This app is published on the Baldur's Gate 3 game page (game id 3474, see `game(domainName:)`) */
+/** Published on the Baldur's Gate 3 page (game id 3474) */
 const GAME_ID = 3474
 const MOD_ID = 24924
 const ENDPOINT = 'https://api.nexusmods.com/v2/graphql'
@@ -35,9 +31,8 @@ interface ModReleaseResponse {
 }
 
 /**
- * Fetch the published release. Deliberately uncached: the check is user-initiated, so answering
- * from a stale local copy would contradict what the button promises. A manual click is far too
- * infrequent to matter for the anonymous rate limit.
+ * Fetch the published release. Uncached: the check is user-initiated and infrequent enough for the
+ * anonymous rate limit.
  */
 export async function fetchLatestRelease(): Promise<ModRelease> {
     const response = await fetch(ENDPOINT, {
@@ -63,9 +58,7 @@ export async function fetchLatestRelease(): Promise<ModRelease> {
 }
 
 /**
- * Whether `candidate` is strictly newer than `current`. `compare-versions` handles the dotted
- * forms this app publishes (including a fourth segment and a leading `v`); a version it cannot
- * parse is not treated as an update, so the About page keeps reporting "latest".
+ * Whether `candidate` is strictly newer than `current`; an unparsable version is not an update.
  */
 export function isNewerVersion(candidate: string, current: string): boolean {
     try {

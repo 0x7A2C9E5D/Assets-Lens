@@ -1,10 +1,6 @@
 import {createRouter, createWebHashHistory} from 'vue-router'
 
-/**
- * Each route imports its own view on demand: a page's code, plus whatever it drags in (the asset
- * table, the detail panel), is fetched when that page is first opened. Startup therefore only pays
- * for the shell and the page actually being shown.
- */
+/** Every route imports its view on demand, so startup only pays for the shell and the current page. */
 export default createRouter({
     history: createWebHashHistory(),
     routes: [

@@ -1,9 +1,6 @@
 /**
- * App-wide state for the "is a newer version published?" question.
- *
- * The published version is resolved exactly once per launch: `startReleaseCheck()` runs while the
- * app boots and turns into a no-op afterward, so moving between routes (the About page is rebuilt
- * on every visit) can never spend a second request.
+ * App-wide state for the "is a newer version published?" question. Resolved once per launch by
+ * `startReleaseCheck()`; later calls are no-ops.
  */
 
 import {ref} from 'vue'
@@ -21,9 +18,8 @@ const releaseState = ref<ReleaseState>('idle')
 let autoCheckSpent = false
 
 /**
- * The running version: Tauri reports it at runtime through `app_info`, while the bundled package
- * version covers plain-browser runs where that command does not exist. Cached for the session
- * because neither answer can change while the app is open.
+ * The running version: Tauri reports it through `app_info`, with the bundled package version as a
+ * fallback for plain-browser runs. Cached for the session.
  */
 let localVersionRequest: Promise<string> | null = null
 
@@ -55,10 +51,7 @@ export function startReleaseCheck(): void {
         })
 }
 
-/**
- * Read-only view of the shared state; the check itself is driven by the app, not by the page.
- * A failure reason is not exposed — the page either shows the update arrow or stays empty.
- */
+/** Read-only view of the shared state; the check itself is driven by the app, not the page. */
 export function useReleaseCheck() {
     return {localVersion, remoteVersion, releaseState}
 }

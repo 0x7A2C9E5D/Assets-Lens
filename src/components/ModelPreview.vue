@@ -14,19 +14,9 @@ type OrbitCtor = typeof import('three/examples/jsm/controls/OrbitControls.js').O
 const props = defineProps<{ path: string | null }>()
 
 /**
- * The scene is painted in WebGL, so it needs its own palette table instead of CSS variables.
- * The viewport takes the very neutral the card's wells are painted with (`ink-800`) so it reads as
- * one more recess on the same surface family instead of a panel of its own, and the grid is drawn
- * in the neutral stroke ramp (stroke2 on ink, stroke1 on paper) like every hairline in the UI. The
- * brand color stays out of the scene: nothing here is interactive, and Fluent spends color on
- * things that are.
- *
- * The model is painted with a lit clay material rather than a flat fill: a texture-less BG3 mesh
- * carries no albedo, so its curvature — the only detail there is to see — is shaded normals and
- * nothing else. Both themes are built around the same neutral clay and the same light rig, but the
- * clay is nudged a few steps per theme: a mid grey reads lighter against ink than against paper, so
- * the dark theme takes it a touch down and the light theme a touch up to keep the material looking
- * like the same thing in either well.
+ * The scene needs its own palette table instead of CSS variables. The backdrop matches the card's
+ * wells, the grid uses the neutral stroke ramp, and the lit clay material is nudged per theme so a
+ * texture-less mesh still reads by its shading.
  */
 const SCENE_PALETTE = {
   dark: {
@@ -44,11 +34,8 @@ const SCENE_PALETTE = {
 } as const
 
 /**
- * The rig's tones, identical in both themes so a palette swap does not change how the mesh is
- * shaded; only the albedo takes the small contrast nudge above. `sky` / `ground` are the two ends of
- * the hemisphere that fills the shadow side, and `key` / `rim` shade the lit side and separate the
- * silhouette from the backdrop.
- * The ground is lifted so downward-facing normals keep some form instead of crushing.
+ * The rig's tones, identical in both themes; `sky` / `ground` fill the shadow side, `key` / `rim`
+ * shade the lit side.
  */
 const LIGHT_RIG = {
   sky: 0xffffff,
@@ -58,17 +45,12 @@ const LIGHT_RIG = {
 } as const
 
 /**
- * One fixed rig for every asset: the key sits up and to the right of the default camera, the rim
- * behind and to the left to edge the silhouette off the backdrop, and the hemisphere fills the
- * shadow side from above while its ground term keeps undersides from crushing into the backdrop.
- * Intensities are three's physically-correct units (diffuse irradiance is divided by PI again in
- * the BRDF), so the peak — hemisphere sky plus key — lands just above 1.0 and the clay is shaded
- * without clipping to white.
+ * One fixed rig for every asset: key up-right, rim behind-left, hemisphere filling the shadows.
+ * Intensities use three's physically-correct units, peaking just above 1.0.
  */
 const SCENE_LIGHT = {hemisphere: 1.3, key: 2.0, rim: 0.9} as const
 
-/** Roughness of the clay: enough sheen to catch a specular roll-off across curvature, not enough
- *  to turn a small viewport into a highlight */
+/** Roughness of the clay: enough sheen for a specular roll-off, not a highlight */
 const CLAY_ROUGHNESS = 0.62
 
 const scenePalette = computed(() => SCENE_PALETTE[theme.value])
@@ -147,9 +129,7 @@ async function initScene() {
       5000,
   )
 
-  // Lights are scene children, not model children: every asset is lit by the same rig, and the
-  // rig must not be swept away with the previous model. The rig never changes color: only the
-  // backdrop follows the theme
+  // Lights are scene children: every asset shares the rig, and it must outlive the previous model
   const key = new core.DirectionalLight(LIGHT_RIG.key, SCENE_LIGHT.key)
   key.position.set(2, 3, 2.5)
   const rim = new core.DirectionalLight(LIGHT_RIG.rim, SCENE_LIGHT.rim)
@@ -228,11 +208,8 @@ function triangleCount(mesh: THREE.Mesh): number {
 }
 
 /**
- * A GR2 carries every LOD of every part, and maclarian copies them all into the GLB: `_Mesh`,
- * `_Mesh_LOD1`, `_Mesh_LOD2`… as nodes side by side. The scene draws all of them at once, so a
- * decimated copy is stacked on the real surface and the two fight for depth — the winning copy
- * changes across the model, which reads as "the left half is a different mesh than the right".
- * Keep the finest copy of each part and drop the rest; a part with no LOD siblings keeps itself.
+ * A GR2 carries every LOD; maclarian copies them all into the GLB, so the scene draws decimated
+ * copies on top of the real surface. Keep the finest copy of each part.
  */
 function keepFinestLod(model: THREE.Object3D) {
   const finest = new Map<string, THREE.Mesh>()
@@ -257,11 +234,8 @@ function keepFinestLod(model: THREE.Object3D) {
 }
 
 /**
- * Some meshes arrive with parts whose vertex normals point into the surface — the engine hides it
- * behind double-sided materials, but a shaded preview cannot: that part is lit inside-out and reads
- * as a different model from the part next to it. The triangles' own winding is the ground truth, so
- * a vertex whose normal opposes the area-weighted face normals around it is negated rather than
- * recomputed, which keeps the authored smoothing.
+ * Some meshes have vertex normals pointing into the surface. Flip a vertex whose normal opposes
+ * the area-weighted face normals around it, which keeps the authored smoothing.
  */
 function repairInvertedNormals(geometry: THREE.BufferGeometry) {
   const position = geometry.attributes.position as THREE.BufferAttribute | undefined
@@ -270,8 +244,7 @@ function repairInvertedNormals(geometry: THREE.BufferGeometry) {
 
   const index = geometry.index
   const count = index ? index.count : position.count
-  // Area-weighted sum of the face normals around each vertex (the cross product's length is twice
-  // the triangle area, so no normalization is needed)
+  // Area-weighted sum of face normals per vertex (cross length is twice the area, so no normalize)
   const faces = new Float32Array(position.count * 3)
   for (let i = 0; i + 2 < count; i += 3) {
     const a = index ? index.getX(i) : i
@@ -332,20 +305,13 @@ function renderGlb(bytes: Uint8Array) {
 
         keepFinestLod(model)
 
-        // One neutral clay material in place of the GLB's own: no maps, so nothing depends on a
-        // texture that was never exported, but the surface is shaded from its normals, which is
-        // what makes curvature, hair cards and cloth folds readable.
-        //
-        // DoubleSide is not an aesthetic choice: BG3 hair, fur and cloth are single-layer cards that
-        // the engine's own material flag draws from both sides, while maclarian's GLB writes no
-        // `doubleSided` at all, so glTF's single-sided default would cull every card seen from
-        // behind. three flips the normal for a back-facing triangle, so the shading stays correct.
+        // One neutral clay material: no maps, shading from normals. DoubleSide keeps BG3's
+        // single-layer hair/fur cards visible from behind (maclarian writes no `doubleSided`).
         model.traverse((obj) => {
           const mesh = obj as THREE.Mesh
           if (!mesh.isMesh) return
           repairInvertedNormals(mesh.geometry)
-          // Replace the GLB's own material, then release it: GLTF materials can be shared between
-          // meshes, but every mesh is re-materialized here, so nothing keeps referencing it
+          // Replace the GLB's material and release it: every mesh is re-materialized below
           const parsed = mesh.material
           mesh.material = new core!.MeshStandardMaterial({
             color: palette.clay,
@@ -361,8 +327,7 @@ function renderGlb(bytes: Uint8Array) {
         const center = box.getCenter(new core.Vector3())
         const maxDim = Math.max(size.x, size.y, size.z) || 1
 
-        // Center the model at the origin and fit the camera from the bounding-sphere distance
-        // (~80% of the viewport height)
+        // Center the model at the origin and fit the camera from the bounding sphere
         model.position.sub(center)
         scene.add(model)
 
@@ -383,8 +348,7 @@ function renderGlb(bytes: Uint8Array) {
         const gridHelper = new core.GridHelper(maxDim * 3, 12, palette.grid, palette.grid)
         const gridMat = gridHelper.material as THREE.LineBasicMaterial
         gridMat.transparent = true
-        // Grid colors live in vertex colors; dropping them lets the material color drive every
-        // line at once, which is what a palette swap needs
+        // Grid colors live in vertex colors; dropping them lets the material color drive every line
         gridMat.vertexColors = false
         gridMat.color.setHex(palette.grid)
         gridMat.opacity = palette.gridOpacity
@@ -442,9 +406,8 @@ watch(
     },
 )
 
-/** A palette swap repaints the backdrop and its grid and nudges the albedo a few steps for the
- *  background contrast shift; the light rig keeps its colors, so reloading is never needed (it
- *  would also throw away the camera angle the user orbited to) */
+/** Repaint the backdrop and grid and nudge the clay; the light rig keeps its colors, so no reload
+ *  (which would throw away the camera angle). */
 watch(scenePalette, (palette) => {
   if (model) {
     model.traverse((obj) => {
@@ -462,8 +425,7 @@ watch(scenePalette, (palette) => {
 })
 
 onMounted(() => {
-  // The viewport is now attached: initialize three and load the first asset here instead of in the
-  // watcher (which runs before mount, when the host element does not exist yet)
+  // The viewport exists only after mount, so start the first asset here, not in the watcher
   if (props.path) void load(props.path)
 })
 
@@ -473,10 +435,8 @@ onBeforeUnmount(() => {
   clearModel()
   removeGrid()
   controls?.dispose()
-  // dispose() frees this renderer's GPU objects but keeps the WebGL context alive; WebView2 only
-  // tolerates about 16 live contexts before discarding the oldest, so a context left behind on every
-  // unmount shows up as a black preview after enough asset/route switches. Losing the context is
-  // what actually releases it.
+  // dispose() frees GPU objects but keeps the WebGL context alive; WebView2 tolerates about 16
+  // live contexts, so losing the context is what actually releases it.
   renderer?.dispose()
   renderer?.forceContextLoss()
   const host = viewport.value
