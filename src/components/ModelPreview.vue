@@ -23,32 +23,40 @@ const props = defineProps<{ path: string | null }>()
  *
  * The model is painted with a lit clay material rather than a flat fill: a texture-less BG3 mesh
  * carries no albedo, so its curvature — the only detail there is to see — is shaded normals and
- * nothing else. A single neutral albedo per theme stays in charge of the tone; `sky` / `ground`
- * are the two ends of the hemisphere that fills the shadow side, and `key` / `rim` shade the lit
- * side and separate the silhouette from the backdrop. Light on ink and dark on paper, so the model
- * never fades into its well.
+ * nothing else. A palette swap therefore repaints the backdrop and its grid only: the albedo and
+ * the light rig below are shared, so the same mesh is shaded the same way in both themes.
  */
 const SCENE_PALETTE = {
   dark: {
     backdrop: '#1f1f1f',
     grid: 0x525252,
     gridOpacity: 0.9,
-    clay: 0xb0b0b0,
-    sky: 0xf2f2f2,
-    ground: 0x8a8a8a,
-    key: 0xffffff,
-    rim: 0xffffff,
   },
   light: {
     backdrop: '#fafafa',
     grid: 0xd1d1d1,
     gridOpacity: 0.9,
-    clay: 0x666666,
-    sky: 0xffffff,
-    ground: 0xb8b8b8,
-    key: 0xffffff,
-    rim: 0xffffff,
   },
+} as const
+
+/**
+ * The model's albedo, identical in both themes: the same neutral clay is lit by the same rig either
+ * way, and a lighter tone than the old per-theme charcoal keeps the unlit half readable on paper
+ * instead of turning the mesh into a silhouette.
+ */
+const MODEL_CLAY = 0xa0a0a0
+
+/**
+ * The rig's tones, shared by both themes for the same reason as the albedo: a palette swap must not
+ * change how the mesh is shaded. `sky` / `ground` are the two ends of the hemisphere that fills the
+ * shadow side, and `key` / `rim` shade the lit side and separate the silhouette from the backdrop.
+ * The ground is lifted so downward-facing normals keep some form instead of crushing.
+ */
+const LIGHT_RIG = {
+  sky: 0xffffff,
+  ground: 0xd6d6d6,
+  key: 0xffffff,
+  rim: 0xffffff,
 } as const
 
 /**
@@ -89,12 +97,6 @@ let controls: InstanceType<OrbitCtor> | null = null
 let observer: ResizeObserver | null = null
 let model: THREE.Object3D | null = null
 let grid: THREE.Object3D | null = null
-/** The rig lives on the scene, so it survives every asset switch and only its colors follow the theme */
-let lights: {
-  hemisphere: THREE.HemisphereLight
-  key: THREE.DirectionalLight
-  rim: THREE.DirectionalLight
-} | null = null
 let frameHandle = 0
 
 async function ensureThree() {
@@ -148,15 +150,18 @@ async function initScene() {
   )
 
   // Lights are scene children, not model children: every asset is lit by the same rig, and the
-  // rig must not be swept away with the previous model
-  const palette = scenePalette.value
-  const key = new core.DirectionalLight(palette.key, SCENE_LIGHT.key)
+  // rig must not be swept away with the previous model. The rig never changes color: only the
+  // backdrop follows the theme
+  const key = new core.DirectionalLight(LIGHT_RIG.key, SCENE_LIGHT.key)
   key.position.set(2, 3, 2.5)
-  const rim = new core.DirectionalLight(palette.rim, SCENE_LIGHT.rim)
+  const rim = new core.DirectionalLight(LIGHT_RIG.rim, SCENE_LIGHT.rim)
   rim.position.set(-2.5, 1, -2)
-  const hemisphere = new core.HemisphereLight(palette.sky, palette.ground, SCENE_LIGHT.hemisphere)
+  const hemisphere = new core.HemisphereLight(
+      LIGHT_RIG.sky,
+      LIGHT_RIG.ground,
+      SCENE_LIGHT.hemisphere,
+  )
   scene.add(key, rim, hemisphere)
-  lights = {hemisphere, key, rim}
 
   const orbit = new Orbit(camera, renderer.domElement)
   orbit.enableDamping = true
@@ -345,7 +350,7 @@ function renderGlb(bytes: Uint8Array) {
           // meshes, but every mesh is re-materialized here, so nothing keeps referencing it
           const parsed = mesh.material
           mesh.material = new core!.MeshStandardMaterial({
-            color: palette.clay,
+            color: MODEL_CLAY,
             roughness: CLAY_ROUGHNESS,
             metalness: 0,
             side: core!.DoubleSide,
@@ -439,23 +444,10 @@ watch(
     },
 )
 
-/** A palette swap only recolors what is on screen: reloading would throw away the cached GLB and
- *  the camera angle the user orbited to */
+/** A palette swap only repaints the background: the backdrop is bound in the template and the grid
+ *  is recolored here. The model and its rig keep the colors they were built with, so reloading is
+ *  never needed (it would also throw away the camera angle the user orbited to) */
 watch(scenePalette, (palette) => {
-  if (model) {
-    model.traverse((obj) => {
-      const mesh = obj as THREE.Mesh
-      if (!mesh.isMesh) return
-      const mat = mesh.material as THREE.MeshStandardMaterial
-      mat.color.setHex(palette.clay)
-    })
-  }
-  if (lights) {
-    lights.hemisphere.color.setHex(palette.sky)
-    lights.hemisphere.groundColor.setHex(palette.ground)
-    lights.key.color.setHex(palette.key)
-    lights.rim.color.setHex(palette.rim)
-  }
   if (grid) {
     const gridMat = (grid as THREE.GridHelper).material as THREE.LineBasicMaterial
     gridMat.color.setHex(palette.grid)
@@ -487,7 +479,6 @@ onBeforeUnmount(() => {
   scene = null
   camera = null
   controls = null
-  lights = null
   observer = null
 })
 </script>
