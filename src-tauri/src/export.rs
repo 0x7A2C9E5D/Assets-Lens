@@ -753,8 +753,8 @@ fn build_manifest(
     vt_matches: &[GtpMatch],
 ) -> ExportManifest {
     // Built once and handed to the material rows, which carry these very rows for their resources
-    let textures = texture_summaries(asset, materials);
-    let virtual_textures = virtual_texture_summaries(asset, vt_matches, materials);
+    let textures = texture_summaries(asset);
+    let virtual_textures = virtual_texture_summaries(asset, vt_matches);
 
     ExportManifest {
         id: asset.id.clone(),

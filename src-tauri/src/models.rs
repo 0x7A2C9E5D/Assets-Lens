@@ -15,7 +15,8 @@ pub struct BuildProgress {
     pub percent: f32,
 }
 
-/// Texture reference (DDS): a detail row, and the cloned entry a material row of `asset.json` carries.
+/// Texture reference (DDS): one row of the asset's texture list. Which materials bind it, and under
+/// what parameter, is stated by the asset's bindings, not here.
 #[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureSummary {
@@ -24,9 +25,6 @@ pub struct TextureSummary {
     pub path: String,
     pub width: u32,
     pub height: u32,
-    /// Names of this asset's materials that bind this texture, in material order; omitted while empty.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub material_names: Vec<String>,
 }
 
 impl From<&TextureRef> for TextureSummary {
@@ -37,7 +35,6 @@ impl From<&TextureRef> for TextureSummary {
             path: value.dds_path.clone(),
             width: value.width,
             height: value.height,
-            material_names: Vec::new(),
         }
     }
 }
@@ -145,10 +142,7 @@ impl ExportMaterial {
                         .iter()
                         .filter_map(|binding| {
                             textures.get(binding.id.as_str()).map(|row| BoundTexture {
-                                row: TextureSummary {
-                                    material_names: Vec::new(),
-                                    ..(*row).clone()
-                                },
+                                row: (*row).clone(),
                                 parameter_name: binding.parameter_name.clone(),
                             })
                         })
@@ -164,10 +158,7 @@ impl ExportMaterial {
                             virtual_textures
                                 .get(binding.id.as_str())
                                 .map(|row| BoundVirtualTexture {
-                                    row: VirtualTextureSummary {
-                                        material_names: Vec::new(),
-                                        ..(*row).clone()
-                                    },
+                                    row: (*row).clone(),
                                     parameter_name: binding.parameter_name.clone(),
                                 })
                         })
@@ -215,24 +206,8 @@ pub fn materials_of(
         .collect()
 }
 
-/// Names of the asset's materials that bind `id`, in asset order; unnamed materials contribute
-/// nothing. `is_bound` decides whether a material binds the resource.
-fn material_names_for(
-    is_bound: impl Fn(&MaterialInfo) -> bool,
-    material_ids: &[String],
-    materials: &HashMap<String, MaterialInfo>,
-) -> Vec<String> {
-    material_ids
-        .iter()
-        .filter_map(|material_id| materials.get(material_id))
-        .filter(|material| is_bound(material))
-        .map(|material| material.name.clone())
-        .filter(|name| !name.is_empty())
-        .collect()
-}
-
-/// Streaming virtual texture reference (GTex): a detail row, and the cloned entry a material row
-/// carries.
+/// Streaming virtual texture reference (GTex): one row of the asset's virtual texture list. Which
+/// materials bind it, and under what parameter, is stated by the asset's bindings, not here.
 #[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct VirtualTextureSummary {
@@ -245,10 +220,6 @@ pub struct VirtualTextureSummary {
     /// could not be read.
     pub width: Option<u32>,
     pub height: Option<u32>,
-    /// Names of this asset's materials that bind this virtual texture, in material order; omitted
-    /// while empty.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub material_names: Vec<String>,
 }
 
 impl VirtualTextureSummary {
@@ -262,8 +233,6 @@ impl VirtualTextureSummary {
             // Filled once the archives are available
             width: None,
             height: None,
-            // Filled by the caller, which holds the material cache
-            material_names: Vec::new(),
         }
     }
 
@@ -284,51 +253,20 @@ pub fn match_for_hash<'a>(matches: &'a [GtpMatch], hash: &str) -> Option<&'a Gtp
         .find(|matched| matched.gtex_hash.eq_ignore_ascii_case(hash))
 }
 
-/// The textures of `value`, each carrying the names of the materials that bind it.
-pub fn texture_summaries(
-    value: &VisualAsset,
-    materials: &HashMap<String, MaterialInfo>,
-) -> Vec<TextureSummary> {
-    value
-        .textures
-        .iter()
-        .map(|texture| {
-            let mut summary = TextureSummary::from(texture);
-            summary.material_names = material_names_for(
-                |material| material.textures.iter().any(|binding| binding.id == texture.id),
-                &value.material_ids,
-                materials,
-            );
-            summary
-        })
-        .collect()
+/// The textures of `value`, one row per resource; the asset's bindings say who uses them.
+pub fn texture_summaries(value: &VisualAsset) -> Vec<TextureSummary> {
+    value.textures.iter().map(TextureSummary::from).collect()
 }
 
-/// The virtual textures of `value`, each carrying the materials that bind it and its parameter name
-/// (filled once the caller resolves it).
+/// The virtual textures of `value`, one row per resource; the asset's bindings say who uses them.
 pub fn virtual_texture_summaries(
     value: &VisualAsset,
     matches: &[GtpMatch],
-    materials: &HashMap<String, MaterialInfo>,
 ) -> Vec<VirtualTextureSummary> {
     value
         .virtual_textures
         .iter()
-        .map(|vt| {
-            let mut summary =
-                VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash));
-            summary.material_names = material_names_for(
-                |material| {
-                    material
-                        .virtual_textures
-                        .iter()
-                        .any(|binding| binding.id == vt.id)
-                },
-                &value.material_ids,
-                materials,
-            );
-            summary
-        })
+        .map(|vt| VirtualTextureSummary::new(vt, match_for_hash(matches, &vt.gtex_hash)))
         .collect()
 }
 
@@ -375,8 +313,8 @@ impl VisualAssetDetail {
             name: value.name.clone(),
             path: value.gr2_path.clone(),
             materials: material_summaries(&value.material_ids, materials),
-            textures: texture_summaries(value, materials),
-            virtual_textures: virtual_texture_summaries(value, matches, materials),
+            textures: texture_summaries(value),
+            virtual_textures: virtual_texture_summaries(value, matches),
             bindings: material_bindings(&value.material_ids, materials),
         }
     }
