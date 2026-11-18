@@ -196,7 +196,6 @@ export type TextureSummary_Deserialize = {
 	path: string,
 	width: number,
 	height: number,
-	parameterName?: string | null,
 	/**  Names of this asset's materials that bind this texture, in material order; omitted while empty. */
 	materialNames: string[],
 };
@@ -208,7 +207,6 @@ export type TextureSummary_Serialize = {
 	path: string,
 	width: number,
 	height: number,
-	parameterName: string | null,
 	/**  Names of this asset's materials that bind this texture, in material order; omitted while empty. */
 	materialNames?: string[],
 };
@@ -240,8 +238,6 @@ export type VirtualTextureSummary_Deserialize = {
 	 *  while empty.
 	 */
 	materialNames: string[],
-	/**  Parameter the binding fills (e.g. `virtualtexture`); omitted while unset. */
-	parameterName?: string | null,
 };
 
 /**
@@ -265,8 +261,6 @@ export type VirtualTextureSummary_Serialize = {
 	 *  while empty.
 	 */
 	materialNames?: string[],
-	/**  Parameter the binding fills (e.g. `virtualtexture`); omitted while unset. */
-	parameterName?: string,
 };
 
 /**  Full visual asset information (detail panel) */

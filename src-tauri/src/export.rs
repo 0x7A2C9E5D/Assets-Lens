@@ -728,7 +728,7 @@ fn fill_vt_sizes(
     let sizes = PageFileSizeCache::new(PAGE_FILE_SIZE_CACHE_CAPACITY);
     for material in &mut manifest.materials {
         for row in &mut material.virtual_textures {
-            fill_vt_size(&mut archives, vt_matches, &sizes, row);
+            fill_vt_size(&mut archives, vt_matches, &sizes, &mut row.row);
         }
     }
 }

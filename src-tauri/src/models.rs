@@ -24,7 +24,6 @@ pub struct TextureSummary {
     pub path: String,
     pub width: u32,
     pub height: u32,
-    pub parameter_name: Option<String>,
     /// Names of this asset's materials that bind this texture, in material order; omitted while empty.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub material_names: Vec<String>,
@@ -38,7 +37,6 @@ impl From<&TextureRef> for TextureSummary {
             path: value.dds_path.clone(),
             width: value.width,
             height: value.height,
-            parameter_name: value.parameter_name.clone(),
             material_names: Vec::new(),
         }
     }
@@ -84,7 +82,7 @@ pub fn material_summaries(
 }
 
 /// One material as `asset.json` lists it: the identity of a `MaterialSummary` plus the resources the
-/// material binds, each stated in full.
+/// material binds, each stated in full and under the parameter that binding fills.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportMaterial {
@@ -93,10 +91,32 @@ pub struct ExportMaterial {
     pub source_file: String,
     /// The textures this material binds, in parameter order
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub textures: Vec<TextureSummary>,
+    pub textures: Vec<BoundTexture>,
     /// The virtual textures this material binds, in binding order
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub virtual_textures: Vec<VirtualTextureSummary>,
+    pub virtual_textures: Vec<BoundVirtualTexture>,
+}
+
+/// A texture row as one material binds it: the row itself, plus the parameter this binding fills
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoundTexture {
+    #[serde(flatten)]
+    pub row: TextureSummary,
+    /// Omitted when the binding node carries no name
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub parameter_name: String,
+}
+
+/// A virtual texture row as one material binds it
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoundVirtualTexture {
+    #[serde(flatten)]
+    pub row: VirtualTextureSummary,
+    /// Omitted when the binding node carries no name
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub parameter_name: String,
 }
 
 impl ExportMaterial {
@@ -124,9 +144,13 @@ impl ExportMaterial {
                         .textures
                         .iter()
                         .filter_map(|binding| {
-                            textures
-                                .get(binding.id.as_str())
-                                .map(|row| bound_texture(row, &binding.parameter_name))
+                            textures.get(binding.id.as_str()).map(|row| BoundTexture {
+                                row: TextureSummary {
+                                    material_names: Vec::new(),
+                                    ..(*row).clone()
+                                },
+                                parameter_name: binding.parameter_name.clone(),
+                            })
                         })
                         .collect()
                 })
@@ -139,30 +163,18 @@ impl ExportMaterial {
                         .filter_map(|binding| {
                             virtual_textures
                                 .get(binding.id.as_str())
-                                .map(|row| bound_virtual_texture(row))
+                                .map(|row| BoundVirtualTexture {
+                                    row: VirtualTextureSummary {
+                                        material_names: Vec::new(),
+                                        ..(*row).clone()
+                                    },
+                                    parameter_name: binding.parameter_name.clone(),
+                                })
                         })
                         .collect()
                 })
                 .unwrap_or_default(),
         }
-    }
-}
-
-/// The row of a texture as the entry of the material binding it, under the parameter that binding
-/// fills — the row's own name is the one maclarian resolved first, which need not be this one.
-fn bound_texture(row: &TextureSummary, parameter_name: &str) -> TextureSummary {
-    TextureSummary {
-        material_names: Vec::new(),
-        parameter_name: (!parameter_name.is_empty()).then(|| parameter_name.to_string()),
-        ..row.clone()
-    }
-}
-
-/// The row of a virtual texture as the entry of the material binding it
-fn bound_virtual_texture(row: &VirtualTextureSummary) -> VirtualTextureSummary {
-    VirtualTextureSummary {
-        material_names: Vec::new(),
-        ..row.clone()
     }
 }
 
@@ -219,22 +231,6 @@ fn material_names_for(
         .collect()
 }
 
-/// Parameter the asset's materials bind the virtual texture `id` with; taken from the first binding,
-/// since shipped data binds a virtual texture only once.
-fn virtual_texture_parameter(
-    id: &str,
-    material_ids: &[String],
-    materials: &HashMap<String, MaterialInfo>,
-) -> Option<String> {
-    material_ids
-        .iter()
-        .filter_map(|material_id| materials.get(material_id))
-        .flat_map(|material| material.virtual_textures.as_slice())
-        .find(|binding| binding.id == id)
-        .map(|binding| binding.parameter_name.clone())
-        .filter(|name| !name.is_empty())
-}
-
 /// Streaming virtual texture reference (GTex): a detail row, and the cloned entry a material row
 /// carries.
 #[derive(Clone, Serialize, Type)]
@@ -253,9 +249,6 @@ pub struct VirtualTextureSummary {
     /// while empty.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub material_names: Vec<String>,
-    /// Parameter the binding fills (e.g. `virtualtexture`); omitted while unset.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parameter_name: Option<String>,
 }
 
 impl VirtualTextureSummary {
@@ -271,7 +264,6 @@ impl VirtualTextureSummary {
             height: None,
             // Filled by the caller, which holds the material cache
             material_names: Vec::new(),
-            parameter_name: None,
         }
     }
 
@@ -335,8 +327,6 @@ pub fn virtual_texture_summaries(
                 &value.material_ids,
                 materials,
             );
-            summary.parameter_name =
-                virtual_texture_parameter(&vt.id, &value.material_ids, materials);
             summary
         })
         .collect()
