@@ -186,40 +186,27 @@ export type TextureFormat =
 /**  Export as PNG (discard DDS after successful conversion) */
 "png";
 
-/**  Texture reference (DDS): a detail row, and the cloned entry a material row of `asset.json` carries. */
-export type TextureSummary = TextureSummary_Serialize | TextureSummary_Deserialize;
-
-/**  Texture reference (DDS): a detail row, and the cloned entry a material row of `asset.json` carries. */
-export type TextureSummary_Deserialize = {
+/**
+ *  Texture reference (DDS): one row of the asset's texture list. Which materials bind it, and under
+ *  what parameter, is stated by the asset's bindings, not here.
+ */
+export type TextureSummary = {
 	id: string,
 	name: string,
 	path: string,
 	width: number,
 	height: number,
-	/**  Names of this asset's materials that bind this texture, in material order; omitted while empty. */
-	materialNames: string[],
-};
-
-/**  Texture reference (DDS): a detail row, and the cloned entry a material row of `asset.json` carries. */
-export type TextureSummary_Serialize = {
-	id: string,
-	name: string,
-	path: string,
-	width: number,
-	height: number,
-	/**  Names of this asset's materials that bind this texture, in material order; omitted while empty. */
-	materialNames?: string[],
 };
 
 /**
- *  Streaming virtual texture reference (GTex): a detail row, and the cloned entry a material row
- *  carries.
+ *  Streaming virtual texture reference (GTex): one row of the asset's virtual texture list. Which
+ *  materials bind it, and under what parameter, is stated by the asset's bindings, not here.
  */
 export type VirtualTextureSummary = VirtualTextureSummary_Serialize | VirtualTextureSummary_Deserialize;
 
 /**
- *  Streaming virtual texture reference (GTex): a detail row, and the cloned entry a material row
- *  carries.
+ *  Streaming virtual texture reference (GTex): one row of the asset's virtual texture list. Which
+ *  materials bind it, and under what parameter, is stated by the asset's bindings, not here.
  */
 export type VirtualTextureSummary_Deserialize = {
 	id: string,
@@ -233,16 +220,11 @@ export type VirtualTextureSummary_Deserialize = {
 	 */
 	width?: number | null,
 	height?: number | null,
-	/**
-	 *  Names of this asset's materials that bind this virtual texture, in material order; omitted
-	 *  while empty.
-	 */
-	materialNames: string[],
 };
 
 /**
- *  Streaming virtual texture reference (GTex): a detail row, and the cloned entry a material row
- *  carries.
+ *  Streaming virtual texture reference (GTex): one row of the asset's virtual texture list. Which
+ *  materials bind it, and under what parameter, is stated by the asset's bindings, not here.
  */
 export type VirtualTextureSummary_Serialize = {
 	id: string,
@@ -256,11 +238,6 @@ export type VirtualTextureSummary_Serialize = {
 	 */
 	width: number | null,
 	height: number | null,
-	/**
-	 *  Names of this asset's materials that bind this virtual texture, in material order; omitted
-	 *  while empty.
-	 */
-	materialNames?: string[],
 };
 
 /**  Full visual asset information (detail panel) */
@@ -273,7 +250,7 @@ export type VisualAssetDetail_Deserialize = {
 	name: string,
 	path: string,
 	materials: MaterialSummary[],
-	textures: TextureSummary_Deserialize[],
+	textures: TextureSummary[],
 	virtualTextures: VirtualTextureSummary_Deserialize[],
 	/**  Every material-to-resource binding of the asset, in material order */
 	bindings: MaterialBinding[],
@@ -286,7 +263,7 @@ export type VisualAssetDetail_Serialize = {
 	name: string,
 	path: string,
 	materials: MaterialSummary[],
-	textures: TextureSummary_Serialize[],
+	textures: TextureSummary[],
 	virtualTextures: VirtualTextureSummary_Serialize[],
 	/**  Every material-to-resource binding of the asset, in material order */
 	bindings: MaterialBinding[],
