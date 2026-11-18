@@ -121,9 +121,13 @@ impl ExportMaterial {
             textures: known
                 .map(|material| {
                     material
-                        .texture_ids
+                        .textures
                         .iter()
-                        .filter_map(|id| textures.get(id.as_str()).map(|row| bound_texture(row)))
+                        .filter_map(|binding| {
+                            textures
+                                .get(binding.id.as_str())
+                                .map(|row| bound_texture(row, &binding.parameter_name))
+                        })
                         .collect()
                 })
                 .unwrap_or_default(),
@@ -144,10 +148,12 @@ impl ExportMaterial {
     }
 }
 
-/// The row of a texture as the entry of the material binding it
-fn bound_texture(row: &TextureSummary) -> TextureSummary {
+/// The row of a texture as the entry of the material binding it, under the parameter that binding
+/// fills — the row's own name is the one maclarian resolved first, which need not be this one.
+fn bound_texture(row: &TextureSummary, parameter_name: &str) -> TextureSummary {
     TextureSummary {
         material_names: Vec::new(),
+        parameter_name: (!parameter_name.is_empty()).then(|| parameter_name.to_string()),
         ..row.clone()
     }
 }
@@ -297,7 +303,7 @@ pub fn texture_summaries(
         .map(|texture| {
             let mut summary = TextureSummary::from(texture);
             summary.material_names = material_names_for(
-                |material| material.texture_ids.iter().any(|id| id == &texture.id),
+                |material| material.textures.iter().any(|binding| binding.id == texture.id),
                 &value.material_ids,
                 materials,
             );
@@ -336,6 +342,21 @@ pub fn virtual_texture_summaries(
         .collect()
 }
 
+/// One resource a material binds: the GUID of a row already listed in the asset, the parameter the
+/// binding fills, and which of the two resource lists the GUID belongs to. The relation lives here
+/// rather than on the rows because a row is one resource, while the parameter belongs to the
+/// binding — the same texture bound by two materials can fill two different parameters.
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialBinding {
+    pub material_id: String,
+    pub resource_id: String,
+    /// `texture` or `virtual`
+    pub resource_kind: String,
+    /// Empty when the binding node carries no name
+    pub parameter_name: String,
+}
+
 /// Full visual asset information (detail panel)
 #[derive(Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -347,6 +368,8 @@ pub struct VisualAssetDetail {
     pub materials: Vec<MaterialSummary>,
     pub textures: Vec<TextureSummary>,
     pub virtual_textures: Vec<VirtualTextureSummary>,
+    /// Every material-to-resource binding of the asset, in material order
+    pub bindings: Vec<MaterialBinding>,
 }
 
 impl VisualAssetDetail {
@@ -364,8 +387,39 @@ impl VisualAssetDetail {
             materials: material_summaries(&value.material_ids, materials),
             textures: texture_summaries(value, materials),
             virtual_textures: virtual_texture_summaries(value, matches, materials),
+            bindings: material_bindings(&value.material_ids, materials),
         }
     }
+}
+
+/// The bindings of `material_ids`, each naming the resource by GUID and the parameter it fills.
+fn material_bindings(
+    material_ids: &[String],
+    materials: &HashMap<String, MaterialInfo>,
+) -> Vec<MaterialBinding> {
+    let mut bindings = Vec::new();
+    for material_id in material_ids {
+        let Some(material) = materials.get(material_id) else {
+            continue;
+        };
+        for binding in &material.textures {
+            bindings.push(MaterialBinding {
+                material_id: material_id.clone(),
+                resource_id: binding.id.clone(),
+                resource_kind: "texture".to_string(),
+                parameter_name: binding.parameter_name.clone(),
+            });
+        }
+        for binding in &material.virtual_textures {
+            bindings.push(MaterialBinding {
+                material_id: material_id.clone(),
+                resource_id: binding.id.clone(),
+                resource_kind: "virtual".to_string(),
+                parameter_name: binding.parameter_name.clone(),
+            });
+        }
+    }
+    bindings
 }
 
 /// 3D preview payload: the GR2 mesh converted to GLB, Base64-encoded to avoid a huge JSON byte array.

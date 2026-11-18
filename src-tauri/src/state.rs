@@ -16,10 +16,19 @@ pub struct MaterialInfo {
     pub name: String,
     /// Base material template (`.lsf`) the material is derived from
     pub source_file: String,
-    /// GUIDs of the textures this material binds
-    pub texture_ids: Vec<String>,
+    /// The textures this material binds, each with the parameter that binding fills
+    pub textures: Vec<TextureBinding>,
     /// The virtual textures this material binds; an asset's list is the union over its materials.
     pub virtual_textures: Vec<VirtualTextureBinding>,
+}
+
+/// A texture one material binds, together with the parameter that binding fills.
+#[derive(Clone)]
+pub struct TextureBinding {
+    /// GUID of the texture resource (`TextureBank`)
+    pub id: String,
+    /// `ParameterName` of the binding node (e.g. `MSKColor`)
+    pub parameter_name: String,
 }
 
 /// A virtual texture one material binds, together with the parameter that binding fills.
@@ -40,15 +49,18 @@ struct RawMaterial {
     source_file: String,
     #[serde(default)]
     texture_ids: Vec<RawTextureParam>,
-    /// Bare GUIDs, unlike `texture_ids`: maclarian drops the binding's parameter name. Absent for
-    /// materials that bind no virtual texture, hence the default.
+    /// Bare GUIDs, unlike `texture_ids`: maclarian keeps no parameter name for the virtual
+    /// texture bindings. Absent for materials that bind no virtual texture, hence the default.
     #[serde(default)]
     virtual_texture_ids: Vec<String>,
 }
 
-/// A texture binding inside a material; its parameter name is already on the texture itself
+/// A texture binding inside a material, with the parameter name the material gives it
 #[derive(Deserialize)]
 struct RawTextureParam {
+    /// Empty when the binding node carries no name
+    #[serde(default)]
+    name: String,
     texture_id: String,
 }
 
@@ -87,10 +99,13 @@ pub fn extract_materials(db: &MergedDatabase) -> HashMap<String, MaterialInfo> {
                 MaterialInfo {
                     name: material.name,
                     source_file: material.source_file,
-                    texture_ids: material
+                    textures: material
                         .texture_ids
                         .into_iter()
-                        .map(|param| param.texture_id)
+                        .map(|param| TextureBinding {
+                            id: param.texture_id,
+                            parameter_name: param.name,
+                        })
                         .collect(),
                     // The serialized database holds bare GUIDs; the name is filled in later
                     virtual_textures: material

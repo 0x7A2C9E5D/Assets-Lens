@@ -20,38 +20,37 @@ interface MaterialBinding {
 }
 
 /**
- * Material → bindings. The payload only carries the relation one way round (each texture row lists
- * the materials that bind it), so both lists are inverted once per asset. An unnamed material shows
- * no bindings.
+ * Material → bindings. The payload states the relation itself — one entry per binding, naming the
+ * resource by GUID and the parameter that binding fills — so the rows are only looked up here, and
+ * a texture bound by two materials under two names stays two entries.
  */
 const bindingsByMaterial = computed(() => {
   const byMaterial = new Map<string, MaterialBinding[]>()
-  const bind = (materialNames: string[] | undefined, binding: MaterialBinding) => {
-    for (const name of materialNames ?? []) {
-      const bound = byMaterial.get(name)
-      if (bound) {
-        bound.push(binding)
-      } else {
-        byMaterial.set(name, [binding])
-      }
-    }
-  }
+  const asset = props.asset
+  if (!asset) return byMaterial
 
-  for (const texture of props.asset?.textures ?? []) {
-    bind(texture.materialNames, {
-      kind: 'texture',
-      id: texture.id,
-      name: texture.name || texture.id,
-      parameterName: texture.parameterName,
-    })
-  }
-  for (const virtualTexture of props.asset?.virtualTextures ?? []) {
-    bind(virtualTexture.materialNames, {
-      kind: 'virtual',
-      id: virtualTexture.id,
-      name: virtualTexture.name || virtualTexture.id,
-      parameterName: virtualTexture.parameterName,
-    })
+  const textures = new Map(asset.textures.map((row) => [row.id, row]))
+  const virtualTextures = new Map(asset.virtualTextures.map((row) => [row.id, row]))
+
+  for (const binding of asset.bindings) {
+    const isVirtual = binding.resourceKind === 'virtual'
+    const row = isVirtual
+        ? virtualTextures.get(binding.resourceId)
+        : textures.get(binding.resourceId)
+    if (!row) continue
+
+    const entry: MaterialBinding = {
+      kind: isVirtual ? 'virtual' : 'texture',
+      id: binding.resourceId,
+      name: row.name || row.id,
+      parameterName: binding.parameterName,
+    }
+    const bound = byMaterial.get(binding.materialId)
+    if (bound) {
+      bound.push(entry)
+    } else {
+      byMaterial.set(binding.materialId, [entry])
+    }
   }
   return byMaterial
 })
@@ -60,7 +59,7 @@ const bindingsByMaterial = computed(() => {
 const materialsWithBindings = computed(() =>
     (props.asset?.materials ?? []).map((material) => ({
       ...material,
-      bindings: bindingsByMaterial.value.get(material.name) ?? [],
+      bindings: bindingsByMaterial.value.get(material.id) ?? [],
     })),
 )
 

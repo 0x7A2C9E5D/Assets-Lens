@@ -132,6 +132,21 @@ export type ExportedFile = {
 };
 
 /**
+ *  One resource a material binds: the GUID of a row already listed in the asset, the parameter the
+ *  binding fills, and which of the two resource lists the GUID belongs to. The relation lives here
+ *  rather than on the rows because a row is one resource, while the parameter belongs to the
+ *  binding — the same texture bound by two materials can fill two different parameters.
+ */
+export type MaterialBinding = {
+	materialId: string,
+	resourceId: string,
+	/**  `texture` or `virtual` */
+	resourceKind: string,
+	/**  Empty when the binding node carries no name */
+	parameterName: string,
+};
+
+/**
  *  Material reference: the GUID is the identity, the name makes the row readable, and `source_file`
  *  is the template the material is defined in.
  */
@@ -266,6 +281,8 @@ export type VisualAssetDetail_Deserialize = {
 	materials: MaterialSummary[],
 	textures: TextureSummary_Deserialize[],
 	virtualTextures: VirtualTextureSummary_Deserialize[],
+	/**  Every material-to-resource binding of the asset, in material order */
+	bindings: MaterialBinding[],
 };
 
 /**  Full visual asset information (detail panel) */
@@ -277,6 +294,8 @@ export type VisualAssetDetail_Serialize = {
 	materials: MaterialSummary[],
 	textures: TextureSummary_Serialize[],
 	virtualTextures: VirtualTextureSummary_Serialize[],
+	/**  Every material-to-resource binding of the asset, in material order */
+	bindings: MaterialBinding[],
 };
 
 /**  Visual asset list item: highlights the composition of the visual itself */
